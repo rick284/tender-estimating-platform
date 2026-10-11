@@ -1,0 +1,13 @@
+[project]
+name = "tender-engine"
+version = "0.1.0"
+description = "Deterministic estimating calculation engine (no AI, no I/O). Reproduces the Master Estimate Workbook cost chain."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest", "openpyxl"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
