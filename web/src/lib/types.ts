@@ -32,7 +32,7 @@ export interface QSLine {
   notes: string; rows: string[];
 }
 export interface BuildUpLine {
-  row_id: string; qs_code: string; task: string; mode: string; resource_type: string; resource_code: string;
+  row_id: string; uid: string; qs_code: string; task: string; mode: string; resource_type: string; resource_code: string;
   resource: string; unit: string; qs_qty: number; productivity: number | null; productivity_unit: string;
   hours: number; duration_override: number | null; count: number | null; manual_qty: number | null; utilisation: number | null; waste: number | null;
   library_rate: number; job_override: number | null; applied_rate: number; cost: number; weather_exposed: boolean;
@@ -59,7 +59,7 @@ export interface RevisionInfo {
   has_inputs: boolean; parent_n: number | null; note: string; change_count: number; edited: boolean;
 }
 export interface Change { target: string; key: string; field: string; label: string; before: string; after: string }
-export interface Edit { target: string; key: string; field: string; value: string }
+export interface Edit { target: string; key: string; field?: string; op?: "add" | "delete"; value?: unknown }
 export interface TenderDetail extends Tender { revisions: RevisionInfo[] }
 export interface TenderList { tenders: Tender[]; totals: { count: number; by_stage: Record<Stage, { count: number; value: number }> } }
 export interface Diff {

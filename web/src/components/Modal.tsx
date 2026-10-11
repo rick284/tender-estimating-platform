@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 
 /** Native <dialog>: focus is trapped, Esc closes, background is inert. */
-export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+export function Modal({ open, onClose, title, children, wide = false }: { open: boolean; onClose: () => void; title: string; children: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = ref.current;
@@ -12,7 +12,7 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
   }, [open]);
   return (
     <dialog ref={ref} onClose={onClose} onClick={(e) => { if (e.target === ref.current) onClose(); }}
-      className="m-auto w-[min(32rem,calc(100vw-2rem))] border border-primary bg-background p-0 text-foreground backdrop:bg-black/50">
+      className={`m-auto ${wide ? "w-[min(46rem,calc(100vw-2rem))]" : "w-[min(32rem,calc(100vw-2rem))]"} border border-primary bg-background p-0 text-foreground backdrop:bg-black/50`}>
       {open && (
         <div>
           <div className="flex items-center justify-between border-b px-5 py-3">

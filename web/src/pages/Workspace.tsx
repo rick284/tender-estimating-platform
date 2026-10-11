@@ -3,7 +3,7 @@ import { FileUp } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { go } from "../lib/route";
 import type { Change, Estimate, RevisionInfo, TenderDetail } from "../lib/types";
-import { editKey, EditProvider, toApi, type DraftEdit, type EditCtx } from "../lib/edit";
+import { editKey, EditProvider, opKey, toApi, type DraftEdit, type EditCtx } from "../lib/edit";
 import { fmtMoney, fmtNum } from "../lib/format";
 import { isTenderPage, Shell, type TenderPage } from "../components/Shell";
 import { Modal } from "../components/Modal";
@@ -60,17 +60,55 @@ const FIELD_NAME: Record<string, string> = {
   quantity: "Quantity", job_rate_override: "Job rate", productivity_rate: "Productivity", duration_override_hrs: "Hours override",
   count: "Count / factor", manual_qty: "Quantity", utilisation: "Utilisation", waste: "Waste", verified: "Verified",
   weather_exposed: "Weather exposed", include: "Included", pct: "Percentage", pc_sum: "Amount", amount: "Amount",
-  recovery_allowance: "Allowance", confirmed_overlap: "Amount",
+  recovery_allowance: "Allowance", confirmed_overlap: "Amount", added: "Added", removed: "Removed",
 };
 const PCT_FIELDS = new Set(["pct", "utilisation", "waste"]);
 const MONEY_FIELDS = new Set(["job_rate_override", "pc_sum", "amount", "recovery_allowance", "confirmed_overlap"]);
 function showValue(field: string, v: string): string {
+  if (field === "added" || field === "removed") return v || "—";
   if (v === "") return "blank";
   if (field === "verified" || field === "weather_exposed" || field === "include") return v === "Yes" ? "Yes" : "No";
   const n = Number(v);
   if (!Number.isFinite(n)) return v;
   if (PCT_FIELDS.has(field)) return `${Number((n * 100).toFixed(4))}%`;
   return MONEY_FIELDS.has(field) ? fmtMoney(n) : fmtNum(n);
+}
+
+function ChangeRow({ c, undo }: { c: Change; undo?: () => void }) {
+  const added = c.field === "added", removed = c.field === "removed";
+  return (
+    <li className="flex items-start gap-3 border-b px-3 py-2.5 last:border-b-0">
+      <span className={`label mt-0.5 w-24 shrink-0 ${added ? "!text-green-fg" : removed ? "!text-red-fg" : ""}`}>{FIELD_NAME[c.field] ?? c.field}</span>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm leading-snug">{c.label}</div>
+        <div className="mt-0.5 break-words font-mono text-xs text-muted-foreground">
+          {added ? showValue(c.field, c.after) : removed ? showValue(c.field, c.before) : <>{showValue(c.field, c.before)} <span aria-label="to">→</span> <span className="font-medium text-foreground">{showValue(c.field, c.after)}</span></>}
+        </div>
+      </div>
+      {undo && <button className="btn btn-ghost !px-2 !py-1" onClick={undo}>Undo</button>}
+    </li>
+  );
+}
+
+function changeKey(c: Change): string {
+  return c.field === "added" ? opKey(c.target, c.key, "add") : c.field === "removed" ? opKey(c.target, c.key, "delete") : editKey(c.target, c.key, c.field);
+}
+
+function ChangesDialog({ open, onClose, changes, edits, undoKey }: { open: boolean; onClose: () => void; changes: Change[]; edits: Record<string, DraftEdit>; undoKey: (k: string) => void }) {
+  return (
+    <Modal open={open} onClose={onClose} title="Changes in this edit" wide>
+      <div className="max-h-[60vh] overflow-y-auto border">
+        {changes.length === 0 ? <p className="p-4 text-sm text-muted-foreground">No changes yet.</p> : (
+          <ul>{changes.map((c) => {
+            const k = changeKey(c);
+            return <ChangeRow key={`${c.target}${c.key}${c.field}`} c={c} undo={edits[k] ? () => undoKey(k) : undefined} />;
+          })}</ul>
+        )}
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">Rows that belong to a deleted item go with it. Undo the item to bring them back.</p>
+      <div className="mt-4 flex justify-end"><button className="btn btn-solid" onClick={onClose}>Done</button></div>
+    </Modal>
+  );
 }
 
 function SaveEdits({ open, onClose, changes, defaultLabel, onSave }: { open: boolean; onClose: () => void; changes: Change[]; defaultLabel: string; onSave: (label: string, note: string) => Promise<void> }) {
@@ -88,13 +126,10 @@ function SaveEdits({ open, onClose, changes, defaultLabel, onSave }: { open: boo
   };
   const input = "mt-1 w-full border bg-background px-3 text-sm focus:border-primary";
   return (
-    <Modal open={open} onClose={onClose} title="Save as new revision">
+    <Modal open={open} onClose={onClose} title="Save as new revision" wide>
       <form onSubmit={submit} className="space-y-4">
         <p className="text-sm text-muted-foreground">This creates a new revision. The revision you started from stays exactly as it is.</p>
-        <div className="max-h-52 overflow-y-auto border">
-          <table className="grid-table"><thead><tr><th>Change</th><th className="text-right">Was</th><th className="text-right">Now</th></tr></thead>
-            <tbody>{changes.map((c) => <tr key={`${c.target}${c.key}${c.field}`}><td><div className="font-medium">{FIELD_NAME[c.field] ?? c.field}</div><div className="text-xs text-muted-foreground">{c.label}</div></td><td className="num">{showValue(c.field, c.before)}</td><td className="num font-medium">{showValue(c.field, c.after)}</td></tr>)}</tbody></table>
-        </div>
+        <div className="max-h-60 overflow-y-auto border"><ul>{changes.map((c) => <ChangeRow key={`${c.target}${c.key}${c.field}`} c={c} />)}</ul></div>
         <label className="block"><span className="label">Revision name</span><input className={`${input} h-10`} value={label} maxLength={40} onChange={(e) => setLabel(e.target.value)} /></label>
         <label className="block"><span className="label">Reason for the change (required)</span>
           <textarea ref={noteRef} className={`${input} py-2 ${err && note.trim().length < 5 ? "border-red-line" : ""}`} rows={3} value={note} maxLength={2000} onChange={(e) => { setNote(e.target.value); setErr(""); }} placeholder="For example: Quantity updated from Rev18 drawings" /></label>
@@ -150,7 +185,8 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
   const [editErr, setEditErr] = useState("");
   const [calculating, setCalculating] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
-  const exitEdit = useCallback(() => { setEditing(false); setEdits({}); setDraft(null); setChanges([]); setEditErr(""); setSaveOpen(false); }, []);
+  const [changesOpen, setChangesOpen] = useState(false);
+  const exitEdit = useCallback(() => { setEditing(false); setEdits({}); setDraft(null); setChanges([]); setEditErr(""); setSaveOpen(false); setChangesOpen(false); }, []);
   useEffect(() => { exitEdit(); }, [id, rev, exitEdit]);
 
   const editList = useMemo(() => Object.values(edits).map(toApi), [edits]);
@@ -174,11 +210,45 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
     return () => window.removeEventListener("beforeunload", f);
   }, [editing, editList.length]);
 
-  const ctx = useMemo<EditCtx>(() => ({
-    editing, edits,
-    set: (e) => setEdits((p) => ({ ...p, [editKey(e.target, e.key, e.field)]: e })),
-    reset: (t, k, f) => setEdits((p) => { const n = { ...p }; delete n[editKey(t, k, f)]; return n; }),
-  }), [editing, edits]);
+  const ctx = useMemo<EditCtx>(() => {
+    const dropPrefix = (m: Record<string, DraftEdit>, prefix: string) => {
+      for (const k of Object.keys(m)) if (k.startsWith(prefix)) delete m[k];
+    };
+    const baseRows = est?.buildup ?? [];
+    return {
+      editing, edits,
+      set: (e) => setEdits((p) => ({ ...p, [editKey(e.target, e.key, e.field)]: e })),
+      reset: (t, k, f) => setEdits((p) => { const n = { ...p }; delete n[editKey(t, k, f)]; return n; }),
+      add: (target, key, payload) => setEdits((p) => ({
+        ...p, [opKey(target, key, "add")]: { target, key, field: "", value: "", original: "", op: "add", payload },
+      })),
+      remove: (target, key) => setEdits((p) => {
+        const n = { ...p };
+        const pendingAdd = !!n[opKey(target, key, "add")];
+        const dropRow = (uid: string) => { delete n[opKey("row", uid, "add")]; dropPrefix(n, `row|${uid}|`); };
+        if (target === "row") {
+          dropPrefix(n, `row|${key}|`);
+          if (pendingAdd) delete n[opKey("row", key, "add")]; else n[opKey("row", key, "delete")] = { target, key, field: "", value: "", original: "", op: "delete" };
+        } else if (target === "qs") {
+          dropPrefix(n, `qs|${key}|`);
+          for (const e of Object.values(n)) if (e.target === "row" && e.op === "add" && e.payload?.qs_code === key) dropRow(e.key);
+          for (const r of baseRows) if (r.qs_code === key) dropPrefix(n, `row|${r.uid}|`);
+          if (pendingAdd) delete n[opKey("qs", key, "add")]; else n[opKey("qs", key, "delete")] = { target, key, field: "", value: "", original: "", op: "delete" };
+        }
+        return n;
+      }),
+      undoKey: (k) => setEdits((p) => {
+        const e = p[k]; if (!e) return p;
+        const n = { ...p };
+        if (e.op === "add") { // undoing an add also drops anything that depends on it
+          if (e.target === "qs") for (const x of Object.values(n)) if (x.target === "row" && x.op === "add" && x.payload?.qs_code === e.key) { delete n[opKey("row", x.key, "add")]; dropPrefix(n, `row|${x.key}|`); }
+          dropPrefix(n, `${e.target}|${e.key}|`);
+        }
+        delete n[k];
+        return n;
+      }),
+    };
+  }, [editing, edits, est]);
   const shown = editing && draft ? draft : est;
 
   const cur = rev ?? detail?.latest_rev ?? 1;
@@ -247,17 +317,19 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
             {shown && editList.length > 0 && (
               <div className="font-mono text-sm" aria-live="polite">
                 <span className="label mr-2 font-heading">All-in</span>{fmtMoney(est.summary.all_in)} → <strong>{fmtMoney(shown.summary.all_in)}</strong>
-                <span className="ml-2">({shown.summary.all_in - est.summary.all_in >= 0 ? "+" : "-"}{fmtMoney(Math.abs(shown.summary.all_in - est.summary.all_in))})</span>
+                <span className="ml-2">({(() => { const d = Math.round(shown.summary.all_in * 100) / 100 - Math.round(est.summary.all_in * 100) / 100; return `${d >= 0 ? "+" : "-"}${fmtMoney(Math.abs(Math.round(d * 100) / 100))}`; })()})</span>
               </div>
             )}
             {editErr && !calculating && <div role="alert" className="min-w-0 flex-1 text-sm text-red-fg">{editErr}</div>}
             <div className="ml-auto flex gap-2">
+              {editList.length > 0 && <button className="btn btn-ghost" onClick={() => setChangesOpen(true)}>View changes</button>}
               <button className="btn btn-ghost" onClick={() => { if (editList.length === 0 || window.confirm("Discard your changes?")) exitEdit(); }}>{editList.length === 0 ? "Cancel" : "Discard"}</button>
               <button className="btn btn-solid" disabled={changes.length === 0 || !!editErr || calculating} onClick={() => setSaveOpen(true)}>Review &amp; save</button>
             </div>
           </div>
         </div>
       )}
+      <ChangesDialog open={changesOpen} onClose={() => setChangesOpen(false)} changes={changes} edits={edits} undoKey={ctx.undoKey} />
       <SaveEdits open={saveOpen} onClose={() => setSaveOpen(false)} changes={changes} defaultLabel={`${label}-ed${(detail?.latest_rev ?? 0) + 1}`}
         onSave={async (lab, note) => { await api.saveEdits(id, cur, editList, lab, note); exitEdit(); go({ name: "tender", id, page: "revisions", rev: null }); await loadDetail(); }} />
       <UploadRevision open={upload} onClose={() => setUpload(false)} tenderId={id}

@@ -3,11 +3,15 @@ import { ChevronRight } from "lucide-react";
 import type { Estimate } from "../lib/types";
 import { fmtNum } from "../lib/format";
 import { EditNum } from "../components/EditCells";
+import { AddQsDialog } from "../components/AddDialogs";
+import { useEdit } from "../lib/edit";
 import { Chip, Empty, Money, PageHeader, Panel, RagChip, SearchBox } from "../components/ui";
 
 export function QSTakeoff({ est, openRows }: { est: Estimate; openRows: (code: string) => void }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const { editing, add, remove } = useEdit();
   const items = useMemo(() => {
     const t = q.trim().toLowerCase();
     return est.qs.filter((i) => !t || `${i.code} ${i.description} ${i.section} ${i.basis}`.toLowerCase().includes(t));
@@ -20,7 +24,7 @@ export function QSTakeoff({ est, openRows }: { est: Estimate; openRows: (code: s
       <PageHeader
         title="QS takeoff"
         sub="Measured, provided and allowance quantities with their section cost. Each amount is the sum of its resource build-up rows. Open a line for its source and status."
-        actions={<SearchBox value={q} onChange={setQ} placeholder="Search code, description or section" />}
+        actions={<>{editing && <button className="btn btn-solid" onClick={() => setAdding(true)}>Add QS item</button>}<SearchBox value={q} onChange={setQ} placeholder="Search code, description or section" /></>}
       />
       {sections.length === 0 ? <Empty title="No matching items" body="Try a different search term." /> : (
         <Panel flush>
@@ -47,7 +51,7 @@ export function QSTakeoff({ est, openRows }: { est: Estimate; openRows: (code: s
                           <tr className="cursor-pointer" onClick={() => setOpen(isOpen ? null : i.code)} aria-expanded={isOpen}>
                             <td className="font-mono text-xs"><span className="inline-flex items-center gap-1"><ChevronRight size={12} className={`transition-transform ${isOpen ? "rotate-90" : ""}`} aria-hidden />{i.code}</span></td>
                             <td>
-                              <div className="leading-snug">{i.description}</div>
+                              <div className="leading-snug">{i.description} {i.status.includes("ADDED IN PLATFORM") && <Chip tone="neutral">New</Chip>}</div>
                               <div className="mt-1 text-xs text-muted-foreground sm:hidden">{fmtNum(i.quantity)} {i.unit} · <RagChip value={i.rag} /></div>
                             </td>
                             <td className="hidden sm:table-cell">{i.unit}</td>
@@ -68,6 +72,10 @@ export function QSTakeoff({ est, openRows }: { est: Estimate; openRows: (code: s
                                     <span className="label mr-1">Build-up rows</span>
                                     {i.rows.length ? i.rows.map((r) => <Chip key={r} tone="neutral">{r}</Chip>) : <span className="text-muted-foreground">None (no resources priced)</span>}
                                     {i.rows.length > 0 && <button className="btn btn-ghost ml-auto !py-1" onClick={(e) => { e.stopPropagation(); openRows(i.code); }}>View build-up</button>}
+                                    {editing && <button className={`btn btn-ghost !py-1 ${i.rows.length ? "" : "ml-auto"}`} onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (window.confirm(i.rows.length ? `Delete ${i.code} and its ${i.rows.length} build-up row${i.rows.length === 1 ? "" : "s"}? You can undo this before saving.` : `Delete ${i.code}? You can undo this before saving.`)) remove("qs", i.code);
+                                    }}>Delete item</button>}
                                   </div>
                                 </dl>
                               </td>
@@ -84,6 +92,8 @@ export function QSTakeoff({ est, openRows }: { est: Estimate; openRows: (code: s
           </div>
         </Panel>
       )}
+      <AddQsDialog open={adding} onClose={() => setAdding(false)} sections={est.sections.map((x) => x.section)} usedCodes={new Set(est.qs.map((x) => x.code))}
+        onAdd={(code, payload) => { add("qs", code, payload); setOpen(code); }} />
     </>
   );
 }

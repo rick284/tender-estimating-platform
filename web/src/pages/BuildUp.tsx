@@ -3,14 +3,16 @@ import { ChevronRight } from "lucide-react";
 import type { Estimate } from "../lib/types";
 import { fmtMoney, fmtNum } from "../lib/format";
 import { EditCheck, EditNum } from "../components/EditCells";
+import { AddRowDialog } from "../components/AddDialogs";
 import { useEdit } from "../lib/edit";
 import type { BuildUpLine } from "../lib/types";
 import { Chip, Empty, Money, PageHeader, Panel, QaChip, RagChip, SearchBox, Select } from "../components/ui";
 
 function RowEditor({ r }: { r: BuildUpLine }) {
+  const { remove } = useEdit();
   const f = (label: string, field: string, original: number | null, opts: { scale?: number; hint?: string } = {}) => (
     <label className="block"><span className="label">{label}</span>
-      <div className="mt-1"><EditNum target="row" id={r.row_id} field={field} original={original} display="" scale={opts.scale} width="w-full" label={`${r.row_id} ${label}`} placeholder={opts.hint} /></div></label>
+      <div className="mt-1"><EditNum target="row" id={r.uid} field={field} original={original} display="" scale={opts.scale} width="w-full" label={`${r.row_id} ${label}`} placeholder={opts.hint} /></div></label>
   );
   const time = r.mode === "Time x Count", qty = r.mode === "QS Qty x Factor", direct = r.mode === "Direct Qty", lump = r.mode === "Lump Sum / Quote";
   return (
@@ -26,8 +28,9 @@ function RowEditor({ r }: { r: BuildUpLine }) {
         {f(`Job rate override ($/${r.unit || "unit"})`, "job_rate_override", r.job_override, { hint: String(r.library_rate) })}
       </div>
       <div className="mt-4 flex flex-wrap gap-6 text-sm">
-        <label className="flex items-center gap-2"><EditCheck target="row" id={r.row_id} field="verified" original={r.verified} label={`${r.row_id} verified`} /> Verified</label>
-        <label className="flex items-center gap-2"><EditCheck target="row" id={r.row_id} field="weather_exposed" original={r.weather_exposed} label={`${r.row_id} weather exposed`} /> Weather exposed (labour / plant)</label>
+        <label className="flex items-center gap-2"><EditCheck target="row" id={r.uid} field="verified" original={r.verified} label={`${r.row_id} verified`} /> Verified</label>
+        <label className="flex items-center gap-2"><EditCheck target="row" id={r.uid} field="weather_exposed" original={r.weather_exposed} label={`${r.row_id} weather exposed`} /> Weather exposed (labour / plant)</label>
+        <button type="button" className="btn btn-ghost ml-auto !py-1" onClick={() => { if (window.confirm(`Delete row ${r.row_id}? You can undo this before saving.`)) remove("row", r.uid); }}>Delete row</button>
       </div>
     </div>
   );
@@ -38,7 +41,8 @@ export function BuildUp({ est, code, setCode }: { est: Estimate; code: string; s
   const [type, setType] = useState("all");
   const [qa, setQa] = useState("all");
   const [open, setOpen] = useState<string | null>(null);
-  const { editing } = useEdit();
+  const { editing, add } = useEdit();
+  const [adding, setAdding] = useState(false);
 
   const codes = est.qs.map((i) => i.code);
   const types = Array.from(new Set(est.buildup.map((b) => b.resource_type))).sort();
@@ -59,6 +63,7 @@ export function BuildUp({ est, code, setCode }: { est: Estimate; code: string; s
         <Select label="QS code" value={code} onChange={setCode} options={[{ value: "all", label: "All QS codes" }, ...codes.map((c) => ({ value: c, label: c }))]} />
         <Select label="Resource type" value={type} onChange={setType} options={[{ value: "all", label: "All types" }, ...types.map((t) => ({ value: t, label: t }))]} />
         <Select label="Check" value={qa} onChange={setQa} options={[{ value: "all", label: "All checks" }, { value: "attention", label: "Needs attention" }, { value: "VERIFY", label: "Verify" }, { value: "OK", label: "OK" }]} />
+        {editing && <button className="btn btn-solid !py-1.5" onClick={() => setAdding(true)}>Add row</button>}
         <span className="ml-auto text-sm text-muted-foreground">{rows.length} of {est.buildup.length} rows</span>
       </div>
       {rows.length === 0 ? <Empty title="No rows match" body="Clear a filter or change the search." /> : (
@@ -77,14 +82,14 @@ export function BuildUp({ est, code, setCode }: { est: Estimate; code: string; s
               </thead>
               <tbody>
                 {rows.map((r) => {
-                  const isOpen = open === r.row_id;
+                  const isOpen = open === r.uid;
                   return (
-                    <Fragment key={r.row_id}>
-                      <tr className="cursor-pointer" onClick={() => setOpen(isOpen ? null : r.row_id)} aria-expanded={isOpen}>
+                    <Fragment key={r.uid}>
+                      <tr className="cursor-pointer" onClick={() => setOpen(isOpen ? null : r.uid)} aria-expanded={isOpen}>
                         <td className="nowrap hidden whitespace-nowrap font-mono text-xs sm:table-cell"><span className="inline-flex items-center gap-1"><ChevronRight size={12} className={`transition-transform ${isOpen ? "rotate-90" : ""}`} aria-hidden />{r.row_id}</span></td>
                         <td>
                           <div className="mb-1 flex items-center gap-1 font-mono text-2xs text-muted-foreground sm:hidden"><ChevronRight size={11} className={`transition-transform ${isOpen ? "rotate-90" : ""}`} aria-hidden />{r.row_id}</div>
-                          <div className="leading-snug">{r.task}</div>
+                          <div className="leading-snug">{r.task} {r.uid.startsWith("N-") && <Chip tone="neutral">New</Chip>}</div>
                           <div className="mt-0.5 text-xs text-muted-foreground">
                             <span className="mr-1.5 inline-block border px-1 text-2xs uppercase">{r.resource_type}</span>
                             {r.resource || r.resource_code}
@@ -134,6 +139,12 @@ export function BuildUp({ est, code, setCode }: { est: Estimate; code: string; s
           <Chip tone="neutral">Note</Chip> Checks are worked out from the build-up rules. Where the workbook shows different hand-typed text, hover the chip or open the row to see what the workbook said.
         </p>
       )}
+      <AddRowDialog open={adding} onClose={() => setAdding(false)} qs={est.qs} library={est.library.map((l) => ({ code: l.code, description: l.description, unit: l.unit, rate: l.rate, category: l.category }))} defaultQs={code}
+        onAdd={(uid, row, rate) => {
+          if (rate) add("library", rate.code, rate.payload);
+          add("row", uid, row);
+          setCode(String(row.qs_code)); setOpen(uid);
+        }} />
     </>
   );
 }

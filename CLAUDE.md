@@ -51,3 +51,10 @@ Do NOT commit client/tender files into this repo without asking; the Rev34E valu
 - Fixed menu flicker (Workspace refetched + blanked on every page click). e2e scripts in `web/e2e/`.
 - Edit values: percentages are typed as % in the UI (10 = 0.10 sent). Money fields display 2dp but change detection uses full precision.
 - Known gaps: leaving the tender while editing loses edits (only a browser-unload warning); no per-line reasons (one reason per save); library rates are not editable here (use job rate override); no add/delete of QS items or build-up rows yet (needed to build a tender from scratch).
+
+## Phase 1d done (12 Oct 2026): add / delete items
+- Engine edits now include add/delete of QS items and build-up rows and adding a rate to the tender's library (`tender_engine/edits.py`). Rows carry a permanent `uid` (initially their display id like EW02-001); display ids shift when rows change, uids never do; the weather cost links (`weather_links.daily_uid/weekly_uids`) follow rows by uid; older saves migrate on load (`inputs.from_json`).
+- Rules: new QS items must be classified MEASURED/PROVIDED/CALCULATED/ALLOWANCE-PC/QUOTED and start AMBER / NOT VERIFIED; deleting a QS item removes its rows; rows that drive the weather calculation can't be deleted; a Lump Sum row may have no library rate; new library rates are labelled "Added in platform (AMBER)".
+- UI: Add QS item (QS Takeoff), Add row (Resource Build-Up; includes "new rate" form), Delete item/row with confirm, "View changes" dialog with per-change Undo, readable change lists, New chips. Edit keys use uids. e2e: `web/e2e/structure_e2e.py` (also edit_e2e.py, flicker.py).
+- Fixes along the way: silent-disabled Save button (now explains), CORS-safe JSON 500s with reference ids, `/api/health/db`, bar delta now uses rounded prices like the compare page.
+- Next: start a tender from scratch (tenant-level rate library + intake block), weather tool port, client outputs.
