@@ -324,7 +324,8 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
                             live_row(uid)
                         links["daily_uid"] = uid
                     elif field == "weekly_uids":
-                        uids = [str(x) for x in (value or [])]
+                        uids = [x for x in (re.split(r"[,\s]+", value) if isinstance(value, str) else (value or [])) if x]
+                        uids = [str(x) for x in uids]
                         for uid in uids:
                             live_row(uid)
                         links["weekly_uids"] = uids

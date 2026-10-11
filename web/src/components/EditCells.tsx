@@ -49,3 +49,50 @@ export function EditCheck({ target, id, field, original, label, display }: {
       }} />
   );
 }
+
+const field = "h-8 border bg-background px-2 text-sm focus:border-primary";
+
+/** Text / number / date / select input for settings that aren't plain money amounts. `value` is what is shown now
+ *  (including any pending edit); the first value seen is remembered as the original so typing it back clears the edit. */
+export function EditField({ target, id, field: f, value, display, kind = "text", options, label, width = "w-36", placeholder }: {
+  target: string; id: string; field: string; value: string; display?: ReactNode; kind?: "text" | "number" | "date" | "select";
+  options?: { value: string; label: string }[]; label: string; width?: string; placeholder?: string;
+}) {
+  const { editing, edits, set, reset } = useEdit();
+  if (!editing) return <>{display ?? (value === "" ? "—" : value)}</>;
+  const k = editKey(target, id, f);
+  const e = edits[k];
+  const original = e ? e.original : value;
+  const shown = e ? e.value : value;
+  const change = (v: string) => (v === original ? reset(target, id, f) : set({ target, key: id, field: f, value: v, original }));
+  const cls = `${field} ${width} ${kind === "number" ? "text-right font-mono" : ""} ${e ? "border-amber-line bg-amber-bg" : ""}`;
+  if (kind === "select") {
+    return (
+      <select aria-label={label} value={shown} onClick={(ev) => ev.stopPropagation()} onChange={(ev) => change(ev.target.value)} className={cls}>
+        {options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    );
+  }
+  return (
+    <input aria-label={label} type={kind === "date" ? "date" : "text"} inputMode={kind === "number" ? "decimal" : undefined} placeholder={placeholder}
+      title={e ? `Was ${original === "" ? "blank" : original}` : undefined} value={shown} onClick={(ev) => ev.stopPropagation()}
+      onChange={(ev) => change(ev.target.value)} className={cls} />
+  );
+}
+
+/** Yes/No checkbox for a setting. */
+export function EditToggle({ target, id, field: f, value, label, display }: {
+  target: string; id: string; field: string; value: boolean; label: string; display?: ReactNode;
+}) {
+  const { editing, edits, set, reset } = useEdit();
+  if (!editing) return <>{display ?? (value ? "Yes" : "No")}</>;
+  const k = editKey(target, id, f);
+  const e = edits[k];
+  const original = e ? e.original === "Yes" : value;
+  const checked = e ? e.value === "Yes" : value;
+  return (
+    <input type="checkbox" aria-label={label} checked={checked} onClick={(ev) => ev.stopPropagation()}
+      className={`h-4 w-4 accent-black ${e ? "outline outline-2 outline-amber-line" : ""}`}
+      onChange={(ev) => (ev.target.checked === original ? reset(target, id, f) : set({ target, key: id, field: f, value: ev.target.checked ? "Yes" : "No", original: original ? "Yes" : "No" }))} />
+  );
+}

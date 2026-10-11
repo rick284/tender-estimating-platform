@@ -236,6 +236,11 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
           for (const e of Object.values(n)) if (e.target === "row" && e.op === "add" && e.payload?.qs_code === key) dropRow(e.key);
           for (const r of baseRows) if (r.qs_code === key) dropPrefix(n, `row|${r.uid}|`);
           if (pendingAdd) delete n[opKey("qs", key, "add")]; else n[opKey("qs", key, "delete")] = { target, key, field: "", value: "", original: "", op: "delete" };
+        } else {
+          // overlays, weather activities and the weather setup itself
+          dropPrefix(n, `${target}|${key}|`);
+          if (target === "weather" && key === "setup") dropPrefix(n, "weather_activity|");
+          if (pendingAdd) delete n[opKey(target, key, "add")]; else n[opKey(target, key, "delete")] = { target, key, field: "", value: "", original: "", op: "delete" };
         }
         return n;
       }),
@@ -245,6 +250,7 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
         if (e.op === "add") { // undoing an add also drops anything that depends on it
           if (e.target === "qs") for (const x of Object.values(n)) if (x.target === "row" && x.op === "add" && x.payload?.qs_code === e.key) { delete n[opKey("row", x.key, "add")]; dropPrefix(n, `row|${x.key}|`); }
           dropPrefix(n, `${e.target}|${e.key}|`);
+          if (e.target === "weather" && e.key === "setup") dropPrefix(n, "weather_activity|");
         }
         delete n[k];
         return n;

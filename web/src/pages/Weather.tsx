@@ -2,18 +2,19 @@ import type { Estimate } from "../lib/types";
 import { fmtMoney, fmtNum } from "../lib/format";
 import { EditNum } from "../components/EditCells";
 import { Chip, Money, PageHeader, Panel, Stat } from "../components/ui";
+import { WeatherLive } from "./WeatherLive";
 
 export function Weather({ est }: { est: Estimate }) {
   const w = est.weather, m = w.meta as Record<string, string>;
   const steps: [string, string, number][] = [
-    ["Direct productivity (rain / wet ground)", `Tool output ${fmtMoney(w.tool_rain_cost)} × (current exposed pool ${fmtMoney(w.exposed_pool)} ÷ tool-run pool ${fmtMoney(w.tool_pool)})`, w.direct_productivity],
+    ["Direct productivity (rain / wet ground)", w.live ? `Worked out per weather activity below, on ${fmtMoney(w.tool?.exposed_pool_activities ?? 0)} of exposed labour and plant` : `Tool output ${fmtMoney(w.tool_rain_cost)} × (current exposed pool ${fmtMoney(w.exposed_pool)} ÷ tool-run pool ${fmtMoney(w.tool_pool)})`, w.direct_productivity],
     ["Critical-path time-related preliminaries", `${fmtNum(Math.round(w.critical_path_delay_wd * 1000) / 1000)} WD delay × ${fmtMoney(w.daily_prelims)} per day`, w.critical_path_prelims],
     ["Additional billed hire / facilities", `${fmtNum(w.additional_weeks)} weeks × ${fmtMoney(w.weekly_hire)} per week`, w.billed_hire],
     ["Project recovery / remediation", "Entered separately; default nil to avoid double counting", w.recovery],
   ];
   return (
     <>
-      <PageHeader title="Weather risk" sub="The weather allowance (CA10) is calculated from the approved weather tool's outputs, scaled to the labour and plant that is actually exposed to weather in this estimate." />
+      <PageHeader title="Weather risk" sub={est.weather.live ? "The weather allowance (CA10) is worked out by the platform from NIWA climate normals and the weather-exposed activities listed below." : "The weather allowance (CA10) is calculated from the approved weather tool's outputs, scaled to the labour and plant that is actually exposed to weather in this estimate."} />
       <div className="grid gap-4 lg:grid-cols-3">
         <Panel className="lg:col-span-2" title="Allowance calculation" flush>
           <div className="overflow-x-auto">
@@ -42,10 +43,11 @@ export function Weather({ est }: { est: Estimate }) {
             <div><dt className="label">Start (assumed)</dt><dd className="mt-0.5">{m.start}</dd></div>
             <div><dt className="label">Tool</dt><dd className="mt-0.5">{m.tool_version}</dd></div>
             <div><dt className="label">Weather-exposed labour + plant</dt><dd className="mt-0.5 font-mono">{fmtMoney(w.exposed_pool)}</dd></div>
-            <div><dt className="label">Confidence</dt><dd className="mt-1 leading-snug"><Chip tone="amber">Amber</Chip> <span className="text-muted-foreground">{m.confidence?.replace(/^AMBER - /, "")}</span></dd></div>
+            <div><dt className="label">Confidence</dt><dd className="mt-1 leading-snug"><Chip tone={/^RED/.test(m.confidence ?? "") ? "red" : "amber"}>{/^RED/.test(m.confidence ?? "") ? "Red" : "Amber"}</Chip> <span className="text-muted-foreground">{m.confidence?.replace(/^(AMBER|RED) - /, "")}</span></dd></div>
           </dl>
         </Panel>
       </div>
+      <WeatherLive est={est} />
       <p className="mt-4 text-sm text-muted-foreground">{m.rerun_status}</p>
     </>
   );

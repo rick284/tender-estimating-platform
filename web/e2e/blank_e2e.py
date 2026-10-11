@@ -74,6 +74,15 @@ with sync_playwright() as p:
     bar = pg.locator("div.fixed.bottom-0").inner_text()
     assert fmt(expected) in bar, ("bar", bar)
     pg.screenshot(path=SHOTS + "bl_4_consolidated.png")
+    # Remove must really remove the package (and re-adding it must work)
+    no_overlay = compute_estimate(apply_edits(blank_from_template(tpl, "x", {}), EDITS[:4])[0])["summary"]["all_in"]
+    pg.get_by_role("button", name="Remove Smith Concrete").click(); pg.wait_for_timeout(1200)
+    assert fmt(no_overlay) in pg.locator("div.fixed.bottom-0").inner_text(), ("after remove", pg.locator("div.fixed.bottom-0").inner_text())
+    pg.get_by_role("button", name="Add subcontract package").click()
+    dlg = pg.locator("dialog[open]").last
+    dlg.get_by_label("Package").fill("Smith Concrete"); dlg.get_by_label("Amount excl. GST").fill("5000"); dlg.get_by_role("button", name="Add package").click()
+    pg.wait_for_timeout(1200)
+    assert fmt(expected) in pg.locator("div.fixed.bottom-0").inner_text(), ("after re-add", pg.locator("div.fixed.bottom-0").inner_text())
     pg.get_by_role("button", name="Review & save").click()
     dlg = pg.locator("dialog[open]").last
     dlg.locator("textarea").fill("First pass: strip and concrete sub")

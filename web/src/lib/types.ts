@@ -73,3 +73,6 @@ export interface Diff {
   counts: Record<string, number>;
   identical: boolean;
 }
+
+export interface WeatherTask { name: string; category: string; rain_exposure: number; rain_loss: number; carryover: number; wind_sensitivity: number; wind_loss: number; nonrecoverable: number; basis: string }
+export interface WeatherCatalog { version: string; engine_from: string; engine_to: string; attribution: string; stations: string[]; wind_proxy_stations: string[]; tasks: WeatherTask[] }

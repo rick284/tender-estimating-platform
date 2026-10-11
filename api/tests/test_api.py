@@ -464,3 +464,10 @@ def test_weather_edit_errors_are_plain_422(client, auth):
     r = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth,
                     json={"edits": [{**WX_SETUP, "value": {"station": "Atlantis", "start": "2026-10-01"}}]})
     assert r.status_code == 422 and "station" in r.json()["detail"]
+
+
+def test_weather_catalog_requires_login_and_lists_stations_and_tasks(client, auth):
+    assert client.get("/api/weather/catalog").status_code == 401
+    c = client.get("/api/weather/catalog", headers=auth).json()
+    assert len(c["stations"]) == 30 and len(c["tasks"]) == 39 and "Auckland" in c["stations"] and c["wind_proxy_stations"] == ["Auckland"]
+    assert c["tasks"][2]["name"] == "Bulk earthworks" and c["tasks"][2]["rain_loss"] == 0.7
