@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -15,6 +16,7 @@ from tender_engine.edits import EditError, apply_edits
 from tender_engine.estimate import compute_estimate
 from tender_engine.inputs import from_json, to_json
 
+log = logging.getLogger("tender.api")
 router = APIRouter(prefix="/api/tenders", tags=["tenders"])
 
 
@@ -70,9 +72,12 @@ async def create_tender(file: UploadFile = File(...), name: str = Form(""), clie
 @router.get("/{tender_id}")
 async def get_tender(tender_id: str, user: dict[str, Any] = Depends(current_user)):
     t = await _tender(user, tender_id)
-    revs = await get_db().revisions.find({"tender_id": tender_id, "org_id": user["org_id"]},
-                                         {"estimate": 0}).sort("n", -1).to_list(200)
-    return {**_out(t), "revisions": [_rev_out(r) for r in revs]}
+    db = get_db()
+    # inputs and estimates are large; only fetch which revisions HAVE inputs, not the inputs themselves
+    revs = await db.revisions.find({"tender_id": tender_id, "org_id": user["org_id"]},
+                                   {"estimate": 0, "inputs": 0}).sort("n", -1).to_list(200)
+    editable = {d["_id"] async for d in db.revisions.find({"tender_id": tender_id, "org_id": user["org_id"], "inputs": {"$ne": None}}, {"_id": 1})}
+    return {**_out(t), "revisions": [_rev_out({**r, "inputs": True if r["_id"] in editable else None}) for r in revs]}
 
 
 class TenderPatch(BaseModel):
@@ -206,6 +211,7 @@ async def save_edits(tender_id: str, n: int, body: SaveIn, user: dict[str, Any] 
     note = body.note.strip()
     if len(note) < 5:
         raise HTTPException(422, "Write a short reason for the change (at least 5 characters).")
+    log.info("save start tender=%s base=#%s edits=%s", tender_id, n, len(body.edits))
     est, inputs, changes = await run_in_threadpool(_recalc, r["inputs"], body.edits)
     if not changes:
         raise HTTPException(409, "There are no changes to save.")
@@ -217,4 +223,5 @@ async def save_edits(tender_id: str, n: int, body: SaveIn, user: dict[str, Any] 
     await db.tenders.update_one({"_id": t["_id"], "org_id": user["org_id"]},
                                 {"$set": {"latest_rev": new_n, "summary": summarise(est, lab), "updated_at": now()}})
     await audit(db, user, "revision.edit", t["_id"], f"{lab} from #{n}: {len(changes)} changes")
+    log.info("save done tender=%s new=#%s changes=%s", tender_id, new_n, len(changes))
     return _rev_out(rev)

@@ -307,3 +307,21 @@ def test_reuploading_same_file_enables_editing_on_a_legacy_revision(client, auth
     assert client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [QTY]}).status_code == 200
     again = client.post(f"/api/tenders/{tid}/revisions", headers=auth, files={"file": ("a.xlsx", make_workbook())})
     assert again.status_code == 409                                                # now it IS a plain duplicate
+
+
+# ---------------------------------------------------------------- resilience
+def test_unexpected_error_returns_json_message_with_cors_and_reference(client, auth, monkeypatch):
+    import routes_tenders
+    async def boom(*a, **k):
+        raise RuntimeError("simulated database failure")
+    monkeypatch.setattr(routes_tenders, "_editable", boom)
+    r = client.post("/api/tenders/x/revisions/1/save", headers={**auth, "Origin": "http://localhost:5173"},
+                    json={"edits": [QTY], "note": "valid reason"})
+    assert r.status_code == 500
+    assert "reference" in r.json()["detail"] and "simulated" not in r.json()["detail"]      # no internals leaked
+    assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"          # browser can read it
+
+
+def test_database_self_check(client):
+    r = client.get("/api/health/db")
+    assert r.status_code == 200 and r.json() == {"database": "ok", "read": "ok", "write": "ok"}

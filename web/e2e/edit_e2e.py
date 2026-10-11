@@ -50,7 +50,8 @@ with sync_playwright() as p:
     pg.get_by_role("button", name="Review & save").click()
     dlg = pg.locator("dialog")
     expect(dlg.get_by_text("Save as new revision")).to_be_visible()
-    assert dlg.get_by_role("button", name="Save revision").is_disabled()          # reason required
+    dlg.get_by_role("button", name="Save revision").click()                          # no reason typed yet
+    expect(dlg.get_by_role("alert")).to_contain_text("Write a short reason")       # must explain, not silently do nothing
     pg.screenshot(path="tp/e2e/ed_4_save.png")
     dlg.locator("textarea").fill("Quantity and rate updated for testing; overhead to 12%")
     dlg.get_by_role("button", name="Save revision").click()

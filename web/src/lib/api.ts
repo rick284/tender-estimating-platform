@@ -21,11 +21,21 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (t) headers.set("Authorization", `Bearer ${t}`);
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   let res: Response;
-  try { res = await fetch(`${BASE}${path}`, { ...init, headers }); }
-  catch { throw new ApiError(0, "Can't reach the server. Check your connection and try again."); }
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 90_000);
+  try { res = await fetch(`${BASE}${path}`, { ...init, headers, signal: ctl.signal }); }
+  catch (e) {
+    throw new ApiError(0, e instanceof DOMException && e.name === "AbortError"
+      ? "The server took too long to answer (over 90 seconds). It may be waking up; wait a minute and try again."
+      : "Can't reach the server. Check your connection and try again.");
+  } finally { clearTimeout(timer); }
   if (!res.ok) {
-    let msg = `Request failed (${res.status})`;
-    try { const j = await res.json(); if (typeof j.detail === "string") msg = j.detail; } catch { /* ignore */ }
+    let msg = `The server returned an error (${res.status}).`;
+    try {
+      const j = await res.json();
+      if (typeof j.detail === "string") msg = j.detail;
+      else if (Array.isArray(j.detail) && j.detail[0]?.msg) msg = `Invalid request: ${j.detail[0].msg}`;
+    } catch { /* ignore */ }
     if (res.status === 401 && t) onUnauthorized();
     throw new ApiError(res.status, msg);
   }

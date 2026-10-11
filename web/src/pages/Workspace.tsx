@@ -79,8 +79,11 @@ function SaveEdits({ open, onClose, changes, defaultLabel, onSave }: { open: boo
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => { if (open) { setLabel(defaultLabel); setNote(""); setErr(""); } }, [open, defaultLabel]);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
   const submit = async (e: FormEvent) => {
-    e.preventDefault(); setBusy(true); setErr("");
+    e.preventDefault(); setErr("");
+    if (note.trim().length < 5) { setErr("Write a short reason for the change first (at least 5 characters). It is saved with the revision."); noteRef.current?.focus(); return; }
+    setBusy(true);
     try { await onSave(label, note); } catch (x) { setErr(x instanceof Error ? x.message : "Couldn't save."); } finally { setBusy(false); }
   };
   const input = "mt-1 w-full border bg-background px-3 text-sm focus:border-primary";
@@ -94,11 +97,11 @@ function SaveEdits({ open, onClose, changes, defaultLabel, onSave }: { open: boo
         </div>
         <label className="block"><span className="label">Revision name</span><input className={`${input} h-10`} value={label} maxLength={40} onChange={(e) => setLabel(e.target.value)} /></label>
         <label className="block"><span className="label">Reason for the change (required)</span>
-          <textarea className={`${input} py-2`} rows={3} value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} placeholder="For example: Quantity updated from Rev18 drawings" /></label>
+          <textarea ref={noteRef} className={`${input} py-2 ${err && note.trim().length < 5 ? "border-red-line" : ""}`} rows={3} value={note} maxLength={2000} onChange={(e) => { setNote(e.target.value); setErr(""); }} placeholder="For example: Quantity updated from Rev18 drawings" /></label>
         {err && <div role="alert" className="border border-red-line bg-red-bg px-4 py-3 text-sm text-red-fg">{err}</div>}
         <div className="flex justify-end gap-2">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Back</button>
-          <button className="btn btn-solid" disabled={busy || note.trim().length < 5}>{busy ? "Saving…" : "Save revision"}</button>
+          <button className="btn btn-solid" disabled={busy}>{busy ? "Saving…" : "Save revision"}</button>
         </div>
       </form>
     </Modal>
