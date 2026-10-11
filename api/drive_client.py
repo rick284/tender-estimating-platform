@@ -111,7 +111,7 @@ async def userinfo_email(id_token_or_access: str) -> str:
     return r.json().get("email", "") if r.status_code == 200 else ""
 
 
-async def walk(token: str, root_id: str, max_depth: int = 4, max_files: int = 3000) -> tuple[list[dict[str, Any]], bool]:
+async def walk(token: str, root_id: str, max_depth: int = 6, max_files: int = 3000) -> tuple[list[dict[str, Any]], bool]:
     """Recursive listing. Returns (files, truncated). Each item has path (folders above it) and folder (its parent path)."""
     items: list[dict[str, Any]] = []
     stack = [(root_id, "", 0)]

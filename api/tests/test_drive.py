@@ -59,6 +59,8 @@ def test_revision_parsing():
     assert split_revision("Spec.pdf")[1] is None
     assert split_revision("Issue for Tender.pdf")[1] is None
     assert split_revision("Plan v2.pdf")[1] == "2"
+    # first token wins: the trailing _Rev5 is the workbook's own version
+    assert split_revision("Estimate_Rev28_PAVEMENT_Rev5.xlsx") == ("estimate", "28")
 
 
 def test_latest_and_superseded():
@@ -68,6 +70,14 @@ def test_latest_and_superseded():
     assert r["A Rev34E.xlsx"]["latest"] and r["A Rev34C.xlsx"]["superseded_by"] == "A Rev34E.xlsx"
     assert r["A Rev34D.xlsx"]["latest"]                  # different folder: not compared
     assert r["Notes.docx"]["latest"] is None
+
+
+def test_series_with_different_suffixes_and_ties():
+    fs = [{"name": f"Est_Rev{n}_{t}_Rev5.xlsx", "folder": "06", "path": "06"} for n, t in [(24, "ESC"), (26, "CONSOL"), (28, "PAVEMENT")]]
+    fs += [{"name": "Dwg RevB Site.pdf", "folder": "", "path": ""}, {"name": "Dwg RevB Landscape.pdf", "folder": "", "path": ""}]
+    r = {f["name"]: f for f in analyse(fs)["files"]}
+    assert [r[f"Est_Rev{n}_{t}_Rev5.xlsx"]["latest"] for n, t in [(24, "ESC"), (26, "CONSOL"), (28, "PAVEMENT")]] == [False, False, True]
+    assert r["Dwg RevB Site.pdf"]["latest"] and r["Dwg RevB Landscape.pdf"]["latest"]   # same series+revision: neither hides the other
 
 
 def test_structure_check():

@@ -112,7 +112,7 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
                     <Stat label="Superseded" value={fmtNum(listing.counts.superseded)} sub="a newer revision sits beside it" />
                     <Stat label="Loose in main folder" value={fmtNum(listing.counts.loose_in_root)} sub="not filed in 01–07" />
                   </div>
-                  {listing.truncated && <div className="border border-amber-line bg-amber-bg px-4 py-3 text-sm text-amber-fg">This folder is very large; only part of it was read.</div>}
+                  {listing.truncated && <div className="border border-amber-line bg-amber-bg px-4 py-3 text-sm text-amber-fg">Some deeper subfolders were not read (the folder is very large or nested more than six levels).</div>}
                   <Panel title="Issued-pack folders (01–07)">
                     <ul className="grid gap-1.5 text-sm sm:grid-cols-2">
                       {listing.structure.map((s) => (

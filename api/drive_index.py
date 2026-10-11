@@ -15,13 +15,15 @@ _REV = re.compile(r"(?<![A-Za-z0-9])(?:rev(?:ision)?|issue|ver(?:sion)?|v|r)[ _.
 
 
 def split_revision(name: str) -> tuple[str, str | None]:
-    """'Hobsonville_Rev34E.xlsx' -> ('hobsonville', 'REV34E'). Takes the LAST revision-looking token in the name."""
+    """'Hobsonville_Rev34E.xlsx' -> ('hobsonville', '34E'). Uses the FIRST revision token (the document's own revision; later
+    ones such as '..._Rev28_PAVEMENT_Rev5.xlsx' are the workbook's internal version). The base name is the text BEFORE that token, so
+    'Estimate_Rev24_ESC' and 'Estimate_Rev28_PAVEMENT' compare as the same document series."""
     stem = re.sub(r"\.[A-Za-z0-9]{1,5}$", "", name)
     found = list(_REV.finditer(stem))
     if not found:
         return _base(stem), None
-    m = found[-1]
-    return _base(stem[:m.start()] + " " + stem[m.end():]), m.group(1).upper()
+    m = found[0]
+    return _base(stem[:m.start()]), m.group(1).upper()
 
 
 def _base(s: str) -> str:
@@ -54,12 +56,12 @@ def analyse(files: list[dict[str, Any]]) -> dict[str, Any]:
             members[0]["latest"] = True
             continue
         kinds = {_rank(m["revision"])[0] >= 0 for m in members}
-        top = max(members, key=lambda m: _rank(m["revision"]))
+        best = max(_rank(m["revision"]) for m in members)
         if len(kinds) > 1:
             ambiguous += 1
         for m in members:
-            m["latest"] = m is top
-            m["superseded_by"] = None if m is top else top["name"]
+            m["latest"] = _rank(m["revision"]) == best
+            m["superseded_by"] = None if m["latest"] else next(x["name"] for x in members if _rank(x["revision"]) == best)
             if len(kinds) > 1:
                 m["ambiguous"] = True
     return {"files": out, "ambiguous_groups": ambiguous}
