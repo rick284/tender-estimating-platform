@@ -29,3 +29,15 @@ def _jwt_secret() -> str:
 JWT_SECRET = _jwt_secret()
 if IS_PROD and not MONGO_URL:
     raise RuntimeError("MONGO_URL must be set in production")
+
+# Google Drive (read-only). All optional: without them the Drive features say "not set up yet".
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+# Where Google sends the user back after they approve: <API URL>/api/drive/callback
+GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/drive/callback").strip()
+# Where the browser lands after connecting (the website).
+WEB_URL = os.environ.get("WEB_URL", "http://localhost:5173").strip().rstrip("/")
+# Key that encrypts stored Google tokens. In production it must be set (any long random string).
+TOKEN_ENC_KEY = os.environ.get("TOKEN_ENC_KEY", "").strip()
+if IS_PROD and GOOGLE_CLIENT_ID and len(TOKEN_ENC_KEY) < 32:
+    raise RuntimeError("TOKEN_ENC_KEY must be set (32+ random characters) when Google Drive is configured")

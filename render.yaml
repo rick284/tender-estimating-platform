@@ -22,3 +22,14 @@ services:
         sync: false          # the email address of the workspace owner
       - key: REGISTRATION_OPEN
         value: "false"
+      # Google Drive (read-only) - see docs/DRIVE_SETUP.md. Leave the first two blank until the Google steps are done.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        value: https://tender-platform-api.onrender.com/api/drive/callback
+      - key: WEB_URL
+        value: https://tender-estimating-platform.netlify.app
+      - key: TOKEN_ENC_KEY
+        generateValue: true  # encrypts the saved Google connection

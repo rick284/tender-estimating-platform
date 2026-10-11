@@ -101,3 +101,9 @@ Do NOT commit client/tender files into this repo without asking; the Rev34E valu
 - Old revisions: server fills missing schedule/register/quotes/programme from saved inputs; re-uploading the same original workbook adds register/quotes/programme to a revision saved without them.
 - e2e: `quotes_e2e.py`, `programme_e2e.py`, `weather_fill_e2e.py`.
 - Not yet: zipped issue pack (needs Drive/Gmail documents), scope/interface markup (06, needs the drawing viewer), then AI drafting from documents, mailbox, Drive, Xero, learning loop/actuals.
+
+## Phase 3a done (Drive access, read-only) - code complete, NOT yet connected live
+- Per-company Google Drive connection, scope `drive.readonly` only (client only issues GETs; test asserts it). `api/drive_client.py` (OAuth + listing, injectable httpx transport, Fernet-encrypted refresh token), `api/routes_drive.py` (`/api/drive/status|connect|callback|connection|folders`, per-tender `/api/drive/tenders/{id}` PUT/GET/DELETE link and `/files` listing), `api/drive_index.py` (pure: revision token parsing, latest vs superseded within the same folder, 01-07 folder check). Tokens in `integrations` collection; tender stores `drive_folder`. Audit events drive.connect/disconnect/link_folder/list. Mixed number/letter revisions are flagged "Check latest".
+- UI: tender nav "Drive Documents" (`web/src/pages/DriveDocs.tsx`): connect, folder picker, file table, structure check. e2e `web/e2e/drive_e2e.py` stubs the API in the browser.
+- Env vars (render.yaml): GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET (Rick to create, walkthrough `docs/DRIVE_SETUP.md`), GOOGLE_REDIRECT_URI, WEB_URL, TOKEN_ENC_KEY. Live OAuth not yet tested against real Google.
+- Not yet: add a Drive file to the register/quotes as evidence, reading file contents (needed for AI drafting), Gmail.

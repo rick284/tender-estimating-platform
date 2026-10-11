@@ -18,6 +18,7 @@ from db import ensure_indexes, get_db           # noqa: E402
 from routes_auth import router as auth_router   # noqa: E402
 from routes_tenders import router as tenders_router  # noqa: E402
 from routes_weather import router as weather_router  # noqa: E402
+from routes_drive import router as drive_router  # noqa: E402
 
 
 log = logging.getLogger("tender.api")
@@ -49,11 +50,12 @@ async def never_fail_silently(request: Request, call_next):
         return JSONResponse(status_code=500, content={"detail": f"The server hit an unexpected problem (reference {ref}). Please try again; if it keeps happening, quote this reference."})
 
 
-app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["GET", "POST", "PATCH", "DELETE"],
+app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
                    allow_headers=["Authorization", "Content-Type"])
 app.include_router(auth_router)
 app.include_router(tenders_router)
 app.include_router(weather_router)
+app.include_router(drive_router)
 
 
 @app.get("/api/health")

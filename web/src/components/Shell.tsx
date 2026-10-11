@@ -13,6 +13,7 @@ export const TENDER_NAV = [
   { id: "weather", label: "Weather Risk", icon: CloudRain },
   { id: "register", label: "Register", icon: ClipboardList },
   { id: "quotes", label: "Quotes", icon: Handshake },
+  { id: "drive", label: "Drive Documents", icon: FolderOpen },
   { id: "outputs", label: "Client Outputs", icon: FileText },
   { id: "library", label: "Rate Library", icon: Library },
   { id: "revisions", label: "Revisions", icon: GitCompare },

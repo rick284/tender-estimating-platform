@@ -63,7 +63,23 @@ async function download(path: string): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+export interface DriveStatus { configured: boolean; connected: boolean; account: string; connected_at: string | null; read_only: boolean; standard_folders: string[] }
+export interface DriveFile { id: string; name: string; path: string; mime: string; is_folder: boolean; modified: string; size: number | null; link: string; revision: string | null; latest: boolean | null; superseded_by: string | null; in_archive: boolean; ambiguous?: boolean }
+export interface DriveListing {
+  folder: { id: string; name: string; url: string }; files: DriveFile[]; truncated: boolean;
+  structure: { number: string; label: string; found: boolean; actual: string | null; exact: boolean }[];
+  counts: { files: number; latest_revisions: number; superseded: number; ambiguous_groups: number; loose_in_root: number };
+}
+
 export const api = {
+  driveStatus: () => request<DriveStatus>("/api/drive/status"),
+  driveConnect: (tender: string) => request<{ url: string }>(`/api/drive/connect?tender=${encodeURIComponent(tender)}`),
+  driveDisconnect: () => request<{ ok: boolean }>("/api/drive/connection", { method: "DELETE" }),
+  driveFolders: (parent: string) => request<{ parent: string; folders: { id: string; name: string }[] }>(`/api/drive/folders?parent=${encodeURIComponent(parent)}`),
+  driveTender: (id: string) => request<{ folder: { id: string; name: string; url: string; linked_at: string } | null }>(`/api/drive/tenders/${id}`),
+  driveLink: (id: string, folderId: string) => request<{ folder: { id: string; name: string; url: string } }>(`/api/drive/tenders/${id}`, { method: "PUT", body: JSON.stringify({ folder_id: folderId }) }),
+  driveUnlink: (id: string) => request<{ ok: boolean }>(`/api/drive/tenders/${id}`, { method: "DELETE" }),
+  driveFiles: (id: string) => request<DriveListing>(`/api/drive/tenders/${id}/files`),
   downloadOutput: (id: string, n: number, kind: "report.pdf" | "schedule.pdf" | "pricing.xlsx" | "verification-index.pdf" | "evidence-notes.pdf" | "programme.xlsx") => download(`/api/tenders/${id}/revisions/${n}/outputs/${kind}`),
   authConfig: () => request<{ registration_open: boolean; first_account: boolean }>("/api/auth/config"),
   login: (email: string, password: string) => request<{ token: string; user: User }>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
