@@ -22,6 +22,8 @@ export interface Estimate {
   library: { code: string; category: string; description: string; unit: string; rate: number; operator_included: string; fuel_included: string; source: string }[];
   weather: Record<string, any>;
   schedule: PriceSchedule;
+  register: RegisterItem[];
+  register_summary: { rfis: number; open_rfis: number; open_red_rfis: number; red_risks: number };
   reconciliation: { name: string; engine: number; workbook: number; difference: number; ok: boolean }[];
   qa_counts: Record<string, number>;
   reconciled: boolean | null;
@@ -85,4 +87,10 @@ export interface PriceSchedule {
   auto: boolean; name: string; client: string; reconciles: boolean; problems: string[]; total: number; all_in: number; difference: number; gross_package: number;
   groups: ScheduleGroup[]; unmapped: { key: string; label: string; amount: number }[]; sources: ScheduleSource[];
   targets: { value: string; label: string; group: string }[];
+}
+
+export type RegisterKind = "rfi" | "risk" | "assumption" | "exclusion" | "inclusion" | "document";
+export interface RegisterItem {
+  id: string; kind: RegisterKind; ref: string; title: string; detail: string; action: string; status: string; rag: string;
+  owner: string; likelihood: string; impact: string; rating: string;
 }

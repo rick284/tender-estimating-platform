@@ -59,6 +59,7 @@ def blank_from_template(template: MasterWorkbookImport, project: str, intake: di
                "rerun_status": "Weather tool not yet run for this tender"})
     # keep rates and switches (overhead, margin, GST ...), clear every job-specific dollar amount
     commercial = [{**c, "pc_sum": D(0)} for c in copy.deepcopy(template.commercial)]
+    register = _register_from_intake(fields)
     controls = {k: "" for k in template.controls}
     controls["release_status"] = "NOT RELEASED"
     return MasterWorkbookImport(
@@ -69,4 +70,24 @@ def blank_from_template(template: MasterWorkbookImport, project: str, intake: di
         risk_feed={k: D(0) for k in template.risk_feed}, overlays=[], overlap=D(0), weather_meta=wm,
         weather_links={"daily_row": 0, "hours_per_day": template.weather_links.get("hours_per_day", 8),
                        "weekly_rows": [], "daily_uid": "", "weekly_uids": []},
-        controls=controls, reference=None)
+        controls=controls, reference=None, register=register)
+
+
+def _register_from_intake(fields: dict[str, str]) -> list[dict[str, Any]]:
+    """The intake form's free-text boxes become register items, one per line, so they can be tracked and reported."""
+    import uuid
+    from . import register as reg
+    new_id = lambda: "R-" + uuid.uuid4().hex[:8]
+    items: list[dict[str, Any]] = []
+    items += reg.from_text("document", fields.get("drawings", ""), items, new_id)
+    items += reg.from_text("assumption", fields.get("assumptions", ""), items, new_id)
+    for line in fields.get("inclusions_exclusions", "").replace("\r", "").split("\n"):
+        text = line.strip(" -\u2022\t")
+        if text:
+            kind = "exclusion" if text.lower().startswith(("exclu", "excl", "by others", "not included", "no ")) else "inclusion"
+            items += reg.from_text(kind, text, items, new_id)
+    items += reg.from_text("rfi", fields.get("missing_info", ""), items, new_id)
+    for it in items:
+        if it["kind"] == "rfi":
+            it["rag"] = "AMBER"
+    return items

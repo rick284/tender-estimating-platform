@@ -17,6 +17,7 @@ from .qs import compute_qs
 from .weather import compute_weather, baseline_billed_weeks
 from .weather_setup import exposed_by_qs, run_setup
 from .schedule import auto_map, compute_schedule, default_schedule
+from .register import status_summary as register_status_summary
 from .models import WeatherToolRun
 
 
@@ -200,6 +201,7 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
         "consolidated": consolidated_out, "tender": tender_out, "commercial": commercial_out,
         "qs": qs_out, "sections": sections, "buildup": buildup, "library": library, "weather": weather_out,
         "reconciliation": reconciliation, "qa_counts": flag_counts, "schedule": schedule_out,
+        "register": m.register, "register_summary": register_status_summary(m.register),
         "reconciled": all(r["ok"] for r in reconciliation) if m.reference is not None else None,
         "edited": m.reference is None,
     }

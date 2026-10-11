@@ -524,3 +524,37 @@ def test_old_revision_without_schedule_gets_one_rebuilt_and_outputs_work(client,
     assert "schedule" not in client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]
     r = client.get(f"/api/tenders/{tid}/revisions/1/outputs/report.pdf", headers=auth)
     assert r.status_code == 409 and "Upload its workbook again" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------- tender register
+@pytest.mark.skipif(not (PRIVATE / "Rev34E.xlsx").exists(), reason="private workbook not present")
+def test_register_is_read_from_the_workbook_and_added_to_an_older_revision(client, auth):
+    import asyncio, db as dbmod
+    data = (PRIVATE / "Rev34E.xlsx").read_bytes()
+    r = up(client, auth, data=data, name="Rev34E.xlsx")
+    assert r.status_code == 200, r.text
+    tid = r.json()["id"]
+    est = client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]
+    assert est["register_summary"] == {"rfis": 18, "open_rfis": 15, "open_red_rfis": 4, "red_risks": 2} and len(est["register"]) == 50
+
+    async def make_old():                       # a revision saved before registers existed
+        d = dbmod.get_db()
+        doc = await d.revisions.find_one({"tender_id": tid})
+        inp = doc["inputs"]; inp.pop("register", None)
+        est_ = doc["estimate"]; [est_.pop(k, None) for k in ("register", "register_summary")]
+        await d.revisions.update_one({"_id": doc["_id"]}, {"$set": {"inputs": inp, "estimate": est_}})
+    asyncio.run(make_old())
+    assert client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]["register"] == []
+    up_ = client.post(f"/api/tenders/{tid}/revisions", headers=auth, files={"file": ("Rev34E.xlsx", data)})
+    assert up_.status_code == 200 and up_.json().get("upgraded") is True
+    assert len(client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]["register"]) == 50
+    assert client.post(f"/api/tenders/{tid}/revisions", headers=auth, files={"file": ("Rev34E.xlsx", data)}).status_code == 409   # now truly a duplicate
+
+
+def test_register_edits_via_api(client, auth):
+    tid = _tender(client, auth)
+    add = {"target": "register", "op": "add", "key": "R-test0001", "value": {"kind": "rfi", "title": "Confirm access", "rag": "RED"}}
+    pv = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [add]})
+    assert pv.status_code == 200 and pv.json()["estimate"]["register_summary"]["open_red_rfis"] == 1
+    assert client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [{**add, "value": {"kind": "rfi"}}]}).status_code == 422
+    assert client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": [add], "note": "Added an RFI"}).status_code == 200

@@ -169,6 +169,11 @@ async def add_revision(tender_id: str, file: UploadFile = File(...), label: str 
     data, est, inputs = await read_workbook(file)
     digest = sha256(data)
     dup = await db.revisions.find_one({"tender_id": t["_id"], "source_sha256": digest})
+    if dup and dup.get("inputs") and dup.get("parent_n") is None and "register" not in dup["inputs"] and inputs.get("register"):
+        # Saved before the tender register existed: add the register read from the same workbook. Nothing else changes.
+        await db.revisions.update_one({"_id": dup["_id"]}, {"$set": {"inputs.register": inputs["register"]}})
+        await audit(db, user, "revision.add_register", t["_id"], f"{dup['label']} (n={dup['n']})")
+        return {**_rev_out({**dup, "inputs": dup["inputs"]}), "upgraded": True}
     if dup and not dup.get("inputs"):
         # Saved before editing existed: attach the inputs so it can be edited. The stored estimate is left untouched.
         await db.revisions.update_one({"_id": dup["_id"]}, {"$set": {"inputs": inputs}})
@@ -199,10 +204,11 @@ async def _estimate(user: dict[str, Any], tender_id: str, n: int) -> dict[str, A
 async def _estimate_with_schedule(r: dict[str, Any]) -> dict[str, Any]:
     """Revisions saved before price schedules existed get one rebuilt from their saved inputs (the stored estimate is left untouched)."""
     est = r["estimate"]
-    if "schedule" in est or not r.get("inputs"):
+    missing = [k for k in ("schedule", "register", "register_summary") if k not in est]
+    if not missing or not r.get("inputs"):
         return est
     fresh = await run_in_threadpool(lambda: compute_estimate(from_json(r["inputs"])))
-    return {**est, "schedule": fresh["schedule"]}
+    return {**est, **{k: fresh[k] for k in missing}}
 
 
 @router.get("/{tender_id}/revisions/{n}")

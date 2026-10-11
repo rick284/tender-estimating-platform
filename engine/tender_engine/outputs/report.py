@@ -59,6 +59,16 @@ def _bullets(items: list[str]) -> list[Paragraph]:
     return [Paragraph(_esc(x), BUL, bulletText="•") for x in items if x]
 
 
+def _first_sentence(text: str, limit: int = 220) -> str:
+    t = " ".join((text or "").split())
+    head, sep, rest = t.partition(": ")
+    if sep and len(head) <= 90 and (head.upper() == head or head.upper().startswith(("RFI-", "RT"))):        # drop a repeated "RFI-06 / EARTHWORKS - OPEN RED:" label
+        t = rest
+    cut = t[:limit]
+    i = max(cut.rfind(". "), cut.rfind("; "))
+    return (cut[: i + 1] if 60 < i < limit else cut + ("..." if len(t) > limit else "")).strip()
+
+
 def _lines(text: str) -> list[str]:
     return [x.strip(" -•\t") for x in text.replace("\r", "").split("\n") if x.strip()]
 
@@ -168,15 +178,36 @@ def report_pdf(est: dict[str, Any], ctx: OutputContext, intake: dict[str, str] |
     story.append(Spacer(1, 6))
     story.append(KeepTogether(_table(rows, [62 * mm, 38 * mm, W - 100 * mm], bold_rows=(1,), right=(1,))))
 
+    reg = est.get("register") or []
+    of = lambda kind: [x for x in reg if x["kind"] == kind]
+    blockers = [x for x in of("rfi") if x["status"] != "CLOSED" and x["rag"] == "RED"]
+    if blockers:
+        story.append(Paragraph("Current decision blockers", H3))
+        story += _bullets([f"{x['ref']} - {x['title']}: {_first_sentence(x['detail'] or x['title'])}" for x in blockers])
+
     # 2 scope / project understanding (only what the estimator has recorded)
-    scope_bits = [("Scope", intake.get("scope") or meta.get("scope", "")), ("Drawings and documents", intake.get("drawings") or meta.get("drawings", "")),
-                  ("Contract type", intake.get("contract_type", "")), ("Pricing basis", intake.get("pricing_basis", ""))]
-    if any(v for _, v in scope_bits):
+    scope_bits = [("Scope", intake.get("scope") or meta.get("scope", "")), ("Contract type", intake.get("contract_type", "")), ("Pricing basis", intake.get("pricing_basis", ""))]
+    docs = of("document")
+    if any(v for _, v in scope_bits) or docs or intake.get("drawings") or meta.get("drawings"):
         sec("Project Understanding and Basis Documents")
         for k, v in scope_bits:
             if v:
                 story.append(Paragraph(_esc(k), H3))
                 story += _bullets(_lines(v)) if "\n" in v else [Paragraph(_esc(v), BASE)]
+        if docs:
+            story.append(Paragraph("Basis documents", H3))
+            rows = [["Source", "Revision / date", "Estimate use", "Status"]] + [[x["title"], x["ref"], x["detail"][:300], x["status"]] for x in docs]
+            story.append(_table(rows, [48 * mm, 52 * mm, W - 48 * mm - 52 * mm - 22 * mm, 22 * mm]))
+        elif intake.get("drawings") or meta.get("drawings"):
+            story.append(Paragraph("Drawings and documents", H3))
+            v = intake.get("drawings") or meta.get("drawings", "")
+            story += _bullets(_lines(v)) if "\n" in v else [Paragraph(_esc(v), BASE)]
+    if of("inclusion"):
+        sec("Scope Included")
+        story += _bullets([x["title"] + (f": {x['detail']}" if x["detail"] and x["detail"] != x["title"] else "") for x in of("inclusion")])
+    if of("exclusion"):
+        sec("Exclusions and By Others")
+        story += _bullets([x["detail"] or x["title"] for x in of("exclusion")])
 
     # 3 pricing basis
     sec("Pricing Basis and Summary")
@@ -260,14 +291,35 @@ def report_pdf(est: dict[str, Any], ctx: OutputContext, intake: dict[str, str] |
             story.append(Spacer(1, 3))
             story.append(Paragraph(_esc(wm["rerun_status"]), SMALL))
 
-    # 7 inclusions, exclusions, assumptions, open information
-    blocks = [("Inclusions and Exclusions", intake.get("inclusions_exclusions", "")), ("Estimate Assumptions", intake.get("assumptions", "")),
-              ("Programme Constraints", intake.get("programme", "")), ("Site Constraints", intake.get("site_constraints", "")),
-              ("Information Still Required (RFIs)", intake.get("missing_info", ""))]
-    for title, text in blocks:
-        if text.strip():
+    # 7 assumptions, constraints, risks and open information (from the register, else the intake text)
+    if of("assumption"):
+        sec("Estimate Assumptions")
+        story += _bullets([x["detail"] or x["title"] for x in of("assumption")])
+    elif intake.get("assumptions", "").strip():
+        sec("Estimate Assumptions")
+        story += _bullets(_lines(intake["assumptions"]))
+    for title, key in (("Programme Constraints", "programme"), ("Site Constraints", "site_constraints")):
+        if intake.get(key, "").strip():
             sec(title)
-            story += _bullets(_lines(text))
+            story += _bullets(_lines(intake[key]))
+    if not of("exclusion") and not of("inclusion") and intake.get("inclusions_exclusions", "").strip():
+        sec("Inclusions and Exclusions")
+        story += _bullets(_lines(intake["inclusions_exclusions"]))
+    if of("risk"):
+        sec("Risk Basis")
+        rows = [["Material uncertainty", "Tender baseline / treatment", "Outside baseline / closeout", "Rating"]]
+        for x in of("risk"):
+            rows.append([f"{x['ref']} {x['title']}", x["detail"][:420], x["action"][:300], x["rag"] or x["status"]])
+        story.append(_table(rows, [50 * mm, 62 * mm, W - 50 * mm - 62 * mm - 18 * mm, 18 * mm]))
+    if of("rfi"):
+        sec("Pricing Qualifications and RFIs")
+        rows = [["Ref", "Item", "Status", "Detail"]]
+        for x in sorted(of("rfi"), key=lambda r: (r["status"] == "CLOSED", r["ref"])):
+            rows.append([x["ref"], x["title"], (x["status"] + (f" / {x['rag']}" if x["rag"] else "")), _first_sentence(x["detail"], 260)])
+        story.append(_table(rows, [20 * mm, 46 * mm, 24 * mm, W - 90 * mm]))
+    elif intake.get("missing_info", "").strip():
+        sec("Information Still Required (RFIs)")
+        story += _bullets(_lines(intake["missing_info"]))
 
     # release controls
     if ct.get("red_risks") not in (None, "") or ct.get("rate_green") not in (None, ""):

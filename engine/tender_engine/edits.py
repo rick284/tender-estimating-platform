@@ -24,6 +24,9 @@ An edit is {"target", "key", "field", "value"} (set a value) or {"target", "op":
              delete key = "format"  (back to the automatic schedule by QS section)
   schedule_map set  key = source ("qs:EW01" | "ca:CA10" | "overlay:Name")  field = "to"  value: "line:REF" | "group:ID" | "spread" |
                        JSON list of parts | "" (unmap)
+  register   add    key = new id ("R-xxxxxx")  value: kind (document|inclusion|exclusion|assumption|rfi|risk), title / detail / ref / ...
+             set    key = id   field: ref | title | detail | action | status | rag | owner | likelihood | impact | rating
+             delete key = id
   weather_activity  add key = new id ("W-xxxxxx")  value: task, start, finish, critical?, qs_codes?, labour?, plant?, note?, ov_*?
              set    key = id   field: task | start | finish | critical | qs_codes | labour | plant | note | ov_<factor>
              delete key = id
@@ -44,6 +47,7 @@ from .models import BuildUpRow, LibraryRate, Overlay, QSItem, MODES
 from .money import D
 from . import weather_setup as wx
 from . import schedule as sch
+from . import register as reg
 import json
 
 ROW_NUMERIC_NULLABLE = {"productivity_rate", "duration_override_hrs", "count", "manual_qty", "utilisation", "waste", "job_rate_override"}
@@ -140,6 +144,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     links = copy.deepcopy(base.weather_links)
     setup = wx.clone(base.weather_setup)
     sched = copy.deepcopy(base.schedule)
+    register = copy.deepcopy(base.register)
     sched_before = copy.deepcopy(base.schedule)
     setup_before = wx.clone(base.weather_setup)
 
@@ -408,6 +413,28 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
                             wx._num(p_["amount"], "Split amount", hi=D("1e12"))
                 sched["map"][src_key] = v
 
+        elif target == "register":
+            try:
+                if op == "add":
+                    rid = str(key or "")
+                    if not reg.ITEM_ID.match(rid) or any(x["id"] == rid for x in register):
+                        raise EditError("That new register item's identity is invalid or already used.")
+                    if len(register) >= reg.MAX_ITEMS:
+                        raise EditError(f"The register can hold at most {reg.MAX_ITEMS} items.")
+                    register.append(reg.build_item(rid, value if isinstance(value, dict) else {}, register))
+                else:
+                    item = next((x for x in register if x["id"] == str(key)), None)
+                    if item is None:
+                        raise EditError(f"Unknown register item {key!r}.")
+                    if op == "delete":
+                        register.remove(item)
+                    else:
+                        reg.set_field(item, str(field), value)
+                        if item["ref"] and sum(1 for x in register if x["kind"] == item["kind"] and x["ref"] == item["ref"]) > 1:
+                            raise EditError(f"{item['ref']} is already used.")
+            except reg.RegisterError as ex:
+                raise EditError(str(ex))
+
         elif target == "setting":
             if (key, field) == ("weather", "recovery_allowance"):
                 recovery = _num(value, "Weather recovery allowance")
@@ -428,7 +455,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     m.qs_extra = {q.item.code: q.extra for q in keep_qs}
     m.library = library
     m.commercial, m.overlays, m.recovery, m.overlap = commercial, overlays, recovery, overlap
-    m.weather_links, m.weather_setup, m.schedule = links, setup, sched
+    m.weather_links, m.weather_setup, m.schedule, m.register = links, setup, sched, register
     m.reference = None            # no longer the workbook as received
     return m, _net_changes(base, m, rows, qs, new_library)
 
@@ -493,6 +520,7 @@ def _net_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, rows: list[_R
             add("overlay", name, "added", name, "", f"{_fmt(y.amount)} · {y.kind}")
     _weather_changes(a, b, add)
     _schedule_changes(a, b, add)
+    _register_changes(a, b, add)
     add("setting", "weather", "recovery_allowance", "Weather recovery allowance", D(a.recovery), D(b.recovery))
     add("setting", "consolidated", "confirmed_overlap", "Confirmed Siteworks / Coast overlap", D(a.overlap), D(b.overlap))
     return out
@@ -548,3 +576,17 @@ def _schedule_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> 
     dump = lambda v: "" if v is None else (v if isinstance(v, str) else json.dumps(v))
     for k in sorted(set(base_map) | set(sb["map"])):
         add("schedule_map", k, "to", f"Price schedule: {k.split(':', 1)[1]}", dump(base_map.get(k)), dump(sb["map"].get(k)))
+
+
+def _register_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:
+    ia, ib = {x["id"]: x for x in a.register}, {x["id"]: x for x in b.register}
+    label = lambda x: f"{x['kind'].upper()} {x['ref']} {x['title']}".strip()[:120]
+    for rid, x in ia.items():
+        if rid not in ib:
+            add("register", rid, "removed", label(x), x["title"][:80], "")
+        else:
+            for f in reg.FIELDS:
+                add("register", rid, f, label(x), x[f], ib[rid][f])
+    for rid, y in ib.items():
+        if rid not in ia:
+            add("register", rid, "added", label(y), "", y["title"][:80])

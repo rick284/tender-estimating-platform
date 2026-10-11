@@ -48,6 +48,7 @@ class MasterWorkbookImport:
     reference: dict[str, float] | None = None   # totals the source workbook displayed (None once edited)
     weather_setup: dict | None = None            # live weather-tool setup (tender_engine.weather_setup); None = recorded tool outputs
     schedule: dict | None = None                 # client price schedule format + mapping (tender_engine.schedule); None = automatic
+    register: list = field(default_factory=list)  # tender register items (tender_engine.register)
     cached: Any = field(repr=False, default=None)
 
 
@@ -66,6 +67,76 @@ def _cover_meta(v) -> dict[str, str]:
     if snap:
         meta["snapshot"] = snap
     return meta
+
+
+def _title(text: str, limit: int = 140) -> str:
+    t = " ".join(text.split())
+    m = re.search(r"[:.](?:\s|$)", t[:limit]) or re.search(r"\s-\s", t[:limit])
+    cut = t[:m.start()] if m else t[:limit]
+    return (cut if len(cut) >= 12 else t[:limit]).strip(" -:")
+
+
+def _register_from_cover(ws) -> list[dict]:
+    """Document register, assumptions / exclusions, RFIs and key risks from the Cover & Instructions sheet (tolerant: nothing found -> [])."""
+    items: list[dict] = []
+    counts: dict[str, int] = {}
+
+    def add(kind: str, **kw: str) -> None:
+        counts[kind] = counts.get(kind, 0) + 1
+        item = {"id": f"R-{kind[:3]}{counts[kind]:03d}", "kind": kind, **{f: "" for f in ("ref", "title", "detail", "action", "status", "rag", "owner", "likelihood", "impact", "rating")}}
+        item.update({k: v[:3000] for k, v in kw.items()})
+        items.append(item)
+
+    def rfi(ref: str, text: str, title: str | None = None) -> None:
+        head = text.upper()[:200]
+        closed = bool(re.search(r"\bCLOSED\b", head))
+        red = bool(re.search(r"\bRED\b", head))
+        if title is None:
+            t = re.sub(r"^RFI-\d+[A-Z]?(\s*/\s*RFI-\d+[A-Z]?)*\s*[:/-]?\s*", "", text)
+            t = t.split(":", 1)[0] if ":" in t[:130] else _title(t)
+            t = re.sub(r"\b(CLOSED|OPEN RED|OPEN)\b", "", t)
+            t = re.sub(r"\s+", " ", re.sub(r"(\s[-/]\s*)+$", "", t)).strip(" -/:")
+            title = (t.title() if t.isupper() else t)[:200] or ref
+        add("rfi", ref=ref, title=title, detail=text, status="CLOSED" if closed else "OPEN", rag="" if closed else ("RED" if red else "AMBER"))
+
+    section = None
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
+        a = _s(row[0].value)
+        b = _s(row[1].value) if len(row) > 1 else ""
+        c = _s(row[2].value) if len(row) > 2 else ""
+        up = a.upper()
+        if up.startswith("DRAWING / DOCUMENT REGISTER"):
+            section = "doc"; continue
+        if up.startswith("ASSUMPTIONS / QUALIFICATIONS"):
+            section = "assume"; continue
+        if up.startswith("PRICING QUALIFICATIONS"):
+            section = "rfi"; continue
+        if up.startswith("KEY RISKS"):
+            section = "risk"; continue
+        if up.startswith(("TENDER RELEASE QA", "ARCHIVE")):
+            section = None; continue
+        if not section or not a:
+            continue
+        if section == "doc" and up != "DOCUMENT / DRAWING" and b:
+            add("document", title=a, ref=b, detail=c, status="CURRENT")
+        elif section == "assume" and b:
+            if re.fullmatch(r"A\d+", a):
+                add("assumption", ref=a, title=_title(b), detail=b)
+            elif re.fullmatch(r"EX-\d+", a):
+                add("exclusion", ref=a, title=_title(b), detail=b)
+        elif section == "rfi" and b:
+            if re.fullmatch(r"RFI-\d+[A-Z]?", a):
+                rfi(a, b)
+            elif up.startswith("NEW STAMPED RC"):
+                for part in b.split(" | "):
+                    m = re.match(r"^(RFI-\d+[A-Z]?)\s+(.*?)\s+-\s+((?:CLOSED|OPEN)[^:]*):\s*(.*)$", part.strip(), re.S)
+                    if m:
+                        rfi(m.group(1), f"{m.group(1)} {m.group(2)} - {m.group(3)}: {m.group(4)}", title=m.group(2).title())
+        elif section == "risk" and re.fullmatch(r"RT\d+", a):
+            status = _s(row[7].value) if len(row) > 7 else ""
+            add("risk", ref=a, title=b, likelihood=c, impact=_s(row[3].value), rating=_s(row[4].value), detail=_s(row[5].value), owner=_s(row[6].value),
+                status=status, rag=status.upper() if status.upper() in ("RED", "AMBER", "GREEN") else "")
+    return items
 
 
 def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
@@ -203,4 +274,4 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
         meta=_cover_meta(v), library=lib, qs=qs, qs_extra=qs_extra, rows=rows, row_extra=extra,
         excel_rows=excel_rows, tool=tool, recovery=D(wr["B16"].value), commercial=commercial,
         risk_feed=risk_feed, overlays=overlays, overlap=D(cp["B13"].value), weather_meta=weather_meta, weather_links=weather_links,
-        controls=controls, cached=v)
+        controls=controls, register=_register_from_cover(v["Cover & Instructions"]), cached=v)

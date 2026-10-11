@@ -17,6 +17,7 @@ import { BuildUp } from "./BuildUp";
 import { Weather } from "./Weather";
 import { RateLibrary } from "./Library";
 import { Outputs } from "./Outputs";
+import { Register } from "./Register";
 import { Revisions } from "./Revisions";
 import type { User } from "../lib/types";
 
@@ -321,6 +322,7 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
         {!err && shown && pg === "qs" && <QSTakeoff est={shown} openRows={(c) => { setCode(c); view("buildup"); }} onRowAdded={(uid, c) => { setCode(c); setFocusUid(uid); view("buildup"); }} />}
         {!err && shown && pg === "buildup" && <BuildUp est={shown} code={code} setCode={setCode} focusUid={focusUid} />}
         {!err && shown && pg === "weather" && <Weather est={shown} />}
+        {!err && shown && pg === "register" && <Register est={shown} />}
         {!err && shown && pg === "outputs" && <Outputs est={shown} tenderId={id} rev={cur} />}
         {!err && shown && pg === "library" && <RateLibrary est={shown} />}
         </ErrorBoundary>
