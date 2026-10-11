@@ -54,6 +54,7 @@ def to_json(m: MasterWorkbookImport) -> dict[str, Any]:
                         "basis": c.get("basis", ""), "pct": _d(c["pct"]), "pc_sum": _d(c["pc_sum"])} for c in m.commercial],
         "overlays": [{"name": o.name, "amount": _d(o.amount), "kind": o.kind} for o in m.overlays],
         "weather_setup": m.weather_setup,
+        "schedule": m.schedule,
     }
 
 
@@ -99,4 +100,5 @@ def _build(d, t):
                      "basis": c.get("basis", ""), "pct": D(c["pct"]), "pc_sum": D(c["pc_sum"])} for c in d["commercial"]],
         overlays=[Overlay(name=o["name"], amount=D(o["amount"]), kind=o["kind"]) for o in d["overlays"]],
         weather_setup=d.get("weather_setup"),
+        schedule=d.get("schedule"),
     )

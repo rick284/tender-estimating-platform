@@ -20,6 +20,10 @@ An edit is {"target", "key", "field", "value"} (set a value) or {"target", "op":
              set    key = "setup"   field: station | start | working_days_per_week | baseline_wd | local_factor | local_basis |
                                            wind_override | include_wind
              set    key = "links"   field: daily_uid | hours_per_day | weekly_uids   (rows that drive daily prelims / weekly hire)
+  schedule   add    key = "format"  value: text (pasted lines, see schedule.parse_format), name?, client?   (client price schedule format)
+             delete key = "format"  (back to the automatic schedule by QS section)
+  schedule_map set  key = source ("qs:EW01" | "ca:CA10" | "overlay:Name")  field = "to"  value: "line:REF" | "group:ID" | "spread" |
+                       JSON list of parts | "" (unmap)
   weather_activity  add key = new id ("W-xxxxxx")  value: task, start, finish, critical?, qs_codes?, labour?, plant?, note?, ov_*?
              set    key = id   field: task | start | finish | critical | qs_codes | labour | plant | note | ov_<factor>
              delete key = id
@@ -39,6 +43,8 @@ from .importers.master_workbook import MasterWorkbookImport
 from .models import BuildUpRow, LibraryRate, Overlay, QSItem, MODES
 from .money import D
 from . import weather_setup as wx
+from . import schedule as sch
+import json
 
 ROW_NUMERIC_NULLABLE = {"productivity_rate", "duration_override_hrs", "count", "manual_qty", "utilisation", "waste", "job_rate_override"}
 ROW_YESNO = {"verified", "weather_exposed"}
@@ -133,6 +139,8 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     recovery, overlap = base.recovery, base.overlap
     links = copy.deepcopy(base.weather_links)
     setup = wx.clone(base.weather_setup)
+    sched = copy.deepcopy(base.schedule)
+    sched_before = copy.deepcopy(base.schedule)
     setup_before = wx.clone(base.weather_setup)
 
     def protected_uids():
@@ -360,6 +368,46 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
             except wx.SetupError as ex:
                 raise EditError(str(ex))
 
+        elif target == "schedule":
+            try:
+                if op == "add":
+                    v = value if isinstance(value, dict) else {}
+                    sched = sch.parse_format(str(v.get("text", "")), str(v.get("name", "")), str(v.get("client", "")))
+                elif op == "delete":
+                    sched = None
+                else:
+                    raise EditError("Use add or delete for the price schedule format.")
+            except sch.ScheduleError as ex:
+                raise EditError(str(ex))
+
+        elif target == "schedule_map":
+            src_key = str(key or "")
+            if not re.match(r"^(qs|ca|overlay):.+", src_key) or field != "to":
+                raise EditError("Unknown price schedule mapping.")
+            if sched is None:                                   # first change: freeze the automatic schedule so it can be edited
+                live_qs = [q for q in qs if not q.deleted]
+                sched = sch.default_schedule(list(dict.fromkeys(q.item.section for q in live_qs)), [o.name for o in overlays])
+                sched["map"] = sch.auto_map(sched, [{"code": q.item.code, "section": q.item.section} for q in live_qs],
+                                            [{"name": o.name} for o in overlays], [c["ref"] for c in commercial if c["ref"] <= "CA16"])
+                sched["auto_map"] = dict(sched["map"])
+            v = value
+            if isinstance(v, str) and v.strip().startswith("["):
+                try:
+                    v = json.loads(v)
+                except ValueError:
+                    raise EditError("The split isn't valid.")
+            if v in (None, "", []):
+                sched["map"].pop(src_key, None)
+            else:
+                parts = [v] if isinstance(v, str) else [p_.get("to") if isinstance(p_, dict) else None for p_ in v]
+                if not all(isinstance(t, str) and sch.valid_target(sched, t) for t in parts):
+                    raise EditError("Choose a line from this price schedule.")
+                if isinstance(v, list):
+                    for p_ in v:
+                        if p_.get("amount") not in (None, ""):
+                            wx._num(p_["amount"], "Split amount", hi=D("1e12"))
+                sched["map"][src_key] = v
+
         elif target == "setting":
             if (key, field) == ("weather", "recovery_allowance"):
                 recovery = _num(value, "Weather recovery allowance")
@@ -380,7 +428,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     m.qs_extra = {q.item.code: q.extra for q in keep_qs}
     m.library = library
     m.commercial, m.overlays, m.recovery, m.overlap = commercial, overlays, recovery, overlap
-    m.weather_links, m.weather_setup = links, setup
+    m.weather_links, m.weather_setup, m.schedule = links, setup, sched
     m.reference = None            # no longer the workbook as received
     return m, _net_changes(base, m, rows, qs, new_library)
 
@@ -444,6 +492,7 @@ def _net_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, rows: list[_R
         if name not in a_ov:
             add("overlay", name, "added", name, "", f"{_fmt(y.amount)} · {y.kind}")
     _weather_changes(a, b, add)
+    _schedule_changes(a, b, add)
     add("setting", "weather", "recovery_allowance", "Weather recovery allowance", D(a.recovery), D(b.recovery))
     add("setting", "consolidated", "confirmed_overlap", "Confirmed Siteworks / Coast overlap", D(a.overlap), D(b.overlap))
     return out
@@ -484,3 +533,18 @@ def _weather_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> N
     for f in ("daily_uid", "hours_per_day"):
         add("weather", "links", f, "Daily preliminaries link" if f == "daily_uid" else "Hours per day", a.weather_links.get(f), b.weather_links.get(f))
     add("weather", "links", "weekly_uids", "Weekly hire links", ",".join(a.weather_links.get("weekly_uids", [])), ",".join(b.weather_links.get("weekly_uids", [])))
+
+
+def _schedule_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:
+    sa, sb = a.schedule, b.schedule
+    fmt = lambda x: None if x is None else [(g["id"], g["name"], [(ln["ref"], ln["trade"], ln["kind"]) for ln in g["lines"]]) for g in x["groups"]]
+    custom = lambda x: x is not None and not x.get("auto")
+    if custom(sa) != custom(sb) or (custom(sb) and fmt(sa) != fmt(sb)):
+        add("schedule", "format", "format", "Client price schedule format",
+            (sa or {}).get("name", "") or ("custom" if custom(sa) else "automatic"), (sb or {}).get("name", "") or ("custom" if custom(sb) else "automatic"))
+    if sb is None:
+        return
+    base_map = sa["map"] if sa is not None else sb.get("auto_map", {})
+    dump = lambda v: "" if v is None else (v if isinstance(v, str) else json.dumps(v))
+    for k in sorted(set(base_map) | set(sb["map"])):
+        add("schedule_map", k, "to", f"Price schedule: {k.split(':', 1)[1]}", dump(base_map.get(k)), dump(sb["map"].get(k)))

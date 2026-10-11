@@ -16,6 +16,7 @@ from .money import D, cents
 from .qs import compute_qs
 from .weather import compute_weather, baseline_billed_weeks
 from .weather_setup import exposed_by_qs, run_setup
+from .schedule import auto_map, compute_schedule, default_schedule
 from .models import WeatherToolRun
 
 
@@ -181,6 +182,9 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
             reconciliation.append({"name": name, "engine": _f(cents(engine)), "workbook": _f(cents(wbd)),
                                    "difference": _f(cents(engine) - cents(wbd)), "ok": abs(engine - wbd) < Decimal("0.005")})
 
+    # ---- client price schedule (custom format, or an automatic one by QS section)
+    schedule_out = _schedule(m, qs, tender, cons, cmap)
+
     flag_counts: dict[str, int] = {}
     for r in rows:
         flag_counts[r.qa_flag] = flag_counts.get(r.qa_flag, 0) + 1
@@ -195,7 +199,36 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
             "dry_programme_wd": _f(D(wm["baseline_wd"])), "planning_wd": weather_out["planning_wd"]},
         "consolidated": consolidated_out, "tender": tender_out, "commercial": commercial_out,
         "qs": qs_out, "sections": sections, "buildup": buildup, "library": library, "weather": weather_out,
-        "reconciliation": reconciliation, "qa_counts": flag_counts,
+        "reconciliation": reconciliation, "qa_counts": flag_counts, "schedule": schedule_out,
         "reconciled": all(r["ok"] for r in reconciliation) if m.reference is not None else None,
         "edited": m.reference is None,
+    }
+
+
+def _schedule(m, qs, tender, cons, cmap) -> dict[str, Any]:
+    ca_refs = [ref for ref, amt in tender.additions.items() if amt != 0]
+    sources = [{"key": f"qs:{ln.code}", "label": f"{ln.code} {ln.description}", "amount": ln.amount, "own": True, "section": ln.section} for ln in qs.lines]
+    sources += [{"key": f"ca:{ref}", "label": f"{ref} {cmap[ref].name}", "amount": tender.additions[ref], "own": True, "section": ""} for ref in ca_refs]
+    sources += [{"key": f"overlay:{o.name}", "label": o.name, "amount": o.amount, "own": False, "section": ""} for o in m.overlays]
+    auto = m.schedule is None
+    if auto:
+        sched = default_schedule(list(dict.fromkeys(ln.section for ln in qs.lines)), [o.name for o in m.overlays])
+        sched["map"] = auto_map(sched, [{"code": ln.code, "section": ln.section} for ln in qs.lines], [{"name": o.name} for o in m.overlays], ca_refs)
+    else:
+        sched = m.schedule
+    r = compute_schedule(sched, sources, cmap["CA17"].pct, cmap["CA18"].pct, cons.all_in_tender)
+    f = _f
+    mp = sched.get("map", {})
+    return {
+        "auto": auto or bool(sched.get("auto")), "name": r["name"], "client": r["client"], "reconciles": r["reconciles"], "problems": r["problems"],
+        "total": f(r["total"]), "all_in": f(r["all_in"]), "difference": f(r["difference"]), "gross_package": f(r["gross_package"]),
+        "groups": [{"id": g["id"], "name": g["name"], "code": g["code"], "subtotal": f(g["subtotal"]), "total": f(g["total"]), "cost": f(g["cost"]),
+                    "hidden": f(g["hidden"]),
+                    "lines": [{"ref": x["ref"], "trade": x["trade"], "kind": x["kind"], "amount": f(x["amount"]),
+                               "sources": [{"key": y["key"], "label": y["label"], "amount": f(y["amount"])} for y in x["sources"]]} for x in g["lines"]]}
+                   for g in r["groups"]],
+        "unmapped": [{"key": u["key"], "label": u["label"], "amount": f(u["amount"])} for u in r["unmapped"]],
+        "sources": [{"key": s["key"], "label": s["label"], "amount": f(s["amount"]), "own": s["own"], "map": mp.get(s["key"])} for s in sources if s["amount"] != 0],
+        "targets": [{"value": f"line:{ln['ref']}", "label": f"{ln['ref']}  {ln['trade']}", "group": g["name"]} for g in sched["groups"] for ln in g["lines"] if ln["kind"] != "margin"]
+                   + [{"value": f"group:{g['id']}", "label": f"Inside {g['name']} margin", "group": g["name"]} for g in sched["groups"]] + [{"value": "spread", "label": "Spread across all groups (inside the margin lines)", "group": ""}],
     }
