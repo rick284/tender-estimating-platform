@@ -5,7 +5,6 @@ import pytest
 
 from tender_engine import (compute_buildup, compute_qs, compute_tender, compute_weather,
                            compute_consolidated, cents, D, WeatherInputs, CommercialInput)
-from workbook_import import build_commercial
 
 TOL = Decimal("0.005")   # half a cent
 
@@ -21,8 +20,8 @@ def run(rev34e):
     qs = compute_qs(d["qs"], rows)
     by_excel = dict(zip(d["excel_rows"], rows))
     wi = WeatherInputs(
-        daily_prelims=by_excel[22].applied_rate * 8,
-        weekly_hire=by_excel[48].applied_rate + by_excel[49].applied_rate,
+        daily_prelims=by_excel[d["weather_links"]["daily_row"]].applied_rate * d["weather_links"]["hours_per_day"],
+        weekly_hire=sum((by_excel[r].applied_rate for r in d["weather_links"]["weekly_rows"]), D(0)),
         recovery_allowance=d["recovery"],
     )
     weather = compute_weather(rows, d["tool"], wi)
@@ -153,3 +152,15 @@ def test_management_reserve_is_fixed_not_default(run):
     base = D(ci["B34"].value)
     assert cents(reserve) == Decimal("18269.06")
     assert close(base * Decimal("0.04"), reserve, Decimal("0.000001"))
+
+
+def test_compute_estimate_assembler_reconciles(rev34e):
+    """The display-ready estimate (what the web app shows) must agree with the workbook everywhere."""
+    from tender_engine.estimate import compute_estimate
+    from tender_engine.importers import load_master_workbook
+    from conftest import PRIVATE
+    est = compute_estimate(load_master_workbook(PRIVATE))
+    assert est["reconciled"], [r for r in est["reconciliation"] if not r["ok"]]
+    assert round(est["summary"]["all_in"], 2) == 1226916.81
+    assert len(est["qs"]) == 30 and len(est["buildup"]) == 64
+    assert est["meta"]["project"].startswith("329 Hobsonville Road")

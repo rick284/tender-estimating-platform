@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 4%;
+  --card: 0 0% 100%;
+  --primary: 0 0% 0%;
+  --primary-foreground: 0 0% 100%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 40%;
+  --border: 0 0% 82%;
+  /* verification status: always paired with a text label, never colour alone */
+  --green-fg: 142 72% 20%;  --green-bg: 142 55% 93%;  --green-line: 142 55% 38%;
+  --amber-fg: 32 90% 24%;   --amber-bg: 42 100% 91%;  --amber-line: 38 92% 48%;
+  --red-fg: 0 72% 34%;      --red-bg: 0 86% 95%;      --red-line: 0 72% 48%;
+}
+
+@layer base {
+  * { @apply border-border; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body { @apply bg-background text-foreground font-body antialiased; margin: 0; font-size: 14px; }
+  h1, h2, h3, h4 { @apply font-heading font-bold uppercase; letter-spacing: -0.01em; }
+  *:focus-visible { outline: 2px solid hsl(var(--foreground)); outline-offset: 2px; }
+  button { font-family: inherit; }
+}
+
+@layer components {
+  .label { @apply font-heading text-2xs font-bold uppercase text-muted-foreground; letter-spacing: 0.08em; }
+  .num { @apply font-mono text-right whitespace-nowrap; font-variant-numeric: tabular-nums; }
+  .panel { @apply border bg-card; }
+  .panel-head { @apply flex items-center justify-between gap-3 border-b px-4 py-3; }
+  .btn { @apply inline-flex items-center justify-center gap-2 border border-primary px-4 py-2 font-heading text-xs font-bold uppercase tracking-wider transition-colors; }
+  .btn-solid { @apply bg-primary text-primary-foreground hover:bg-foreground/85; }
+  .btn-ghost { @apply bg-background text-foreground hover:bg-muted; }
+
+  /* :where() keeps these defaults at utility-class specificity so classes like text-right always win */
+  .grid-table { @apply w-full border-collapse text-[13px]; }
+  .grid-table :where(thead th) { @apply sticky top-0 z-10 border-b border-primary bg-background px-3 py-2 text-left font-heading text-2xs font-bold uppercase text-muted-foreground; letter-spacing: 0.06em; }
+  .grid-table :where(td) { @apply border-b px-3 py-2 align-top; }
+  .grid-table :where(tbody tr:hover > td) { @apply bg-muted/60; }
+  .grid-table :where(.group-row > td) { @apply bg-muted font-heading text-2xs font-bold uppercase; letter-spacing: 0.06em; border-bottom-color: hsl(var(--border)); }
+  .grid-table :where(.total-row > td) { @apply border-t border-primary bg-background font-semibold; }
+}
+
+@media (max-width: 639px) { .grid-table :where(td, thead th) { padding-left: 0.5rem; padding-right: 0.5rem; } }
+.grid-table td { overflow-wrap: anywhere; }
+.grid-table td.num, .grid-table td.nowrap { overflow-wrap: normal; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: hsl(var(--muted)); }
+::-webkit-scrollbar-thumb { background: hsl(var(--border)); border: 2px solid hsl(var(--muted)); }
+@media print { aside, header, .no-print { display: none !important; } body { font-size: 11px; } }

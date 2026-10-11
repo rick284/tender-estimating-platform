@@ -1,0 +1,186 @@
+"""Import INPUTS (constants) and display metadata from a Master Estimate Workbook (.xlsx).
+
+Inputs are read from constant cells only, so the engine genuinely recomputes every figure.
+Cached workbook values are read solely for display-only status text (release gates, etc.)
+and are always labelled as 'from workbook' in the API output.
+"""
+from __future__ import annotations
+import re
+from dataclasses import dataclass, field
+from decimal import Decimal
+from pathlib import Path
+from typing import Any, BinaryIO
+
+import openpyxl
+
+from ..models import LibraryRate, BuildUpRow, QSItem, WeatherToolRun, Overlay
+from ..money import D
+
+
+def _s(v: Any) -> str:
+    return "" if v is None else str(v).strip()
+
+
+def _n(v: Any):
+    return None if v in (None, "") else D(v)
+
+
+@dataclass
+class MasterWorkbookImport:
+    meta: dict[str, str]
+    library: dict[str, LibraryRate]
+    qs: list[QSItem]
+    qs_extra: dict[str, dict[str, str]]
+    rows: list[BuildUpRow]
+    row_extra: list[dict[str, str]]
+    excel_rows: list[int]
+    tool: WeatherToolRun
+    recovery: Decimal
+    commercial: list[dict]
+    risk_feed: dict[str, Any]
+    overlays: list[Overlay]
+    overlap: Any
+    weather_meta: dict[str, str]
+    weather_links: dict[str, Any]
+    controls: dict[str, str]
+    cached: Any = field(repr=False, default=None)
+
+
+def _cover_meta(v) -> dict[str, str]:
+    ws = v["Cover & Instructions"]
+    wanted = {"Project": "project", "Location": "location", "Current drawings": "drawings",
+              "Issue date": "issue_date", "Scope": "scope", "GST": "gst", "Programme": "programme",
+              "Weather": "weather", "Price status": "price_status", "Commercial": "commercial"}
+    meta: dict[str, str] = {}
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
+        cells = [(c.column, c.value) for c in row if c.value not in (None, "")]
+        for i, (_, val) in enumerate(cells):
+            if isinstance(val, str) and val in wanted and wanted[val] not in meta and i + 1 < len(cells):
+                meta[wanted[val]] = _s(cells[i + 1][1])
+    snap = _s(ws["A2"].value)
+    if snap:
+        meta["snapshot"] = snap
+    return meta
+
+
+def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
+    f = openpyxl.load_workbook(source)
+    if hasattr(source, "seek"):
+        source.seek(0)
+    v = openpyxl.load_workbook(source, data_only=True)
+
+    required = ["Resource Rate Library", "QS Takeoff", "Resource Build-Up", "Commercial Inputs",
+                "Weather Risk", "Consolidated Package", "Tender Build-Up"]
+    missing = [n for n in required if n not in f.sheetnames]
+    if missing:
+        raise ValueError(f"Not a Master Estimate Workbook (missing sheets: {', '.join(missing)})")
+
+    lib: dict[str, LibraryRate] = {}
+    ws = f["Resource Rate Library"]
+    for r in range(5, 86):
+        code = ws.cell(r, 1).value
+        if code:
+            lib[str(code)] = LibraryRate(
+                code=str(code), category=_s(ws.cell(r, 2).value), description=_s(ws.cell(r, 3).value),
+                unit=_s(ws.cell(r, 5).value), operator_included=_s(ws.cell(r, 7).value),
+                fuel_included=_s(ws.cell(r, 8).value), base_rate=D(ws.cell(r, 9).value),
+                source=_s(ws.cell(r, 13).value))
+
+    qs: list[QSItem] = []
+    qs_extra: dict[str, dict[str, str]] = {}
+    ws, wv = f["QS Takeoff"], v["QS Takeoff"]
+    for r in range(3, 41):
+        code = ws.cell(r, 2).value
+        if code:
+            qs.append(QSItem(code=str(code), section=_s(ws.cell(r, 1).value), description=_s(ws.cell(r, 3).value),
+                             unit=_s(ws.cell(r, 4).value), quantity=D(ws.cell(r, 5).value)))
+            qs_extra[str(code)] = {
+                "basis": _s(wv.cell(r, 8).value), "source": _s(wv.cell(r, 9).value),
+                "status": _s(wv.cell(r, 10).value), "notes": _s(wv.cell(r, 11).value),
+                "flag": _s(wv.cell(r, 16).value), "owner": _s(wv.cell(r, 18).value),
+                "verification": _s(wv.cell(r, 19).value), "quote_ref": _s(wv.cell(r, 20).value),
+            }
+
+    rows: list[BuildUpRow] = []
+    extra: list[dict[str, str]] = []
+    excel_rows: list[int] = []
+    ws, wv = f["Resource Build-Up"], v["Resource Build-Up"]
+    for r in range(7, 307):
+        code = ws.cell(r, 2).value
+        if not code:
+            continue
+        c = lambda col: ws[f"{col}{r}"].value
+        rows.append(BuildUpRow(
+            qs_code=str(code), mode=_s(c("N")), resource_type=_s(c("O")), resource_code=_s(c("P")),
+            productivity_rate=_n(c("I")), duration_override_hrs=_n(c("L")), count=_n(c("R")),
+            manual_qty=_n(c("S")), utilisation=_n(c("U")), waste=_n(c("V")), job_rate_override=_n(c("X")),
+            task=_s(c("H")), verified=_s(c("AH")), weather_exposed=_s(c("AK")), weather_task_type=_s(c("AL"))))
+        extra.append({"productivity_unit": _s(c("J")), "quote_ref": _s(c("AB")), "source_date": _s(wv[f"AC{r}"].value),
+                      "confidence": _s(wv[f"AF{r}"].value), "assumption": _s(wv[f"AG{r}"].value),
+                      "note": _s(c("AJ")), "workbook_qa": _s(wv[f"AI{r}"].value)})
+        excel_rows.append(r)
+
+    wr = f["Weather Risk"]
+    tool = WeatherToolRun(
+        exposed_pool=D(wr["B23"].value), rain_wet_ground_cost=D(wr["B24"].value),
+        critical_path_delay_wd=D(wr["B26"].value), additional_billed_weeks=D(wr["B27"].value),
+        wind_sensitivity_cost=D(wr["B28"].value), include_wind=(wr["B29"].value == "Yes"))
+    wv_ = v["Weather Risk"]
+    weather_meta = {
+        "station": _s(wr["B6"].value), "start": _s(wv_["B7"].value)[:10], "baseline_wd": _s(wr["B8"].value),
+        "wd_per_week": _s(wr["B9"].value), "tool_version": _s(wr["B19"].value), "tool_station": _s(wr["B20"].value),
+        "confidence": _s(wr["B30"].value), "rerun_status": _s(wr["B31"].value),
+        "delay_wd": _s(wr["B26"].value), "dry_programme_wd": _s(wr["B8"].value),
+    }
+
+    # The workbook derives daily time-related prelims and weekly hire from specific build-up rows.
+    f13, f14 = _s(wr["B13"].value), _s(wr["B14"].value)
+    m13 = re.search(r"Y(\d+)\*(\d+)", f13)
+    m14 = re.findall(r"Y(\d+)", f14)
+    if not m13 or not m14:
+        raise ValueError("Weather Risk B13/B14 do not reference build-up rate rows; cannot link weather costs")
+    weather_links = {"daily_row": int(m13.group(1)), "hours_per_day": int(m13.group(2)),
+                     "weekly_rows": [int(x) for x in m14]}
+
+    ci = f["Commercial Inputs"]
+    commercial: list[dict] = []
+    for r in range(5, 29):
+        ref = ci.cell(r, 1).value
+        if ref and str(ref).startswith("CA"):
+            commercial.append(dict(ref=str(ref), name=_s(ci.cell(r, 2).value), method=_s(ci.cell(r, 3).value),
+                                   pct=D(ci.cell(r, 4).value), pc_sum=D(ci.cell(r, 5).value),
+                                   include=_s(ci.cell(r, 6).value), basis=_s(v["Commercial Inputs"].cell(r, 8).value)))
+    rt = v["Risk Truth"]
+    risk_feed = {"CA01": D(rt["B12"].value), "CA02": D(rt["B13"].value)}
+
+    cp = f["Consolidated Package"]
+    overlays = [
+        Overlay("Coast Concrete foundation / floor", D(cp["B6"].value), "QUOTED"),
+        Overlay("Allied public stormwater / detention base", D(cp["B7"].value), "QUOTED BASE"),
+        Overlay("Allied public setout / as-built / signoff", D(cp["B8"].value), "CONFIRMED ADDITIONAL"),
+        Overlay("Allied private drainage", D(cp["B10"].value), "QUOTED / ALLOCATED"),
+    ]
+
+    cv = v["Cover & Instructions"]
+    rv = v["Rate Verification"]
+    controls = {
+        "release_status": _s(rt["B15"].value),
+        "red_risks": _s(rt["B16"].value), "red_exposures": _s(rt["B17"].value),
+        "duplicate_gate": _s(rt["B18"].value), "programme_gate": _s(rt["B19"].value),
+        "tender_equals_risk_truth": _s(rt["B21"].value),
+        "rate_green": _s(rv["B4"].value), "rate_amber": _s(rv["B5"].value), "rate_red": _s(rv["F4"].value),
+        "rate_green_cost": _s(rv["C4"].value), "rate_amber_cost": _s(rv["C5"].value), "rate_red_cost": _s(rv["G4"].value),
+        "cover_release": "",
+    }
+    for row in cv.iter_rows(min_row=1, max_row=60):
+        for cell in row:
+            if cell.value == "Release status":
+                nxt = [c.value for c in row if c.column > cell.column and c.value not in (None, "")]
+                if nxt:
+                    controls["cover_release"] = _s(nxt[0])
+
+    return MasterWorkbookImport(
+        meta=_cover_meta(v), library=lib, qs=qs, qs_extra=qs_extra, rows=rows, row_extra=extra,
+        excel_rows=excel_rows, tool=tool, recovery=D(wr["B16"].value), commercial=commercial,
+        risk_feed=risk_feed, overlays=overlays, overlap=D(cp["B13"].value), weather_meta=weather_meta, weather_links=weather_links,
+        controls=controls, cached=v)
