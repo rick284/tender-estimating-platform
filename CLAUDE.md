@@ -69,3 +69,8 @@ Do NOT commit client/tender files into this repo without asking; the Rev34E valu
 - Blank tenders have no weather-linked rows: weather allowance is 0 until the weather tool is ported/set up per tender; Risk Engine lines (CA01/CA02) are 0 until Risk Truth is built.
 - Fixed: Resource Build-Up went blank-white on revisions saved before rows had `uid` (api.revision fills uid from row_id); ErrorBoundary per page shows a readable message instead of a blank screen.
 - e2e: `web/e2e/blank_e2e.py`.
+
+## Weather tool port — BLOCKED on the source file (12 Oct 2026)
+- Hobsonville's CA10 uses outputs of "NZ_Weather_Risk_Estimating_Tool_Rev2.xlsx" (task library + activity allowances + NIWA 1991-2020 monthly wet-day probabilities + holidays + critical path). That file is NOT on Rick's Drive (searched by title and content). The Rev34E "Weather Rev21/24/29/33 Run" tabs are empty audit stubs, so the tool's maths cannot be recovered from the estimate either.
+- Drive does hold an earlier March model, `auckland_weather_risk_model_estimating.xlsx` (id 1rO_aq6tFKK-tqR7kmHlg76kv1tCWe_q1; copy in gitignored `private/`): monthly wet-day probabilities (WeatherSpark, not NIWA), daily inclement probability = 1-(1-wet*rain_scaler)*(1-wind_uplift), allowance = (labour+plant) x avg prob x exposure x productivity-loss x non-recoverable. It does NOT produce Rev34E's $12,458.56 / 8.829 WD / 2 weeks, so it is not the Rev2 tool and must not be used to claim a golden match.
+- Need from Rick: the Rev2 tool xlsx (probably only in ChatGPT project files / downloads). Meanwhile the engine takes the tool's outputs as inputs (exposed pool, rain cost, delay WD, extra weeks) — a per-tender "enter tool result" screen would be the interim step.
