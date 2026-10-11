@@ -6,7 +6,8 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-test = ["pytest", "openpyxl"]
+test = ["pytest", "openpyxl", "reportlab"]
+outputs = ["openpyxl", "reportlab"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

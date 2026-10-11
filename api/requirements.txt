@@ -5,3 +5,4 @@ openpyxl==3.1.5
 motor==3.7.1
 PyJWT==2.14.0
 bcrypt==5.0.0
+reportlab==5.0.1

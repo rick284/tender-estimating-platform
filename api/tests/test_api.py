@@ -471,3 +471,37 @@ def test_weather_catalog_requires_login_and_lists_stations_and_tasks(client, aut
     c = client.get("/api/weather/catalog", headers=auth).json()
     assert len(c["stations"]) == 30 and len(c["tasks"]) == 39 and "Auckland" in c["stations"] and c["wind_proxy_stations"] == ["Auckland"]
     assert c["tasks"][2]["name"] == "Bulk earthworks" and c["tasks"][2]["rain_loss"] == 0.7
+
+
+# ---------------------------------------------------------------- client outputs
+@pytest.mark.parametrize("kind,magic", [("report.pdf", b"%PDF"), ("schedule.pdf", b"%PDF"), ("pricing.xlsx", b"PK")])
+def test_client_outputs_download(client, auth, kind, magic):
+    tid = _tender(client, auth)
+    r = client.get(f"/api/tenders/{tid}/revisions/1/outputs/{kind}", headers=auth)
+    assert r.status_code == 200, r.text
+    assert r.content.startswith(magic) and "attachment" in r.headers["content-disposition"] and r.headers["cache-control"] == "no-store"
+    assert r.headers["content-disposition"].endswith(f'.{kind.split(".")[1]}"')
+
+
+def test_client_outputs_need_login_unknown_kind_and_isolation(client, auth):
+    tid = _tender(client, auth)
+    assert client.get(f"/api/tenders/{tid}/revisions/1/outputs/report.pdf").status_code == 401
+    assert client.get(f"/api/tenders/{tid}/revisions/1/outputs/evil.exe", headers=auth).status_code == 404
+    assert client.get(f"/api/tenders/{tid}/revisions/9/outputs/report.pdf", headers=auth).status_code == 404
+
+
+def test_schedule_edits_via_api_and_pricing_reflects_them(client, auth):
+    tid = _tender(client, auth)
+    est = client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]
+    assert est["schedule"]["auto"] and est["schedule"]["reconciles"]
+    fmt = {"target": "schedule", "op": "add", "key": "format", "value": {"text": "# WORKS | W\n1  Civil works\n2  Margin  [margin]", "name": "Client format"}}
+    pv = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [fmt]})
+    assert pv.status_code == 200 and not pv.json()["estimate"]["schedule"]["reconciles"] and pv.json()["estimate"]["schedule"]["unmapped"]
+    maps = [{"target": "schedule_map", "key": u["key"], "field": "to", "value": "line:1"} for u in pv.json()["estimate"]["schedule"]["unmapped"]]
+    pv2 = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [fmt] + maps})
+    assert pv2.json()["estimate"]["schedule"]["reconciles"] and pv2.json()["estimate"]["schedule"]["name"] == "Client format"
+    bad = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [{**fmt, "value": {"text": "nonsense"}}]})
+    assert bad.status_code == 422
+    sv = client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": [fmt] + maps, "note": "Client schedule format"})
+    assert sv.status_code == 200
+    assert client.get(f"/api/tenders/{tid}/revisions/2/outputs/schedule.pdf", headers=auth).content.startswith(b"%PDF")

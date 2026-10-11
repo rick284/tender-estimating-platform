@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
@@ -269,3 +269,46 @@ async def save_edits(tender_id: str, n: int, body: SaveIn, user: dict[str, Any] 
     await audit(db, user, "revision.edit", t["_id"], f"{lab} from #{n}: {len(changes)} changes")
     log.info("save done tender=%s new=#%s changes=%s", tender_id, new_n, len(changes))
     return _rev_out(rev)
+
+
+# ------------------------------------------------------------------ client outputs
+OUTPUTS = {
+    "report.pdf": ("Estimate_Basis_Tender_Report", "application/pdf"),
+    "schedule.pdf": ("Tender_Price_Schedule", "application/pdf"),
+    "pricing.xlsx": ("Client_Pricing", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+}
+
+
+def _build_output(kind: str, est: dict[str, Any], ctx_kw: dict[str, str], intake: dict[str, str]) -> bytes:
+    from tender_engine.outputs import OutputContext, pricing_workbook, report_pdf, schedule_pdf
+    ctx = OutputContext(**ctx_kw)
+    if kind == "report.pdf":
+        return report_pdf(est, ctx, intake)
+    if kind == "schedule.pdf":
+        return schedule_pdf(est, ctx)
+    return pricing_workbook(est, ctx)
+
+
+@router.get("/{tender_id}/revisions/{n}/outputs/{kind}")
+async def download_output(tender_id: str, n: int, kind: str, user: dict[str, Any] = Depends(current_user)):
+    """The client pack, generated from the stored estimate of a revision: report, price schedule PDF and pricing workbook."""
+    if kind not in OUTPUTS:
+        raise HTTPException(404, "Unknown output.")
+    t = await _tender(user, tender_id)
+    r = await _estimate(user, t["_id"], n)
+    org = await get_db().orgs.find_one({"_id": user["org_id"]})
+    est = r["estimate"]
+    today = now()
+    ctx_kw = {"company": (org or {}).get("name", ""), "prepared_by": user.get("name", ""), "project": t["name"], "client": t.get("client", ""),
+              "location": t.get("location", ""), "revision": r["label"], "issue_date": f"{today.day} {today:%B %Y}"}
+    from tender_engine.blank import INTAKE_FIELDS
+    intake = {k: (est["meta"].get(k) or "") for k, _, _ in INTAKE_FIELDS}
+    try:
+        data = await run_in_threadpool(_build_output, kind, est, ctx_kw, intake)
+    except ModuleNotFoundError:
+        raise HTTPException(503, "Document generation isn't available on this server yet.")
+    stem, mime = OUTPUTS[kind]
+    safe = "".join(ch if ch.isalnum() else "_" for ch in t["name"]).strip("_")[:60] or "Tender"
+    await audit(get_db(), user, "output.download", t["_id"], f"{kind} {r['label']}")
+    return Response(content=data, media_type=mime, headers={"Content-Disposition": f'attachment; filename="{safe}_{stem}_{r["label"]}.{kind.split(".")[1]}"',
+                                                            "Cache-Control": "no-store"})
