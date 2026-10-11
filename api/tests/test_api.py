@@ -30,6 +30,13 @@ def test_first_account_then_invite_only(client):
     assert register(client, email="other@example.com").status_code == 403
 
 
+def test_bootstrap_email_pins_first_account(client, monkeypatch):
+    import config
+    monkeypatch.setattr(config, "BOOTSTRAP_EMAIL", "owner@3bears.co.nz")
+    assert register(client, email="stranger@evil.com").status_code == 403
+    assert register(client, email="Owner@3Bears.co.nz").status_code == 200
+
+
 def test_open_registration_flag(client, monkeypatch):
     import config
     register(client)

@@ -1,5 +1,6 @@
 """HTTP API for the tender estimating platform."""
 from __future__ import annotations
+import logging
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,9 +17,15 @@ from routes_auth import router as auth_router   # noqa: E402
 from routes_tenders import router as tenders_router  # noqa: E402
 
 
+log = logging.getLogger("tender.api")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await ensure_indexes(get_db())
+    try:
+        await ensure_indexes(get_db())
+    except Exception:  # database briefly unreachable: stay up so the host shows a clear status, retry on next start
+        log.exception("Could not create database indexes at startup")
     yield
 
 

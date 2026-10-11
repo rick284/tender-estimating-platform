@@ -26,3 +26,11 @@ Do NOT commit client/tender files into this repo without asking; the Rev34E valu
 - Benchmark = Rev34E (confirmed). Drive search found NO files titled/containing "Master New Chat Starter", "Productivity and Crew Library" or a crew library — they probably live only in Rick's ChatGPT project files or under other names; ask Rick to export them. Decision Control Register (id 1uo-584QBu9705od8y2nwgFgPeURL9hO8) and Pre-Response Check Protocol (id 1KY3rZwqTIaJevxRJ-lF0ZhH28iDc5KwY) ARE on Drive (folder 1U-ebLzIftoPfpXwfaRTghjQDO4UibdJV) and were read.
 - Other completed jobs on Drive usable as additional test cases later: Goodman Felix Street Civil Estimate (Rev0, Rev3, Rev4 report), Bridle Trail (Rev11/14, Master Rebuild Rev1), Orion Point stage 5 villas (Rev C-G). Hobsonville revs 24-34 show the revision history (good for revision/diff tests).
 - IP model decided: see docs/STANDARDS_TO_PLATFORM.md section G. Rick's Construction Intelligence Register is NOT resold.
+
+## Build status (updated 12 Oct 2026)
+- Phase 0 done: `engine/` deterministic calculation engine, golden test vs Hobsonville Rev34E (to the cent) + unit tests.
+- Phase 1a done: read-only estimate workbench (`web/`, `api/`), recalculates from an uploaded Master Estimate Workbook.
+- Phase 1b (part 1) done: sign-in, company workspaces (tenant isolation tested), saved tenders + immutable revisions, Tenders list with pipeline KPIs, revision compare that explains movements. Deploy recipe in `docs/DEPLOY.md` (Atlas + Render + Netlify), not yet deployed.
+- Real finding to remember: Hobsonville Rev34C -> Rev34E changed NO costs; the +$63,373.81 is entirely OH 8%->10% and margin 12%->15%.
+- Not yet: editing/saving estimates in the app, weather tool port, Risk Truth recalculation, outputs (reports/price schedule), mailbox, review board, Knowledge Bank, Xero.
+- Run tests: `cd engine && python -m pytest -q` and `cd api && python -m pytest -q` (private workbooks in `private/` enable the golden tests).

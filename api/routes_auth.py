@@ -43,6 +43,8 @@ async def register(body: RegisterIn):
     email = body.email.strip().lower()
     if not EMAIL_RE.match(email):
         raise HTTPException(422, "Enter a valid email address.")
+    if first and config.BOOTSTRAP_EMAIL and email != config.BOOTSTRAP_EMAIL:
+        raise HTTPException(403, "This workspace can only be created by its designated owner.")
     validate_password(body.password)
     if await db.users.find_one({"email": email}):
         raise HTTPException(409, "An account with that email already exists.")

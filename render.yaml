@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: tender-platform-api
+    runtime: docker
+    dockerfilePath: ./api/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: ENV
+        value: production
+      - key: DB_NAME
+        value: tender_platform
+      - key: MONGO_URL
+        sync: false          # paste the Atlas connection string in the Render dashboard
+      - key: JWT_SECRET
+        generateValue: true  # Render generates a long random secret
+      - key: CORS_ORIGINS
+        sync: false          # your Netlify site address, no trailing slash
+      - key: BOOTSTRAP_EMAIL
+        sync: false          # the email address of the workspace owner
+      - key: REGISTRATION_OPEN
+        value: "false"

@@ -12,6 +12,8 @@ ACCESS_TOKEN_HOURS = int(os.environ.get("ACCESS_TOKEN_HOURS", "12"))
 # Open sign-up is off unless explicitly enabled. The very first account can always be created.
 REGISTRATION_OPEN = os.environ.get("REGISTRATION_OPEN", "false").lower() == "true"
 USE_MOCK_DB = os.environ.get("USE_MOCK_DB", "false").lower() == "true" and not IS_PROD
+# If set, only this email may create the very first account (protects a fresh deployment).
+BOOTSTRAP_EMAIL = os.environ.get("BOOTSTRAP_EMAIL", "").strip().lower()
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 LOGIN_MAX_FAILURES = 8
 LOGIN_WINDOW_MINUTES = 15
