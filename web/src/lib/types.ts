@@ -21,6 +21,7 @@ export interface Estimate {
   buildup: BuildUpLine[];
   library: { code: string; category: string; description: string; unit: string; rate: number; operator_included: string; fuel_included: string; source: string }[];
   weather: Record<string, any>;
+  schedule: PriceSchedule;
   reconciliation: { name: string; engine: number; workbook: number; difference: number; ok: boolean }[];
   qa_counts: Record<string, number>;
   reconciled: boolean | null;
@@ -76,3 +77,12 @@ export interface Diff {
 
 export interface WeatherTask { name: string; category: string; rain_exposure: number; rain_loss: number; carryover: number; wind_sensitivity: number; wind_loss: number; nonrecoverable: number; basis: string }
 export interface WeatherCatalog { version: string; engine_from: string; engine_to: string; attribution: string; stations: string[]; wind_proxy_stations: string[]; tasks: WeatherTask[] }
+
+export interface ScheduleLine { ref: string; trade: string; kind: "work" | "pg" | "margin"; amount: number; sources: { key: string; label: string; amount: number }[] }
+export interface ScheduleGroup { id: string; name: string; code: string; subtotal: number; total: number; cost: number; hidden: number; lines: ScheduleLine[] }
+export interface ScheduleSource { key: string; label: string; amount: number; own: boolean; map: string | { to: string; amount?: string }[] | null | undefined }
+export interface PriceSchedule {
+  auto: boolean; name: string; client: string; reconciles: boolean; problems: string[]; total: number; all_in: number; difference: number; gross_package: number;
+  groups: ScheduleGroup[]; unmapped: { key: string; label: string; amount: number }[]; sources: ScheduleSource[];
+  targets: { value: string; label: string; group: string }[];
+}

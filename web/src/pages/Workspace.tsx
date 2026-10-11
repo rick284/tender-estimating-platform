@@ -16,6 +16,7 @@ import { QSTakeoff } from "./QSTakeoff";
 import { BuildUp } from "./BuildUp";
 import { Weather } from "./Weather";
 import { RateLibrary } from "./Library";
+import { Outputs } from "./Outputs";
 import { Revisions } from "./Revisions";
 import type { User } from "../lib/types";
 
@@ -221,9 +222,12 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
       editing, edits,
       set: (e) => setEdits((p) => ({ ...p, [editKey(e.target, e.key, e.field)]: e })),
       reset: (t, k, f) => setEdits((p) => { const n = { ...p }; delete n[editKey(t, k, f)]; return n; }),
-      add: (target, key, payload) => setEdits((p) => ({
-        ...p, [opKey(target, key, "add")]: { target, key, field: "", value: "", original: "", op: "add", payload },
-      })),
+      add: (target, key, payload) => setEdits((p) => {
+        const n = { ...p };
+        if (target === "schedule") dropPrefix(n, "schedule_map|");          // a new format starts with a clean mapping
+        n[opKey(target, key, "add")] = { target, key, field: "", value: "", original: "", op: "add", payload };
+        return n;
+      }),
       remove: (target, key) => setEdits((p) => {
         const n = { ...p };
         const pendingAdd = !!n[opKey(target, key, "add")];
@@ -240,6 +244,7 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
           // overlays, weather activities and the weather setup itself
           dropPrefix(n, `${target}|${key}|`);
           if (target === "weather" && key === "setup") dropPrefix(n, "weather_activity|");
+          if (target === "schedule") dropPrefix(n, "schedule_map|");
           if (pendingAdd) delete n[opKey(target, key, "add")]; else n[opKey(target, key, "delete")] = { target, key, field: "", value: "", original: "", op: "delete" };
         }
         return n;
@@ -251,6 +256,7 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
           if (e.target === "qs") for (const x of Object.values(n)) if (x.target === "row" && x.op === "add" && x.payload?.qs_code === e.key) { delete n[opKey("row", x.key, "add")]; dropPrefix(n, `row|${x.key}|`); }
           dropPrefix(n, `${e.target}|${e.key}|`);
           if (e.target === "weather" && e.key === "setup") dropPrefix(n, "weather_activity|");
+          if (e.target === "schedule") dropPrefix(n, "schedule_map|");
         }
         delete n[k];
         return n;
@@ -315,6 +321,7 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
         {!err && shown && pg === "qs" && <QSTakeoff est={shown} openRows={(c) => { setCode(c); view("buildup"); }} onRowAdded={(uid, c) => { setCode(c); setFocusUid(uid); view("buildup"); }} />}
         {!err && shown && pg === "buildup" && <BuildUp est={shown} code={code} setCode={setCode} focusUid={focusUid} />}
         {!err && shown && pg === "weather" && <Weather est={shown} />}
+        {!err && shown && pg === "outputs" && <Outputs est={shown} tenderId={id} rev={cur} />}
         {!err && shown && pg === "library" && <RateLibrary est={shown} />}
         </ErrorBoundary>
       </main>

@@ -505,3 +505,22 @@ def test_schedule_edits_via_api_and_pricing_reflects_them(client, auth):
     sv = client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": [fmt] + maps, "note": "Client schedule format"})
     assert sv.status_code == 200
     assert client.get(f"/api/tenders/{tid}/revisions/2/outputs/schedule.pdf", headers=auth).content.startswith(b"%PDF")
+
+
+def test_old_revision_without_schedule_gets_one_rebuilt_and_outputs_work(client, auth):
+    import asyncio, db as dbmod
+    tid = _tender(client, auth)
+
+    async def strip():                      # as saved before price schedules existed
+        await dbmod.get_db().revisions.update_one({"tender_id": tid}, {"$unset": {"estimate.schedule": ""}})
+    asyncio.run(strip())
+    est = client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]
+    assert est["schedule"]["auto"] and est["schedule"]["reconciles"]
+    assert client.get(f"/api/tenders/{tid}/revisions/1/outputs/report.pdf", headers=auth).content.startswith(b"%PDF")
+
+    async def strip_all():                  # and with no saved inputs either: a clear message, not a crash
+        await dbmod.get_db().revisions.update_one({"tender_id": tid}, {"$set": {"inputs": None}})
+    asyncio.run(strip_all())
+    assert "schedule" not in client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]
+    r = client.get(f"/api/tenders/{tid}/revisions/1/outputs/report.pdf", headers=auth)
+    assert r.status_code == 409 and "Upload its workbook again" in r.json()["detail"]

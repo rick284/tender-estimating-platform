@@ -196,11 +196,20 @@ async def _estimate(user: dict[str, Any], tender_id: str, n: int) -> dict[str, A
     return r
 
 
+async def _estimate_with_schedule(r: dict[str, Any]) -> dict[str, Any]:
+    """Revisions saved before price schedules existed get one rebuilt from their saved inputs (the stored estimate is left untouched)."""
+    est = r["estimate"]
+    if "schedule" in est or not r.get("inputs"):
+        return est
+    fresh = await run_in_threadpool(lambda: compute_estimate(from_json(r["inputs"])))
+    return {**est, "schedule": fresh["schedule"]}
+
+
 @router.get("/{tender_id}/revisions/{n}")
 async def get_revision(tender_id: str, n: int, user: dict[str, Any] = Depends(current_user)):
     t = await _tender(user, tender_id)
     r = await _estimate(user, t["_id"], n)
-    return {"tender": _out(t), "revision": {**_rev_out(r), "changes": r.get("changes") or []}, "estimate": r["estimate"]}
+    return {"tender": _out(t), "revision": {**_rev_out(r), "changes": r.get("changes") or []}, "estimate": await _estimate_with_schedule(r)}
 
 
 @router.get("/{tender_id}/compare")
@@ -297,7 +306,9 @@ async def download_output(tender_id: str, n: int, kind: str, user: dict[str, Any
     t = await _tender(user, tender_id)
     r = await _estimate(user, t["_id"], n)
     org = await get_db().orgs.find_one({"_id": user["org_id"]})
-    est = r["estimate"]
+    est = await _estimate_with_schedule(r)
+    if "schedule" not in est:
+        raise HTTPException(409, "This revision was saved before client outputs were available. Upload its workbook again to enable them.")
     today = now()
     ctx_kw = {"company": (org or {}).get("name", ""), "prepared_by": user.get("name", ""), "project": t["name"], "client": t.get("client", ""),
               "location": t.get("location", ""), "revision": r["label"], "issue_date": f"{today.day} {today:%B %Y}"}

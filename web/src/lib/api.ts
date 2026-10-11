@@ -47,7 +47,24 @@ const form = (o: Record<string, string | boolean | File>) => {
   return fd;
 };
 
+/** Download a generated document (needs the sign-in token, so it can't be a plain link). */
+async function download(path: string): Promise<void> {
+  const t = tokenStore.get();
+  const res = await fetch(`${BASE}${path}`, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
+  if (!res.ok) {
+    let msg = `The server returned an error (${res.status}).`;
+    try { const j = await res.json(); if (typeof j.detail === "string") msg = j.detail; } catch { /* ignore */ }
+    throw new ApiError(res.status, msg);
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "download";
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 export const api = {
+  downloadOutput: (id: string, n: number, kind: "report.pdf" | "schedule.pdf" | "pricing.xlsx") => download(`/api/tenders/${id}/revisions/${n}/outputs/${kind}`),
   authConfig: () => request<{ registration_open: boolean; first_account: boolean }>("/api/auth/config"),
   login: (email: string, password: string) => request<{ token: string; user: User }>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   register: (b: { email: string; password: string; name: string; company: string }) => request<{ token: string; user: User }>("/api/auth/register", { method: "POST", body: JSON.stringify(b) }),
