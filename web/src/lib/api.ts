@@ -64,7 +64,10 @@ async function download(path: string): Promise<void> {
 }
 
 export interface DriveStatus { configured: boolean; connected: boolean; account: string; connected_at: string | null; read_only: boolean; standard_folders: string[] }
-export interface DriveFile { id: string; name: string; path: string; mime: string; is_folder: boolean; modified: string; size: number | null; link: string; revision: string | null; latest: boolean | null; superseded_by: string | null; in_archive: boolean; ambiguous?: boolean }
+export interface DriveFile { id: string; name: string; path: string; mime: string; is_folder: boolean; modified: string; size: number | null; link: string; revision: string | null; latest: boolean | null; superseded_by: string | null; in_archive: boolean; ambiguous?: boolean; read: DriveRead | null }
+export interface DriveRead { status: "ok" | "partial" | "needs_ocr" | "unsupported" | "failed"; read_at: string; pages: number; chars: number; stale: boolean; warnings: string[] }
+export interface DriveReadResult { file_id: string; name: string; status: DriveRead["status"]; pages: number; warnings: string[] }
+export interface DriveText extends DriveReadResult { path: string; revision: string | null; chars: number; pages_text: { n: number; text: string }[] }
 export interface DriveListing {
   folder: { id: string; name: string; url: string }; files: DriveFile[]; truncated: boolean;
   structure: { number: string; label: string; found: boolean; actual: string | null; exact: boolean }[];
@@ -79,6 +82,8 @@ export const api = {
   driveTender: (id: string) => request<{ folder: { id: string; name: string; url: string; linked_at: string } | null }>(`/api/drive/tenders/${id}`),
   driveLink: (id: string, folderId: string) => request<{ folder: { id: string; name: string; url: string } }>(`/api/drive/tenders/${id}`, { method: "PUT", body: JSON.stringify({ folder_id: folderId }) }),
   driveUnlink: (id: string) => request<{ ok: boolean }>(`/api/drive/tenders/${id}`, { method: "DELETE" }),
+  driveRead: (id: string, fileIds: string[]) => request<{ results: DriveReadResult[] }>(`/api/drive/tenders/${id}/read`, { method: "POST", body: JSON.stringify({ file_ids: fileIds }) }),
+  driveText: (id: string, fileId: string) => request<DriveText>(`/api/drive/tenders/${id}/texts/${fileId}`),
   driveFiles: (id: string) => request<DriveListing>(`/api/drive/tenders/${id}/files`),
   downloadOutput: (id: string, n: number, kind: "report.pdf" | "schedule.pdf" | "pricing.xlsx" | "verification-index.pdf" | "evidence-notes.pdf" | "programme.xlsx") => download(`/api/tenders/${id}/revisions/${n}/outputs/${kind}`),
   authConfig: () => request<{ registration_open: boolean; first_account: boolean }>("/api/auth/config"),

@@ -21,6 +21,23 @@ TREE = {  # folder id -> children
 }
 
 
+def _blobs():
+    import io, openpyxl, docx
+    from reportlab.pdfgen import canvas
+    b = io.BytesIO(); c = canvas.Canvas(b)
+    c.drawString(72, 750, "Allied Civil Earthworks quote 1078 total $12,345.00"); c.showPage()
+    c.drawString(72, 750, "Exclusions: rock excavation"); c.showPage(); c.save(); quote = b.getvalue()
+    b = io.BytesIO(); c = canvas.Canvas(b); c.rect(50, 50, 200, 200); c.showPage(); c.save(); drawing = b.getvalue()     # no text at all
+    d = docx.Document(); d.add_paragraph("RFI 14: clarify ESC layout"); b = io.BytesIO(); d.save(b); rfi = b.getvalue()
+    wb = openpyxl.Workbook(); wb.active.title = "Quotes"; wb.active.append(["Supplier", "Amount"]); wb.active.append(["Allied", 12345]); b = io.BytesIO(); wb.save(b)
+    return {"D1": quote, "D3": drawing, "R1": rfi, "X1": b.getvalue(), "M1": b"# Register\nline"}
+
+
+BLOBS = _blobs()
+TREE["F1"] += [{"id": "R1", "name": "RFI.docx", "mimeType": "x/docx"}, {"id": "X1", "name": "Quotes.xlsx", "mimeType": "x/xlsx"},
+               {"id": "M1", "name": "Notes.md", "mimeType": "text/markdown"}, {"id": "Z1", "name": "pack.zip", "mimeType": "application/zip"}]
+
+
 def handler(request: httpx.Request) -> httpx.Response:
     u = request.url
     if u.host == "oauth2.googleapis.com":
@@ -40,6 +57,8 @@ def handler(request: httpx.Request) -> httpx.Response:
             kids = [k for k in kids if k["mimeType"] == FOLDER]
         return httpx.Response(200, json={"files": kids})
     fid = u.path.rsplit("/", 1)[1]
+    if u.params.get("alt") == "media":
+        return httpx.Response(200, content=BLOBS.get(fid, b"PK\x03\x04"))
     for kids in TREE.values():
         for k in kids:
             if k["id"] == fid:
@@ -132,3 +151,36 @@ def test_connect_flow_files_and_tenant_isolation(client, auth, drive, monkeypatc
 def test_token_is_encrypted():
     s = dc.encrypt("RT-secret")
     assert "RT-secret" not in s and dc.decrypt(s) == "RT-secret"
+
+
+def test_read_files_extracts_text_and_keeps_provenance(client, auth, drive):
+    from factory import make_workbook
+    q = dict(up.parse_qsl(up.urlparse(client.get("/api/drive/connect", headers=auth).json()["url"]).query))
+    client.get("/api/drive/callback", params={"code": "c", "state": q["state"]}, follow_redirects=False)
+    tid = client.post("/api/tenders", headers=auth, files={"file": ("a.xlsx", make_workbook())}).json()["id"]
+    assert client.post(f"/api/drive/tenders/{tid}/read", headers=auth, json={"file_ids": ["D1"]}).status_code == 409      # no folder linked
+    client.put(f"/api/drive/tenders/{tid}", headers=auth, json={"folder_id": "T1"})
+    assert client.post(f"/api/drive/tenders/{tid}/read", headers=auth, json={"file_ids": []}).status_code == 422
+    r = client.post(f"/api/drive/tenders/{tid}/read", headers=auth, json={"file_ids": ["D1", "D3", "R1", "X1", "M1", "Z1", "NOPE"]}).json()["results"]
+    by = {x["file_id"]: x for x in r}
+    assert by["D1"]["status"] == "ok" and by["D1"]["pages"] == 2 and by["D1"]["revision"] == "B"
+    assert by["D3"]["status"] == "needs_ocr" and "OCR" in by["D3"]["warnings"][0]
+    assert by["R1"]["status"] == "ok" and by["X1"]["status"] == "ok" and by["M1"]["status"] == "ok"
+    assert by["Z1"]["status"] == "unsupported" and by["NOPE"]["status"] == "failed"                   # outside the linked folder
+    pg = client.get(f"/api/drive/tenders/{tid}/texts/D1", headers=auth).json()
+    assert [p["n"] for p in pg["pages_text"]] == [1, 2] and "$12,345.00" in pg["pages_text"][0]["text"] and pg["name"] == "Drawings RevB.pdf"
+    assert "Allied | 12345" in client.get(f"/api/drive/tenders/{tid}/texts/X1", headers=auth).json()["pages_text"][0]["text"]
+    assert len(client.get(f"/api/drive/tenders/{tid}/texts", headers=auth).json()["texts"]) == 6
+    files = {f["id"]: f for f in client.get(f"/api/drive/tenders/{tid}/files", headers=auth).json()["files"]}
+    assert files["D1"]["read"]["status"] == "ok" and files["D1"]["read"]["stale"] is False and files["D2"]["read"] is None
+    # reading again replaces the stored text rather than duplicating it
+    client.post(f"/api/drive/tenders/{tid}/read", headers=auth, json={"file_ids": ["D1"]})
+    assert len(client.get(f"/api/drive/tenders/{tid}/texts", headers=auth).json()["texts"]) == 6
+    # another company cannot read this tender's texts
+    import config as cfg
+    cfg.REGISTRATION_OPEN = True
+    try:
+        other = {"Authorization": f"Bearer {register(client, 'c@example.com', 'Third Ltd').json()['token']}"}
+    finally:
+        cfg.REGISTRATION_OPEN = False
+    assert client.get(f"/api/drive/tenders/{tid}/texts/D1", headers=other).status_code == 404

@@ -4,8 +4,9 @@ from playwright.sync_api import sync_playwright, expect
 
 SHOT = "/tmp/claude-0/-home-user/d48f647b-2b13-5568-9c30-5dd27b3706a0/scratchpad/tp/e2e/"
 state = {"connected": False, "folder": None}
+READ = {}
 F = lambda i, n, p="", rev=None, latest=None, sup=None, arch=False: {"id": i, "name": n, "path": p, "mime": "application/pdf", "is_folder": False, "modified": "2026-10-02T01:00:00Z",
-    "size": 1500000, "link": "https://drive.google.com/x", "revision": rev, "latest": latest, "superseded_by": sup, "in_archive": arch}
+    "size": 1500000, "link": "https://drive.google.com/x", "revision": rev, "latest": latest, "superseded_by": sup, "in_archive": arch, "read": READ.get(i)}
 LISTING = {"folder": {"id": "T1", "name": "329 Hobsonville Road", "url": "https://drive.google.com/t1"}, "truncated": False,
     "structure": [{"number": n, "label": l, "found": i != 3, "actual": l if i != 3 else None, "exact": i not in (2, 3)} for i, (n, l) in enumerate([("01", "Client Issue Pack"), ("02", "Tender Source Documents"), ("03", "Supplier and Subcontractor Quotes"), ("04", "RFIs Correspondence and Clarifications"), ("05", "Takeoffs Markups and Programme"), ("06", "Estimating Working Files"), ("07", "Superseded and Archive")])],
     "counts": {"files": 4, "latest_revisions": 2, "superseded": 1, "ambiguous_groups": 0, "loose_in_root": 1},
@@ -18,6 +19,11 @@ def route(r):
     if p == "/status": return j({"configured": True, "connected": state["connected"], "account": "rick@gmail.example", "connected_at": None, "read_only": True, "standard_folders": []})
     if p == "/connect": state["connected"] = True; return j({"url": "http://localhost:5173/#/tenders"})
     if p == "/folders": return j({"parent": "root", "folders": [{"id": "T1", "name": "329 Hobsonville Road"}]})
+    if p.endswith("/read"):
+        for i in json.loads(r.request.post_data)["file_ids"]: READ[i] = {"status": "ok" if i != "4" else "needs_ocr", "read_at": "2026-10-12T01:00:00Z", "pages": 2, "chars": 90, "stale": False, "warnings": []}
+        LISTING["files"] = [{**f, "read": READ.get(f["id"])} for f in LISTING["files"]]
+        return j({"results": []})
+    if "/texts/" in p: return j({"file_id": "1", "name": "Drawings RevC.pdf", "status": "ok", "pages": 2, "chars": 90, "warnings": [], "path": "", "revision": "C", "pages_text": [{"n": 1, "text": "Total $12,345.00"}, {"n": 2, "text": "Exclusions: rock"}]})
     if p.startswith("/tenders/") and p.endswith("/files"): return j(LISTING)
     if p.startswith("/tenders/") and m == "PUT": state["folder"] = LISTING["folder"]; return j({"folder": LISTING["folder"]})
     if p.startswith("/tenders/"): return j({"folder": state["folder"]})
@@ -45,4 +51,11 @@ with sync_playwright() as p:
     pg.screenshot(path=SHOT + "drive_1.png", full_page=True)
     pg.get_by_label("Hide superseded").check() if False else pg.get_by_text("Hide superseded").click()
     expect(pg.get_by_text("Drawings RevB.pdf")).to_have_count(0)
+    pg.get_by_text("Hide superseded").click()
+    pg.get_by_role("button", name="Read all latest").click()
+    expect(pg.get_by_text("Needs OCR")).to_be_visible(timeout=10000)
+    pg.get_by_role("button", name="Read", exact=False).filter(has_text="Read").first.click() if False else pg.locator("button", has=pg.get_by_text("Read", exact=True)).first.click()
+    expect(pg.get_by_text("Total $12,345.00")).to_be_visible()
+    pg.get_by_label("Search within this file").fill("rock"); expect(pg.get_by_text("Page 1")).to_have_count(0)
+    pg.screenshot(path=SHOT + "drive_2.png")
     print("OK drive page | page errors:", errs); b.close()

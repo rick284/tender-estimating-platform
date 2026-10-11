@@ -9,6 +9,7 @@ from fastapi.responses import RedirectResponse
 import config
 import drive_client as dc
 from db import get_db
+import doc_text
 from drive_index import STANDARD_FOLDERS, analyse, check_structure
 from security import current_user
 from services import audit, now
@@ -156,8 +157,79 @@ async def files(tender_id: str, user: dict[str, Any] = Depends(current_user)):
     res = analyse(items)
     top = [i["name"] for i in items if i["is_folder"] and not i["path"]]
     docs = [f for f in res["files"] if not f["is_folder"]]
+    reads = {d["file_id"]: d async for d in get_db().doc_texts.find({"org_id": user["org_id"], "tender_id": t["_id"]}, {"pages": 0})}
+    for f in res["files"]:
+        d = reads.get(f["id"])
+        f["read"] = None if not d else {"status": d["status"], "read_at": d["read_at"].isoformat(), "pages": d["page_count"], "chars": d["chars"],
+                                        "stale": d["modified"] != f["modified"], "warnings": d["warnings"]}
     await audit(get_db(), user, "drive.list", t["_id"], f"{len(docs)} files")
     return {"folder": link, "files": res["files"], "truncated": truncated, "structure": check_structure(top),
             "counts": {"files": len(docs), "latest_revisions": sum(1 for f in docs if f["latest"]),
                        "superseded": sum(1 for f in docs if f["superseded_by"]), "ambiguous_groups": res["ambiguous_groups"],
                        "loose_in_root": sum(1 for f in docs if not f["path"])}}
+
+
+MAX_READ_BATCH = 25
+MAX_CHARS_PER_FILE = 3_000_000
+
+
+def _summary(d: dict[str, Any]) -> dict[str, Any]:
+    return {"file_id": d["file_id"], "name": d["name"], "path": d["path"], "revision": d.get("revision"), "status": d["status"], "method": d["method"],
+            "pages": d["page_count"], "chars": d["chars"], "warnings": d["warnings"], "read_at": d["read_at"].isoformat(), "modified": d["modified"]}
+
+
+@router.post("/tenders/{tender_id}/read")
+async def read_files(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)):
+    """Download the chosen files (read-only), pull out their text page by page and store the text (not the original file).
+    Only files inside the tender's linked folder can be read."""
+    t = await _tender(user, tender_id)
+    link = t.get("drive_folder")
+    if not link:
+        raise HTTPException(409, "No Drive folder is linked to this tender yet.")
+    ids = [str(i) for i in body.get("file_ids", [])][:MAX_READ_BATCH]
+    if not ids:
+        raise HTTPException(422, f"Choose at least one file (up to {MAX_READ_BATCH} at a time).")
+    tok = await _token(user)
+    try:
+        items, _ = await dc.walk(tok, link["id"])
+    except dc.DriveError as e:
+        raise HTTPException(409, str(e))
+    by_id = {f["id"]: f for f in analyse(items)["files"] if not f["is_folder"]}
+    db, out = get_db(), []
+    for fid in ids:
+        f = by_id.get(fid)
+        if not f:
+            out.append({"file_id": fid, "name": fid, "status": "failed", "warnings": ["That file is not inside this tender's folder."], "pages": 0}); continue
+        try:
+            name, mime, data = await dc.download(tok, f)
+            r = doc_text.extract(name, mime, data)
+        except dc.DriveError as e:
+            out.append({"file_id": fid, "name": f["name"], "status": "failed", "warnings": [str(e)], "pages": 0}); continue
+        pages, total = [], 0
+        for p in r["pages"]:
+            if total + len(p["text"]) > MAX_CHARS_PER_FILE:
+                r["warnings"].append(f"Text was cut off at page {p['n']} (very large file)."); break
+            pages.append(p); total += len(p["text"])
+        doc = {"_id": f"{t['_id']}:{fid}", "org_id": user["org_id"], "tender_id": t["_id"], "file_id": fid, "name": f["name"], "path": f["path"], "mime": f["mime"],
+               "modified": f["modified"], "revision": f.get("revision"), "status": r["status"], "method": r["method"], "warnings": r["warnings"],
+               "pages": pages, "page_count": len(pages), "chars": total, "read_at": now(), "read_by": user["_id"]}
+        await db.doc_texts.replace_one({"_id": doc["_id"]}, doc, upsert=True)
+        out.append(_summary(doc))
+    await audit(db, user, "drive.read", t["_id"], f"{len(ids)} files requested, {sum(1 for o in out if o['status'] in ('ok', 'partial'))} read")
+    return {"results": out}
+
+
+@router.get("/tenders/{tender_id}/texts")
+async def texts(tender_id: str, user: dict[str, Any] = Depends(current_user)):
+    t = await _tender(user, tender_id)
+    ds = await get_db().doc_texts.find({"org_id": user["org_id"], "tender_id": t["_id"]}, {"pages": 0}).sort("name", 1).to_list(2000)
+    return {"texts": [_summary(d) for d in ds]}
+
+
+@router.get("/tenders/{tender_id}/texts/{file_id}")
+async def text_pages(tender_id: str, file_id: str, user: dict[str, Any] = Depends(current_user)):
+    t = await _tender(user, tender_id)
+    d = await get_db().doc_texts.find_one({"_id": f"{t['_id']}:{file_id}", "org_id": user["org_id"]})
+    if not d:
+        raise HTTPException(404, "That file has not been read yet.")
+    return {**_summary(d), "pages_text": d["pages"]}

@@ -130,3 +130,27 @@ async def walk(token: str, root_id: str, max_depth: int = 6, max_files: int = 30
                 else:
                     truncated = True
     return items, truncated
+
+
+MAX_DOWNLOAD = 25 * 1024 * 1024
+EXPORTS = {"application/vnd.google-apps.document": ("text/plain", ".txt"), "application/vnd.google-apps.spreadsheet": ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx")}
+
+
+async def download(token: str, f: dict[str, Any]) -> tuple[str, str, bytes]:
+    """Fetch one file's bytes (read-only). Google Docs/Sheets are exported. Returns (name, mime, data)."""
+    mime, name = f["mime"], f["name"]
+    if mime in EXPORTS:
+        em, ext = EXPORTS[mime]
+        path, params = f"/files/{f['id']}/export", {"mimeType": em}
+        name, mime = name + ext, em
+    else:
+        path, params = f"/files/{f['id']}", {"alt": "media", "supportsAllDrives": "true"}
+    if f.get("size") and f["size"] > MAX_DOWNLOAD:
+        raise DriveError(f"{f['name']} is larger than {MAX_DOWNLOAD // 1048576} MB and was skipped.")
+    async with _client() as c:
+        r = await c.get(f"{API}{path}", params=params, headers={"Authorization": f"Bearer {token}"})
+    if r.status_code != 200:
+        raise DriveError(f"Google would not give us {f['name']} (error {r.status_code}).")
+    if len(r.content) > MAX_DOWNLOAD:
+        raise DriveError(f"{f['name']} is larger than {MAX_DOWNLOAD // 1048576} MB and was skipped.")
+    return name, mime, r.content

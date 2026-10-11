@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type DriveFile, type DriveListing, type DriveStatus } from "../lib/api";
+import { api, type DriveFile, type DriveListing, type DriveRead, type DriveStatus, type DriveText } from "../lib/api";
 import { Chip, Empty, PageHeader, Panel, Stat } from "../components/ui";
 import { Modal } from "../components/Modal";
 import { fmtDate, fmtNum } from "../lib/format";
@@ -39,6 +39,49 @@ function FolderPicker({ open, onClose, onPick }: { open: boolean; onClose: () =>
   );
 }
 
+const READ_LABEL: Record<DriveRead["status"], { tone: "green" | "amber" | "red" | "neutral"; text: string; tip: string }> = {
+  ok: { tone: "green", text: "Read", tip: "Text extracted" },
+  partial: { tone: "amber", text: "Part read", tip: "Some pages have no text (drawings or scans)" },
+  needs_ocr: { tone: "amber", text: "Needs OCR", tip: "Scanned or drawing-only: no text could be extracted" },
+  unsupported: { tone: "neutral", text: "Not supported", tip: "This file type is not read yet" },
+  failed: { tone: "red", text: "Failed", tip: "Could not be read" },
+};
+
+function TextDialog({ tenderId, file, onClose }: { tenderId: string; file: DriveFile | null; onClose: () => void }) {
+  const [t, setT] = useState<DriveText | null>(null);
+  const [err, setErr] = useState("");
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    setT(null); setErr(""); setQ("");
+    if (file) api.driveText(tenderId, file.id).then(setT).catch((e) => setErr(e.message));
+  }, [tenderId, file]);
+  const pages = (t?.pages_text ?? []).filter((p) => !q.trim() || p.text.toLowerCase().includes(q.trim().toLowerCase()));
+  return (
+    <Modal open={!!file} onClose={onClose} title={file ? `Text of ${file.name}` : ""}>
+      <div className="space-y-3">
+        {err && <div role="alert" className="border border-red-line bg-red-bg px-4 py-3 text-sm text-red-fg">{err}</div>}
+        {!t && !err && <p className="text-sm text-muted-foreground" aria-live="polite">Loading…</p>}
+        {t && (
+          <>
+            <p className="text-sm text-muted-foreground">{t.pages} page(s), {fmtNum(t.chars)} characters. Each page keeps its number so quantities can cite it.</p>
+            {t.warnings.map((w) => <div key={w} className="border border-amber-line bg-amber-bg px-3 py-2 text-sm text-amber-fg">{w}</div>)}
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search within this file" aria-label="Search within this file" className="h-9 w-full border bg-background px-3 text-sm focus:border-primary" />
+            <div className="max-h-[50vh] space-y-3 overflow-auto">
+              {pages.length === 0 && <p className="text-sm text-muted-foreground">No pages match.</p>}
+              {pages.map((p) => (
+                <div key={p.n} className="border">
+                  <div className="label border-b bg-muted px-3 py-1">Page {p.n}</div>
+                  <pre className="whitespace-pre-wrap px-3 py-2 font-mono text-xs leading-5">{p.text || "(no text on this page)"}</pre>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 export function DriveDocs({ tenderId }: { tenderId: string }) {
   const [status, setStatus] = useState<DriveStatus | null>(null);
   const [folder, setFolder] = useState<{ id: string; name: string; url: string } | null | undefined>(undefined);
@@ -47,6 +90,9 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
   const [err, setErr] = useState("");
   const [pick, setPick] = useState(false);
   const [onlyLatest, setOnlyLatest] = useState(false);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [reading, setReading] = useState("");
+  const [view, setView] = useState<DriveFile | null>(null);
 
   const load = useCallback(async () => {
     setErr("");
@@ -72,9 +118,24 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
     try { await api.driveDisconnect(); setListing(null); await load(); } catch (e) { setErr((e as Error).message); }
   };
 
+  const readFiles = async (ids: string[]) => {
+    if (!ids.length) return;
+    setErr("");
+    try {
+      for (let i = 0; i < ids.length; i += 25) {
+        setReading(`Reading files ${Math.min(i + 25, ids.length)} of ${ids.length}…`);
+        await api.driveRead(tenderId, ids.slice(i, i + 25));
+      }
+      setSel(new Set()); setListing(await api.driveFiles(tenderId));
+    } catch (e) { setErr((e as Error).message); }
+    finally { setReading(""); }
+  };
+  const toggle = (id: string) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
   const files = (listing?.files ?? []).filter((f) => !f.is_folder && (!onlyLatest || f.latest !== false));
   const note = new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("drive");
 
+  const unread = files.filter((f) => f.latest !== false && !f.in_archive && (!f.read || f.read.stale)).map((f) => f.id);
   return (
     <div>
       <PageHeader title="Drive Documents" sub="The tender's Google Drive folder, read-only. The platform can look at the files but never change, move or delete them." />
@@ -123,14 +184,21 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
                       ))}
                     </ul>
                   </Panel>
-                  <Panel title="Files" flush action={<label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={onlyLatest} onChange={(e) => setOnlyLatest(e.target.checked)} /> Hide superseded</label>}>
+                  <Panel title="Files" flush action={
+                    <div className="flex flex-wrap items-center gap-3 text-sm">
+                      <label className="flex items-center gap-2"><input type="checkbox" checked={onlyLatest} onChange={(e) => setOnlyLatest(e.target.checked)} /> Hide superseded</label>
+                      <button className="btn btn-ghost !py-1" disabled={!!reading || sel.size === 0} onClick={() => readFiles([...sel])}>Read selected ({sel.size})</button>
+                      <button className="btn btn-solid !py-1" disabled={!!reading || unread.length === 0} onClick={() => readFiles(unread)} title="Latest files not yet read, or changed since they were read">Read all latest ({unread.length})</button>
+                    </div>}>
+                    {reading && <div className="border-b bg-muted px-4 py-2 text-sm" aria-live="polite">{reading}</div>}
                     {files.length === 0 ? <div className="p-4"><Empty title="No files" body="This folder has no files yet." /></div> : (
                       <div className="overflow-x-auto">
-                        <table className="grid-table min-w-[48rem]">
-                          <thead><tr><th>File</th><th>Folder</th><th>Revision</th><th>Status</th><th>Modified</th><th className="text-right">Size</th></tr></thead>
+                        <table className="grid-table min-w-[56rem]">
+                          <thead><tr><th className="w-8"></th><th>File</th><th>Folder</th><th>Revision</th><th>Status</th><th>Text</th><th>Modified</th><th className="text-right">Size</th></tr></thead>
                           <tbody>
                             {files.map((f: DriveFile) => (
                               <tr key={f.id}>
+                                <td><input type="checkbox" aria-label={`Select ${f.name}`} checked={sel.has(f.id)} onChange={() => toggle(f.id)} /></td>
                                 <td>{f.link ? <a className="underline underline-offset-4" href={f.link} target="_blank" rel="noreferrer">{f.name}</a> : f.name}</td>
                                 <td className="text-muted-foreground">{f.path || "(main folder)"}</td>
                                 <td>{f.revision ?? "—"}</td>
@@ -138,6 +206,13 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
                                   {f.superseded_by ? <Chip tone="neutral" title={`Superseded by ${f.superseded_by}`}>Superseded</Chip>
                                     : f.in_archive ? <Chip tone="neutral">Archive</Chip>
                                     : f.latest ? <Chip tone={f.ambiguous ? "amber" : "green"} title={f.ambiguous ? "Revision labels mix numbers and letters; check which is newest" : undefined}>{f.ambiguous ? "Check latest" : "Latest"}</Chip> : "—"}
+                                </td>
+                                <td>
+                                  {f.read ? (
+                                    <button className="inline-flex items-center gap-1.5" onClick={() => setView(f)} title={`${READ_LABEL[f.read.status].tip}. Click to view the text.`}>
+                                      <Chip tone={READ_LABEL[f.read.status].tone}>{READ_LABEL[f.read.status].text}</Chip>{f.read.stale && <Chip tone="amber" title="The file changed in Drive after it was read">Changed</Chip>}
+                                    </button>
+                                  ) : <span className="text-muted-foreground">—</span>}
                                 </td>
                                 <td>{fmtDate(f.modified)}</td>
                                 <td className="text-right">{fmtSize(f.size)}</td>
@@ -154,6 +229,7 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
           )}
         </>
       )}
+      <TextDialog tenderId={tenderId} file={view} onClose={() => setView(null)} />
       <FolderPicker open={pick} onClose={() => setPick(false)} onPick={link} />
     </div>
   );
