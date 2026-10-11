@@ -59,7 +59,11 @@ export const api = {
   setClient: (id: string, client: string) => request<Tender>(`/api/tenders/${id}`, { method: "PATCH", body: JSON.stringify({ client }) }),
   deleteTender: (id: string) => request<{ deleted: boolean }>(`/api/tenders/${id}`, { method: "DELETE" }),
   addRevision: (id: string, file: File, confirm: boolean) => request<RevisionInfo>(`/api/tenders/${id}/revisions`, { method: "POST", body: form({ file, confirm_different_project: confirm }) }),
-  revision: (id: string, n: number) => request<{ tender: Tender; revision: RevisionInfo; estimate: Estimate }>(`/api/tenders/${id}/revisions/${n}`),
+  // Revisions saved before rows had permanent ids carry no `uid`; their id back then was the display id, so use that.
+  revision: (id: string, n: number) => request<{ tender: Tender; revision: RevisionInfo; estimate: Estimate }>(`/api/tenders/${id}/revisions/${n}`).then((r) => {
+    r.estimate.buildup = r.estimate.buildup.map((b) => (b.uid ? b : { ...b, uid: b.row_id }));
+    return r;
+  }),
   preview: (id: string, n: number, edits: Edit[]) => request<{ estimate: Estimate; changes: Change[]; base: { all_in: number; siteworks_tender: number } }>(`/api/tenders/${id}/revisions/${n}/preview`, { method: "POST", body: JSON.stringify({ edits }) }),
   saveEdits: (id: string, n: number, edits: Edit[], label: string, note: string) => request<RevisionInfo>(`/api/tenders/${id}/revisions/${n}/save`, { method: "POST", body: JSON.stringify({ edits, label, note }) }),
   compare: (id: string, a: number, b: number) => request<{ a: RevisionInfo; b: RevisionInfo; diff: Diff }>(`/api/tenders/${id}/compare?a=${a}&b=${b}`),

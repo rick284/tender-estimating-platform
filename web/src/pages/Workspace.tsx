@@ -6,6 +6,7 @@ import type { Change, Estimate, RevisionInfo, TenderDetail } from "../lib/types"
 import { editKey, EditProvider, opKey, toApi, type DraftEdit, type EditCtx } from "../lib/edit";
 import { fmtMoney, fmtNum } from "../lib/format";
 import { isTenderPage, Shell, type TenderPage } from "../components/Shell";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Modal } from "../components/Modal";
 import { Chip, Select } from "../components/ui";
 import { Overview } from "./Overview";
@@ -297,6 +298,7 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
       <EditProvider value={ctx}>
       <main className={`mx-auto max-w-[88rem] px-4 py-6 sm:px-6 sm:py-8 ${editing ? "pb-28" : ""}`}>
         {err && <div role="alert" className="border border-red-line bg-red-bg px-4 py-3 text-sm text-red-fg">{err}</div>}
+        <ErrorBoundary key={pg}>
         {!err && pg === "revisions" && detail && <Revisions detail={detail} current={cur} onAdd={() => setUpload(true)} />}
         {!err && pg !== "revisions" && !shown && <div className="text-sm text-muted-foreground" aria-live="polite">Loading estimate…</div>}
         {!err && shown && pg === "overview" && <Overview est={shown} go={view} />}
@@ -306,6 +308,7 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
         {!err && shown && pg === "buildup" && <BuildUp est={shown} code={code} setCode={setCode} focusUid={focusUid} />}
         {!err && shown && pg === "weather" && <Weather est={shown} />}
         {!err && shown && pg === "library" && <RateLibrary est={shown} />}
+        </ErrorBoundary>
       </main>
       </EditProvider>
       {editing && est && (
