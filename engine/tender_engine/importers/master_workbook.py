@@ -49,6 +49,8 @@ class MasterWorkbookImport:
     weather_setup: dict | None = None            # live weather-tool setup (tender_engine.weather_setup); None = recorded tool outputs
     schedule: dict | None = None                 # client price schedule format + mapping (tender_engine.schedule); None = automatic
     register: list = field(default_factory=list)  # tender register items (tender_engine.register)
+    quotes: list = field(default_factory=list)    # supplier / subcontractor quote register (tender_engine.quotes)
+    programme: dict | None = None                # programme tasks, predecessors and calendar (tender_engine.programme); None = not set up
     cached: Any = field(repr=False, default=None)
 
 
@@ -137,6 +139,56 @@ def _register_from_cover(ws) -> list[dict]:
             add("risk", ref=a, title=b, likelihood=c, impact=_s(row[3].value), rating=_s(row[4].value), detail=_s(row[5].value), owner=_s(row[6].value),
                 status=status, rag=status.upper() if status.upper() in ("RED", "AMBER", "GREEN") else "")
     return items
+
+
+def _quotes_from_sheet(ws) -> list[dict]:
+    """Supplier Quote Register: header row has 'Quote ID'; rows Q-01.. follow."""
+    head = None
+    out: list[dict] = []
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
+        a = _s(row[0].value)
+        if a == "Quote ID":
+            head = True
+            continue
+        if head and re.fullmatch(r"Q-\d+", a):
+            g = lambda i: _s(row[i].value) if len(row) > i else ""
+            try:
+                amount = str(D(row[5].value).quantize(Decimal("0.01"))) if row[5].value not in (None, "") else ""
+            except Exception:
+                amount = ""
+            out.append({"id": f"S-q{len(out) + 1:03d}", "ref": a, "package": g(1), "estimate_ref": g(2), "qty": g(3), "unit": g(4), "amount": amount, "scope": g(6),
+                        "documents": g(7), "supplier": g(8), "status": g(9), "action": g(10), "notes": g(11), "treatment": "", "verification": "",
+                        "source": "", "quote_date": "", "valid_until": ""})
+        elif head and a and not re.fullmatch(r"Q-\d+", a):
+            break
+    return out
+
+
+def _programme_from_sheet(ws, qs_codes: set[str], start: str, days_per_week: int) -> dict | None:
+    """Programme Export: one row per QS code plus control tasks (PRG-..., DRN-...); override days, predecessor codes, basis and notes."""
+    if ws is None:
+        return None
+    tasks: list[dict] = []
+    for row in ws.iter_rows(min_row=7, max_row=ws.max_row):
+        code = row[3].value
+        if not isinstance(code, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,19}", code.strip()):
+            continue
+        code = code.strip()
+        name = _s(row[4].value)
+        if not name:
+            continue
+        over = row[11].value
+        try:
+            override = str(int(Decimal(str(over)))) if over not in (None, "") else None
+        except Exception:
+            override = None
+        preds = [c for c in re.split(r"[,;\s]+", _s(row[15].value)) if c]
+        section = _s(row[2].value)
+        tasks.append({"id": f"P-{len(tasks) + 1:05d}", "code": code, "name": name[:200], "qs_code": code if code in qs_codes else "", "override_days": override,
+                      "predecessors": preds, "hammock": section.upper().startswith("PRELIMINARIES"), "basis": _s(row[14].value)[:500], "note": _s(row[23].value)[:500]})
+    if not tasks:
+        return None
+    return {"start": start, "days_per_week": days_per_week, "hours_per_day": 8, "tasks": tasks}
 
 
 def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
@@ -274,4 +326,7 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
         meta=_cover_meta(v), library=lib, qs=qs, qs_extra=qs_extra, rows=rows, row_extra=extra,
         excel_rows=excel_rows, tool=tool, recovery=D(wr["B16"].value), commercial=commercial,
         risk_feed=risk_feed, overlays=overlays, overlap=D(cp["B13"].value), weather_meta=weather_meta, weather_links=weather_links,
-        controls=controls, register=_register_from_cover(v["Cover & Instructions"]), cached=v)
+        controls=controls, register=_register_from_cover(v["Cover & Instructions"]),
+        quotes=_quotes_from_sheet(v["Supplier Quote Register"]) if "Supplier Quote Register" in v.sheetnames else [],
+        programme=_programme_from_sheet(v["Programme Export"] if "Programme Export" in v.sheetnames else None, {q.code for q in qs}, weather_meta.get("start", ""),
+                                        int(weather_meta["wd_per_week"]) if str(weather_meta.get("wd_per_week", "")).isdigit() else 5), cached=v)

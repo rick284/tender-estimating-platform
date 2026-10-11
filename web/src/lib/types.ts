@@ -24,6 +24,8 @@ export interface Estimate {
   schedule: PriceSchedule;
   register: RegisterItem[];
   register_summary: { rfis: number; open_rfis: number; open_red_rfis: number; red_risks: number };
+  quotes: QuoteItem[];
+  programme: ProgrammeData;
   reconciliation: { name: string; engine: number; workbook: number; difference: number; ok: boolean }[];
   qa_counts: Record<string, number>;
   reconciled: boolean | null;
@@ -38,7 +40,7 @@ export interface BuildUpLine {
   row_id: string; uid: string; qs_code: string; task: string; mode: string; resource_type: string; resource_code: string;
   resource: string; unit: string; qs_qty: number; productivity: number | null; productivity_unit: string;
   hours: number; duration_override: number | null; count: number | null; manual_qty: number | null; utilisation: number | null; waste: number | null;
-  library_rate: number; job_override: number | null; applied_rate: number; cost: number; weather_exposed: boolean;
+  library_rate: number; job_override: number | null; applied_rate: number; cost: number; weather_exposed: boolean; weather_task_type?: string;
   qa: string; workbook_qa: string; verified: boolean; confidence: string; rag: string; quote_ref: string;
   source_date: string; assumption: string; note: string; library_source: string;
 }
@@ -93,4 +95,18 @@ export type RegisterKind = "rfi" | "risk" | "assumption" | "exclusion" | "inclus
 export interface RegisterItem {
   id: string; kind: RegisterKind; ref: string; title: string; detail: string; action: string; status: string; rag: string;
   owner: string; likelihood: string; impact: string; rating: string;
+}
+
+export interface QuoteItem {
+  id: string; ref: string; package: string; supplier: string; estimate_ref: string; qty: string; unit: string; amount: string; scope: string; documents: string;
+  status: string; action: string; notes: string; treatment: string; verification: string; source: string; quote_date: string; valid_until: string;
+}
+
+export interface ProgrammeTask {
+  id: string; code: string; name: string; qs_code: string; section: string; amount: number | null; duration: number; derived: number | null; override: string | null;
+  predecessors: string[]; hammock: boolean; basis: string; note: string; es: number; ef: number; float: number; critical: boolean; start: string | null; finish: string | null;
+}
+export interface ProgrammeData {
+  set_up: boolean; tasks: ProgrammeTask[]; duration: number; critical_path: string[]; problems: string[]; start: string; days_per_week: number; hours_per_day: number;
+  finish: string | null; missing: { code: string; description: string; amount: number | null }[];
 }

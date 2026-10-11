@@ -18,6 +18,7 @@ from .weather import compute_weather, baseline_billed_weeks
 from .weather_setup import exposed_by_qs, run_setup
 from .schedule import auto_map, compute_schedule, default_schedule
 from .register import status_summary as register_status_summary
+from .programme import compute_programme
 from .models import WeatherToolRun
 
 
@@ -119,7 +120,7 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
             "utilisation": _f(src.utilisation), "waste": _f(src.waste),
             "library_rate": _f(res.library_rate), "job_override": _f(src.job_rate_override),
             "applied_rate": _f(res.applied_rate), "cost": _f(res.cost),
-            "weather_exposed": src.weather_exposed == "Yes", "qa": res.qa_flag, "workbook_qa": ex["workbook_qa"],
+            "weather_exposed": src.weather_exposed == "Yes", "weather_task_type": src.weather_task_type, "qa": res.qa_flag, "workbook_qa": ex["workbook_qa"],
             "verified": src.verified == "Yes", "confidence": ex["confidence"], "rag": _rag(ex["confidence"]),
             "quote_ref": ex["quote_ref"], "source_date": ex["source_date"], "assumption": ex["assumption"],
             "note": ex["note"], "library_source": rec.source if rec else ""})
@@ -186,6 +187,8 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
     # ---- client price schedule (custom format, or an automatic one by QS section)
     schedule_out = _schedule(m, qs, tender, cons, cmap)
 
+    programme_out = _programme(m, qs, rows)
+
     flag_counts: dict[str, int] = {}
     for r in rows:
         flag_counts[r.qa_flag] = flag_counts.get(r.qa_flag, 0) + 1
@@ -201,7 +204,7 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
         "consolidated": consolidated_out, "tender": tender_out, "commercial": commercial_out,
         "qs": qs_out, "sections": sections, "buildup": buildup, "library": library, "weather": weather_out,
         "reconciliation": reconciliation, "qa_counts": flag_counts, "schedule": schedule_out,
-        "register": m.register, "register_summary": register_status_summary(m.register),
+        "register": m.register, "register_summary": register_status_summary(m.register), "quotes": m.quotes, "programme": programme_out,
         "reconciled": all(r["ok"] for r in reconciliation) if m.reference is not None else None,
         "edited": m.reference is None,
     }
@@ -234,3 +237,20 @@ def _schedule(m, qs, tender, cons, cmap) -> dict[str, Any]:
         "targets": [{"value": f"line:{ln['ref']}", "label": f"{ln['ref']}  {ln['trade']}", "group": g["name"]} for g in sched["groups"] for ln in g["lines"] if ln["kind"] != "margin"]
                    + [{"value": f"group:{g['id']}", "label": f"Inside {g['name']} margin", "group": g["name"]} for g in sched["groups"]] + [{"value": "spread", "label": "Spread across all groups (inside the margin lines)", "group": ""}],
     }
+
+
+def _programme(m, qs, rows) -> dict[str, Any]:
+    qs_info = {ln.code: {"section": ln.section, "description": ln.description, "amount": _f(ln.amount)} for ln in qs.lines}
+    if m.programme is None:
+        return {"set_up": False, "missing": [{"code": c, "description": i["description"], "amount": i["amount"]} for c, i in qs_info.items() if i["amount"]]}
+    hours: dict[str, Decimal] = {}
+    for r in rows:
+        if not qs_info.get(r.qs_code, {}).get("amount"):                 # reference-only items (no cost) carry no duration of their own
+            continue
+        if r.applied_duration_hrs and r.applied_duration_hrs > hours.get(r.qs_code, D(0)):
+            hours[r.qs_code] = r.applied_duration_hrs
+    out = compute_programme(m.programme, hours, qs_info)
+    for t in out["tasks"]:
+        t["derived"] = t["derived"]
+    out["set_up"] = True
+    return out

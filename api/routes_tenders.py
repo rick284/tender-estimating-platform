@@ -169,9 +169,10 @@ async def add_revision(tender_id: str, file: UploadFile = File(...), label: str 
     data, est, inputs = await read_workbook(file)
     digest = sha256(data)
     dup = await db.revisions.find_one({"tender_id": t["_id"], "source_sha256": digest})
-    if dup and dup.get("inputs") and dup.get("parent_n") is None and "register" not in dup["inputs"] and inputs.get("register"):
-        # Saved before the tender register existed: add the register read from the same workbook. Nothing else changes.
-        await db.revisions.update_one({"_id": dup["_id"]}, {"$set": {"inputs.register": inputs["register"]}})
+    gaps = [k for k in ("register", "quotes", "programme") if dup and dup.get("inputs") and k not in dup["inputs"] and inputs.get(k)]
+    if dup and dup.get("parent_n") is None and gaps:
+        # Saved before the tender register / quote register existed: add what is read from the same workbook. Nothing else changes.
+        await db.revisions.update_one({"_id": dup["_id"]}, {"$set": {f"inputs.{k}": inputs[k] for k in gaps}})
         await audit(db, user, "revision.add_register", t["_id"], f"{dup['label']} (n={dup['n']})")
         return {**_rev_out({**dup, "inputs": dup["inputs"]}), "upgraded": True}
     if dup and not dup.get("inputs"):
@@ -204,7 +205,7 @@ async def _estimate(user: dict[str, Any], tender_id: str, n: int) -> dict[str, A
 async def _estimate_with_schedule(r: dict[str, Any]) -> dict[str, Any]:
     """Revisions saved before price schedules existed get one rebuilt from their saved inputs (the stored estimate is left untouched)."""
     est = r["estimate"]
-    missing = [k for k in ("schedule", "register", "register_summary") if k not in est]
+    missing = [k for k in ("schedule", "register", "register_summary", "quotes", "programme") if k not in est]
     if not missing or not r.get("inputs"):
         return est
     fresh = await run_in_threadpool(lambda: compute_estimate(from_json(r["inputs"])))
@@ -291,12 +292,21 @@ OUTPUTS = {
     "report.pdf": ("Estimate_Basis_Tender_Report", "application/pdf"),
     "schedule.pdf": ("Tender_Price_Schedule", "application/pdf"),
     "pricing.xlsx": ("Client_Pricing", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    "verification-index.pdf": ("Supplier_Verification_Index", "application/pdf"),
+    "evidence-notes.pdf": ("Supplier_Evidence_Notes", "application/pdf"),
+    "programme.xlsx": ("Programme", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
 }
 
 
 def _build_output(kind: str, est: dict[str, Any], ctx_kw: dict[str, str], intake: dict[str, str]) -> bytes:
-    from tender_engine.outputs import OutputContext, pricing_workbook, report_pdf, schedule_pdf
+    from tender_engine.outputs import (OutputContext, evidence_notes_pdf, pricing_workbook, programme_workbook, report_pdf, schedule_pdf, verification_index_pdf)
     ctx = OutputContext(**ctx_kw)
+    if kind == "verification-index.pdf":
+        return verification_index_pdf(est, ctx)
+    if kind == "evidence-notes.pdf":
+        return evidence_notes_pdf(est, ctx)
+    if kind == "programme.xlsx":
+        return programme_workbook(est, ctx)
     if kind == "report.pdf":
         return report_pdf(est, ctx, intake)
     if kind == "schedule.pdf":
@@ -322,6 +332,8 @@ async def download_output(tender_id: str, n: int, kind: str, user: dict[str, Any
     intake = {k: (est["meta"].get(k) or "") for k, _, _ in INTAKE_FIELDS}
     try:
         data = await run_in_threadpool(_build_output, kind, est, ctx_kw, intake)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
     except ModuleNotFoundError:
         raise HTTPException(503, "Document generation isn't available on this server yet.")
     stem, mime = OUTPUTS[kind]

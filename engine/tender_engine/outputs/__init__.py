@@ -5,6 +5,8 @@ Needs openpyxl (workbook) and reportlab (PDFs), which are optional dependencies 
 """
 from .pricing_workbook import pricing_workbook
 from .report import report_pdf, schedule_pdf
+from .evidence import evidence_notes_pdf, verification_index_pdf
+from .programme_workbook import programme_workbook
 from .context import OutputContext
 
-__all__ = ["pricing_workbook", "report_pdf", "schedule_pdf", "OutputContext"]
+__all__ = ["pricing_workbook", "report_pdf", "schedule_pdf", "verification_index_pdf", "evidence_notes_pdf", "programme_workbook", "OutputContext"]

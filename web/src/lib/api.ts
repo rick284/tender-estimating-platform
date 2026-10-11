@@ -64,7 +64,7 @@ async function download(path: string): Promise<void> {
 }
 
 export const api = {
-  downloadOutput: (id: string, n: number, kind: "report.pdf" | "schedule.pdf" | "pricing.xlsx") => download(`/api/tenders/${id}/revisions/${n}/outputs/${kind}`),
+  downloadOutput: (id: string, n: number, kind: "report.pdf" | "schedule.pdf" | "pricing.xlsx" | "verification-index.pdf" | "evidence-notes.pdf" | "programme.xlsx") => download(`/api/tenders/${id}/revisions/${n}/outputs/${kind}`),
   authConfig: () => request<{ registration_open: boolean; first_account: boolean }>("/api/auth/config"),
   login: (email: string, password: string) => request<{ token: string; user: User }>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   register: (b: { email: string; password: string; name: string; company: string }) => request<{ token: string; user: User }>("/api/auth/register", { method: "POST", body: JSON.stringify(b) }),

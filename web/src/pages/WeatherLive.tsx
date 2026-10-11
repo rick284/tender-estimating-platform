@@ -5,10 +5,25 @@ import { EditField, EditToggle } from "../components/EditCells";
 import { WeatherActivityDialog, WeatherSetupDialog } from "../components/WeatherDialogs";
 import { Chip, Money, Panel } from "../components/ui";
 import { editKey, useEdit } from "../lib/edit";
-import { useWeatherCatalog } from "../lib/weatherCatalog";
+import { newWeatherId, useWeatherCatalog } from "../lib/weatherCatalog";
 
 const tone = (s: string) => (s.startsWith("RED") ? "red" : s.startsWith("AMBER") ? "amber" : "green") as "red" | "amber" | "green";
 const pc = (v: number) => (v ? fmtPct(v, 1) : "—");
+
+/** Best guess at the weather task-library entry for a QS item: the row's own task type if it is in the library, else by section name. */
+function guessTask(names: string[], rowType: string, section: string): string {
+  if (names.includes(rowType)) return rowType;
+  const s = `${section} ${rowType}`.toLowerCase();
+  const pick = (n: string) => (names.includes(n) ? n : "");
+  if (/erosion|sediment/.test(s)) return pick("Erosion & sediment controls");
+  if (/pile|bored/.test(s)) return pick("Bored piles / drilled holes");
+  if (/retaining/.test(s)) return pick("Retaining wall installation");
+  if (/concrete|pavement|paving/.test(s)) return pick("External concrete placing");
+  if (/drain|stormwater|wastewater/.test(s)) return pick("Drainage trenching");
+  if (/service|trench|duct/.test(s)) return pick("Service trenches / ducting");
+  if (/earthwork|fill|strip|clear/.test(s)) return pick("Bulk earthworks");
+  return pick("Bulk earthworks");
+}
 
 /** The platform's own run of the Rev2 weather tool: settings, programme-cost links and the weather-exposed activities. */
 export function WeatherLive({ est }: { est: Estimate }) {
@@ -39,6 +54,17 @@ export function WeatherLive({ est }: { est: Estimate }) {
     const original = edits[weeklyKey]?.original ?? (w.links.weekly_uids as string[]).join(",");
     if (next.join(",") === original) reset("weather", "links", "weekly_uids");
     else set({ target: "weather", key: "links", field: "weekly_uids", value: next.join(","), original });
+  };
+  const fillFromProgramme = () => {
+    const names = (catalog?.tasks ?? []).map((x) => x.name);
+    const covered = new Set<string>(t.activities.flatMap((a: any) => a.qs_codes as string[]));
+    const exposed = new Map<string, { type: string }>();
+    for (const r of est.buildup) if (r.weather_exposed && (r.resource_type === "Labour" || r.resource_type === "Plant") && !exposed.has(r.qs_code)) exposed.set(r.qs_code, { type: r.weather_task_type ?? "" });
+    const tasks = est.programme.tasks.filter((x) => x.qs_code && exposed.has(x.qs_code) && !covered.has(x.qs_code) && x.start && x.finish && x.duration > 0);
+    if (tasks.length === 0) { window.alert("Nothing to add: every programme task with weather-exposed labour or plant already has an activity (or the programme has no dates yet)."); return; }
+    for (const x of tasks) {
+      add("weather_activity", newWeatherId(), { task: guessTask(names, exposed.get(x.qs_code)!.type, x.section) || names[0], start: x.start, finish: x.finish, critical: x.critical, qs_codes: [x.qs_code], note: `From programme task ${x.code}` });
+    }
   };
   const windWarn = s.wind_override == null && catalog && !catalog.wind_proxy_stations.includes(s.station);
 
@@ -80,7 +106,9 @@ export function WeatherLive({ est }: { est: Estimate }) {
         </dl>
       </Panel>
 
-      <Panel className="mt-4" title="Weather-exposed activities" flush action={editing ? <button className="btn btn-solid !py-1" onClick={() => setAdding(true)}>Add activity</button> : undefined}>
+      <Panel className="mt-4" title="Weather-exposed activities" flush action={editing ? <span className="flex gap-2">
+        {est.programme?.set_up && <button className="btn btn-ghost !py-1" onClick={fillFromProgramme}>Fill from programme</button>}
+        <button className="btn btn-solid !py-1" onClick={() => setAdding(true)}>Add activity</button></span> : undefined}>
         {t.activities.length === 0 ? (
           <p className="px-4 py-6 text-sm text-muted-foreground">No activities yet. Add each block of outdoor work with its dates; the allowance is worked out per activity, and only critical-path activities add delay.</p>
         ) : (

@@ -558,3 +558,35 @@ def test_register_edits_via_api(client, auth):
     assert pv.status_code == 200 and pv.json()["estimate"]["register_summary"]["open_red_rfis"] == 1
     assert client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [{**add, "value": {"kind": "rfi"}}]}).status_code == 422
     assert client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": [add], "note": "Added an RFI"}).status_code == 200
+
+
+# ---------------------------------------------------------------- quote register
+def test_quote_register_edits_and_evidence_pdfs(client, auth):
+    tid = _tender(client, auth)
+    add = {"target": "quote", "op": "add", "key": "S-test0001", "value": {"supplier": "Acme Aggregates", "package": "AP40 delivered", "amount": "$12,345.50", "estimate_ref": "EW01", "notes": "Quote 123 dated 1 Oct"}}
+    pv = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [add]})
+    assert pv.status_code == 200 and pv.json()["estimate"]["quotes"][0]["amount"] == "12345.50" and pv.json()["estimate"]["quotes"][0]["ref"] == "Q-01"
+    for bad in ({**add, "value": {}}, {**add, "value": {"supplier": "x", "amount": "abc"}}, {**add, "key": "bad"}):
+        assert client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [bad]}).status_code == 422
+    assert client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": [add], "note": "Recorded the aggregate quote"}).status_code == 200
+    for kind in ("verification-index.pdf", "evidence-notes.pdf"):
+        r = client.get(f"/api/tenders/{tid}/revisions/2/outputs/{kind}", headers=auth)
+        assert r.status_code == 200 and r.content.startswith(b"%PDF")
+
+
+# ---------------------------------------------------------------- programme
+def test_programme_setup_edits_and_export(client, auth):
+    tid = _tender(client, auth)
+    assert client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]["programme"]["set_up"] is False
+    r = client.get(f"/api/tenders/{tid}/revisions/1/outputs/programme.xlsx", headers=auth)
+    assert r.status_code == 409 and "hasn't been set up" in r.json()["detail"]
+    edits = [{"target": "programme", "op": "add", "key": "setup", "value": {"start": "2026-10-01"}},
+             {"target": "programme_task", "key": "P-EW01", "field": "override_days", "value": "4"}]
+    pv = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": edits})
+    assert pv.status_code == 200, pv.text
+    p = pv.json()["estimate"]["programme"]
+    assert p["set_up"] and p["duration"] == 4 and p["critical_path"] == ["EW01"] and p["finish"] == "2026-10-06"
+    assert client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [edits[1]]}).status_code == 422     # before setup
+    assert client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": edits, "note": "Programme set up"}).status_code == 200
+    x = client.get(f"/api/tenders/{tid}/revisions/2/outputs/programme.xlsx", headers=auth)
+    assert x.status_code == 200 and x.content.startswith(b"PK")

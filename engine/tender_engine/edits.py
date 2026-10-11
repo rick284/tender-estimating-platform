@@ -27,6 +27,15 @@ An edit is {"target", "key", "field", "value"} (set a value) or {"target", "op":
   register   add    key = new id ("R-xxxxxx")  value: kind (document|inclusion|exclusion|assumption|rfi|risk), title / detail / ref / ...
              set    key = id   field: ref | title | detail | action | status | rag | owner | likelihood | impact | rating
              delete key = id
+  quote      add    key = new id ("S-xxxxxx")  value: package / supplier / amount / ... (see quotes.FIELDS)
+             set    key = id   field: any of quotes.FIELDS
+             delete key = id
+  programme  add    key = "setup"   value: start?, days_per_week?, hours_per_day?  (one task per QS item, no predecessors yet)
+             delete key = "setup"
+             set    key = "config"  field: start | days_per_week | hours_per_day
+  programme_task  add key = new id ("P-xxxxxx")  value: code, name, qs_code?, override_days?, predecessors?, hammock?, basis?, note?
+             set    key = id   field: code | name | override_days | predecessors | hammock | basis | note
+             delete key = id
   weather_activity  add key = new id ("W-xxxxxx")  value: task, start, finish, critical?, qs_codes?, labour?, plant?, note?, ov_*?
              set    key = id   field: task | start | finish | critical | qs_codes | labour | plant | note | ov_<factor>
              delete key = id
@@ -48,6 +57,8 @@ from .money import D
 from . import weather_setup as wx
 from . import schedule as sch
 from . import register as reg
+from . import quotes as qt
+from . import programme as prg
 import json
 
 ROW_NUMERIC_NULLABLE = {"productivity_rate", "duration_override_hrs", "count", "manual_qty", "utilisation", "waste", "job_rate_override"}
@@ -145,6 +156,8 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     setup = wx.clone(base.weather_setup)
     sched = copy.deepcopy(base.schedule)
     register = copy.deepcopy(base.register)
+    quotes = copy.deepcopy(base.quotes)
+    programme = copy.deepcopy(base.programme)
     sched_before = copy.deepcopy(base.schedule)
     setup_before = wx.clone(base.weather_setup)
 
@@ -435,6 +448,87 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
             except reg.RegisterError as ex:
                 raise EditError(str(ex))
 
+        elif target == "quote":
+            try:
+                if op == "add":
+                    qid = str(key or "")
+                    if not qt.ITEM_ID.match(qid) or any(x["id"] == qid for x in quotes):
+                        raise EditError("That new quote's identity is invalid or already used.")
+                    if len(quotes) >= qt.MAX_ITEMS:
+                        raise EditError(f"The quote register can hold at most {qt.MAX_ITEMS} quotes.")
+                    quotes.append(qt.build_item(qid, value if isinstance(value, dict) else {}, quotes))
+                else:
+                    item = next((x for x in quotes if x["id"] == str(key)), None)
+                    if item is None:
+                        raise EditError(f"Unknown quote {key!r}.")
+                    if op == "delete":
+                        quotes.remove(item)
+                    else:
+                        qt.set_field(item, str(field), value)
+                        if item["ref"] and sum(1 for x in quotes if x["ref"] == item["ref"]) > 1:
+                            raise EditError(f"{item['ref']} is already used.")
+            except qt.QuoteError as ex:
+                raise EditError(str(ex))
+
+        elif target == "programme":
+            try:
+                if key == "setup":
+                    if op == "add":
+                        if programme is not None:
+                            raise EditError("The programme is already set up for this tender.")
+                        v = value if isinstance(value, dict) else {}
+                        programme = prg.new_programme("", 5, 8)
+                        for k_ in ("start", "days_per_week", "hours_per_day"):
+                            if v.get(k_) not in (None, ""):
+                                prg.set_config(programme, k_, v[k_])
+                        for q_ in (x for x in qs if not x.deleted):
+                            programme["tasks"].append({"id": "P-" + re.sub(r"[^A-Za-z0-9]", "", q_.item.code)[:10].ljust(4, "x"), "code": q_.item.code, "name": q_.item.description[:200],
+                                                       "qs_code": q_.item.code, "override_days": None, "predecessors": [], "hammock": q_.item.section.upper().startswith("PRELIMINARIES"),
+                                                       "basis": "", "note": ""})
+                    elif op == "delete":
+                        if programme is None:
+                            raise EditError("The programme isn't set up.")
+                        programme = None
+                    else:
+                        raise EditError("Use add or delete for the programme setup.")
+                elif key == "config":
+                    if programme is None:
+                        raise EditError("Set up the programme first.")
+                    prg.set_config(programme, str(field), value)
+                else:
+                    raise EditError("Unknown programme setting.")
+            except prg.ProgrammeError as ex:
+                raise EditError(str(ex))
+
+        elif target == "programme_task":
+            if programme is None:
+                raise EditError("Set up the programme first.")
+            try:
+                tasks_ = programme["tasks"]
+                if op == "add":
+                    tid = str(key or "")
+                    if not prg.TASK_ID.match(tid) or any(x["id"] == tid for x in tasks_):
+                        raise EditError("That new programme task's identity is invalid or already used.")
+                    if len(tasks_) >= prg.MAX_TASKS:
+                        raise EditError(f"A programme can have at most {prg.MAX_TASKS} tasks.")
+                    tasks_.append(prg.build_task(tid, value if isinstance(value, dict) else {}, tasks_))
+                else:
+                    t_ = next((x for x in tasks_ if x["id"] == str(key)), None)
+                    if t_ is None:
+                        raise EditError(f"Unknown programme task {key!r}.")
+                    if op == "delete":
+                        tasks_.remove(t_)
+                        for x in tasks_:
+                            x["predecessors"] = [c for c in x["predecessors"] if c != t_["code"]]
+                    else:
+                        old_code = t_["code"]
+                        prg.set_task_field(t_, str(field), value, tasks_)
+                        if field == "code" and t_["code"] != old_code:
+                            for x in tasks_:
+                                x["predecessors"] = [t_["code"] if c == old_code else c for c in x["predecessors"]]
+            except prg.ProgrammeError as ex:
+                raise EditError(str(ex))
+
         elif target == "setting":
             if (key, field) == ("weather", "recovery_allowance"):
                 recovery = _num(value, "Weather recovery allowance")
@@ -455,7 +549,13 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     m.qs_extra = {q.item.code: q.extra for q in keep_qs}
     m.library = library
     m.commercial, m.overlays, m.recovery, m.overlap = commercial, overlays, recovery, overlap
-    m.weather_links, m.weather_setup, m.schedule, m.register = links, setup, sched, register
+    if programme is not None:                      # tasks and links of QS items that no longer exist go with them
+        live = {q.item.code for q in keep_qs}
+        gone = {t["code"] for t in programme["tasks"] if t["qs_code"] and t["qs_code"] not in live}
+        programme["tasks"] = [t for t in programme["tasks"] if t["code"] not in gone]
+        for t in programme["tasks"]:
+            t["predecessors"] = [c for c in t["predecessors"] if c not in gone]
+    m.weather_links, m.weather_setup, m.schedule, m.register, m.quotes, m.programme = links, setup, sched, register, quotes, programme
     m.reference = None            # no longer the workbook as received
     return m, _net_changes(base, m, rows, qs, new_library)
 
@@ -521,6 +621,8 @@ def _net_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, rows: list[_R
     _weather_changes(a, b, add)
     _schedule_changes(a, b, add)
     _register_changes(a, b, add)
+    _quote_changes(a, b, add)
+    _programme_changes(a, b, add)
     add("setting", "weather", "recovery_allowance", "Weather recovery allowance", D(a.recovery), D(b.recovery))
     add("setting", "consolidated", "confirmed_overlap", "Confirmed Siteworks / Coast overlap", D(a.overlap), D(b.overlap))
     return out
@@ -590,3 +692,43 @@ def _register_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> 
     for rid, y in ib.items():
         if rid not in ia:
             add("register", rid, "added", label(y), "", y["title"][:80])
+
+
+def _quote_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:
+    ia, ib = {x["id"]: x for x in a.quotes}, {x["id"]: x for x in b.quotes}
+    label = lambda x: f"Quote {x['ref']} {x['supplier'] or x['package']}".strip()[:120]
+    for qid, x in ia.items():
+        if qid not in ib:
+            add("quote", qid, "removed", label(x), x["package"][:80], "")
+        else:
+            for f in qt.FIELDS:
+                add("quote", qid, f, label(x), x[f], ib[qid][f])
+    for qid, y in ib.items():
+        if qid not in ia:
+            add("quote", qid, "added", label(y), "", y["package"][:80] or y["supplier"][:80])
+
+
+def _programme_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:
+    pa, pb = a.programme, b.programme
+    if pa is None and pb is not None:
+        add("programme", "setup", "added", "Programme set up", "", f"{len(pb['tasks'])} tasks")
+    elif pa is not None and pb is None:
+        add("programme", "setup", "removed", "Programme removed", f"{len(pa['tasks'])} tasks", "")
+    if pa is not None and pb is not None:
+        for f in ("start", "days_per_week", "hours_per_day"):
+            add("programme", "config", f, "Programme " + f.replace("_", " "), pa[f], pb[f])
+    ia = {x["id"]: x for x in (pa["tasks"] if pa else [])}
+    ib = {x["id"]: x for x in (pb["tasks"] if pb else [])}
+    if (pa is None) != (pb is None):
+        return                                             # whole programme added or removed: reported once above
+    label = lambda x: f"Programme task {x['code']} {x['name']}"[:120]
+    for tid, x in ia.items():
+        if tid not in ib:
+            add("programme_task", tid, "removed", label(x), x["code"], "")
+        else:
+            y = ib[tid]
+            for f in prg.FIELDS:
+                add("programme_task", tid, f, label(x), ",".join(x[f]) if f == "predecessors" else x[f], ",".join(y[f]) if f == "predecessors" else y[f])
+    for tid, y in ib.items():
+        if tid not in ia:
+            add("programme_task", tid, "added", label(y), "", y["code"])

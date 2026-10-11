@@ -7,11 +7,14 @@ import { editKey, useEdit } from "../lib/edit";
 import { ScheduleFormatDialog, SplitDialog } from "../components/ScheduleDialogs";
 import { Chip, Empty, Money, PageHeader, Panel } from "../components/ui";
 
-type Kind = "report.pdf" | "schedule.pdf" | "pricing.xlsx";
+type Kind = "report.pdf" | "schedule.pdf" | "pricing.xlsx" | "verification-index.pdf" | "evidence-notes.pdf" | "programme.xlsx";
 const DOCS: { kind: Kind; title: string; body: string; button: string }[] = [
   { kind: "report.pdf", title: "Estimate basis and tender report", body: "The narrative report: summary, commercial position, pricing basis, programme and weather, assumptions and the quantity schedule.", button: "Download PDF" },
   { kind: "schedule.pdf", title: "Tender price schedule", body: "The price schedule in the client's format, ready to submit with the tender.", button: "Download PDF" },
   { kind: "pricing.xlsx", title: "Client pricing workbook", body: "Client summary, the price schedule and its reconciliation to the tender, as an Excel file.", button: "Download Excel" },
+  { kind: "programme.xlsx", title: "Programme and MS Project import", body: "The programme with its critical path, plus a sheet ready to import into Microsoft Project. Needs the programme set up first.", button: "Download Excel" },
+  { kind: "verification-index.pdf", title: "Supplier and subcontractor verification index", body: "Each supplier and subcontractor package traced to its evidence and how the tender uses it.", button: "Download PDF" },
+  { kind: "evidence-notes.pdf", title: "Supplier evidence notes", body: "How each piece of supplier evidence has been interpreted in the estimate.", button: "Download PDF" },
 ];
 
 const asString = (m: ScheduleSource["map"]): string => (typeof m === "string" ? m : Array.isArray(m) ? JSON.stringify(m) : "");
