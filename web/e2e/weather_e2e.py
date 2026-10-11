@@ -45,7 +45,7 @@ with sync_playwright() as p:
     # price one exposed plant row
     nav("QS Takeoff"); pg.get_by_role("button", name="Add QS item").click()
     dlg = pg.locator("dialog[open]").last
-    dlg.get_by_label("Section").select_option("__new"); dlg.get_by_label("New section name").fill("Earthworks")
+    dlg.get_by_label("New section name").fill("Earthworks")
     dlg.get_by_label("Code", exact=True).fill("EW01"); dlg.get_by_label("Description", exact=True).fill("Bulk strip")
     dlg.get_by_label("Quantity", exact=True).fill("1000"); dlg.get_by_label("Unit", exact=True).fill("m2")
     dlg.get_by_label("Where does the quantity come from?").select_option("MEASURED")

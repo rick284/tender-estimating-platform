@@ -54,10 +54,15 @@ with sync_playwright() as p:
         if not edit: pg.screenshot(path=SHOTS + "bl_2_revisions.png")
 
     # build it up
+    # Add row with no QS items must explain itself, not show an empty dropdown
+    nav("Resource Build-Up"); pg.get_by_role("button", name="Add row").click()
+    dlg = pg.locator("dialog[open]").last
+    expect(dlg).to_contain_text("no QS items yet"); dlg.get_by_role("button", name="OK").click()
     nav("QS Takeoff"); pg.screenshot(path=SHOTS + "bl_3_qs_empty.png")
     pg.get_by_role("button", name="Add QS item").click()
     dlg = pg.locator("dialog[open]").last
-    dlg.get_by_label("Section").select_option("__new"); dlg.get_by_label("New section name").fill("Earthworks")
+    expect(dlg.get_by_label("New section name")).to_be_visible()         # a tender with no sections starts on "New section"
+    dlg.get_by_label("New section name").fill("Earthworks")
     dlg.get_by_label("Code", exact=True).fill("EW01"); dlg.get_by_label("Description", exact=True).fill("Bulk strip")
     dlg.get_by_label("Quantity", exact=True).fill("1000"); dlg.get_by_label("Unit", exact=True).fill("m2")
     dlg.get_by_label("Where does the quantity come from?").select_option("MEASURED"); dlg.get_by_label("Source or reference (optional)").fill("DWG 1")

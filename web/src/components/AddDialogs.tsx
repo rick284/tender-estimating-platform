@@ -38,7 +38,7 @@ export function AddQsDialog({ open, onClose, sections: secs, usedCodes, onAdd }:
 }) {
   const sections = secs.map((x) => x.section);
   const codeFor = (section: string) => suggestCode(secs.find((x) => x.section === section), usedCodes);
-  const blank = { code: codeFor(sections[0] ?? ""), section: sections[0] ?? "", newSection: "", description: "", unit: "", quantity: "", basis: "", source: "", lump: "" };
+  const blank = { code: codeFor(sections[0] ?? ""), section: sections[0] ?? "__new", newSection: "", description: "", unit: "", quantity: "", basis: "", source: "", lump: "" };
   const [f, setF] = useState(blank);
   const [err, setErr] = useState("");
   useEffect(() => { if (open) { setF({ ...blank }); setErr(""); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -128,6 +128,13 @@ export function AddRowDialog({ open, onClose, qs, library, defaultQs, onAdd }: {
   };
   return (
     <Modal open={open} onClose={onClose} title="Add build-up row">
+      {qs.length === 0 ? (
+        <div className="space-y-4">
+          <p className="text-sm">A build-up row prices a QS item, and this tender has no QS items yet.</p>
+          <p className="text-sm text-muted-foreground">Add the QS item first (QS Takeoff, then Add QS item). You can price it straight away from there.</p>
+          <div className="flex justify-end"><button type="button" className="btn btn-solid" onClick={onClose}>OK</button></div>
+        </div>
+      ) : (
       <form onSubmit={submit} className="space-y-4" noValidate>
         <label className="block"><span className="label">QS item</span>
           <select className={input} value={f.qs} onChange={set("qs")}>{qs.map((q) => <option key={q.code} value={q.code}>{q.code} · {q.description.slice(0, 60)}</option>)}</select></label>
@@ -162,6 +169,7 @@ export function AddRowDialog({ open, onClose, qs, library, defaultQs, onAdd }: {
         <Err msg={err} />
         <div className="flex justify-end gap-2"><button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-solid">Add row</button></div>
       </form>
+      )}
     </Modal>
   );
 }
