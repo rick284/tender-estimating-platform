@@ -13,6 +13,8 @@ from typing import Any, BinaryIO
 
 import openpyxl
 
+from dataclasses import replace
+from ..ids import display_ids
 from ..models import LibraryRate, BuildUpRow, QSItem, WeatherToolRun, Overlay
 from ..money import D
 
@@ -142,6 +144,11 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
         raise ValueError("Weather Risk B13/B14 do not reference build-up rate rows; cannot link weather costs")
     weather_links = {"daily_row": int(m13.group(1)), "hours_per_day": int(m13.group(2)),
                      "weekly_rows": [int(x) for x in m14]}
+    # permanent row identities (initially the display id); the weather cost links follow rows by uid
+    rows = [replace(r, uid=u) for r, u in zip(rows, display_ids(rows))]
+    uid_at = dict(zip(excel_rows, (r.uid for r in rows)))
+    weather_links["daily_uid"] = uid_at[weather_links["daily_row"]]
+    weather_links["weekly_uids"] = [uid_at[r] for r in weather_links["weekly_rows"]]
 
     ci = f["Commercial Inputs"]
     commercial: list[dict] = []

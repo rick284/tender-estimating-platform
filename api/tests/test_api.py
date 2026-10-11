@@ -325,3 +325,66 @@ def test_unexpected_error_returns_json_message_with_cors_and_reference(client, a
 def test_database_self_check(client):
     r = client.get("/api/health/db")
     assert r.status_code == 200 and r.json() == {"database": "ok", "read": "ok", "write": "ok"}
+
+
+# ---------------------------------------------------------------- add / delete items
+ADD_QS = {"target": "qs", "op": "add", "key": "EW02", "value": {"section": "Earthworks", "description": "Bulk fill", "unit": "m3",
+                                                                  "quantity": 500, "basis": "CALCULATED", "source": "Rev2 survey"}}
+ADD_ROW = {"target": "row", "op": "add", "key": "N-row001", "value": {"qs_code": "EW02", "mode": "Time x Count", "resource_code": "PL-EXC", "task": "Place fill"}}
+ADD_PROD = {"target": "row", "key": "N-row001", "field": "productivity_rate", "value": 25}
+
+
+def test_add_items_via_api_and_save(client, auth):
+    tid = _tender(client, auth)
+    pv = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [ADD_QS, ADD_ROW, ADD_PROD]})
+    assert pv.status_code == 200, pv.text
+    est = pv.json()["estimate"]
+    assert [q["code"] for q in est["qs"]] == ["EW01", "EW02"]
+    assert round(est["qs"][1]["amount"], 2) == 2000.00                    # 500 m3 / 25 per hr = 20 h x $100/hr
+    assert est["buildup"][1]["uid"] == "N-row001" and est["buildup"][1]["row_id"] == "EW02-001"
+
+
+def test_save_structural_edits_creates_revision_and_stays_editable(client, auth):
+    tid = _tender(client, auth)
+    r = client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth,
+                    json={"edits": [ADD_QS, ADD_ROW, ADD_PROD], "note": "Added bulk fill item from survey"})
+    assert r.status_code == 200 and r.json()["change_count"] == 2
+    got = client.get(f"/api/tenders/{tid}/revisions/2", headers=auth).json()
+    assert [x["field"] for x in got["revision"]["changes"]] == ["added", "added"]
+    # the new revision keeps the new row's permanent id and can be edited further
+    r2 = client.post(f"/api/tenders/{tid}/revisions/2/save", headers=auth, json={
+        "edits": [{"target": "row", "key": "N-row001", "field": "productivity_rate", "value": 50}], "note": "faster plant"})
+    assert r2.status_code == 200 and r2.json()["n"] == 3
+    cmp = client.get(f"/api/tenders/{tid}/compare?a=1&b=2", headers=auth).json()["diff"]
+    assert {c["kind"] for c in cmp["qs"]} == {"added"} and {c["kind"] for c in cmp["buildup"]} == {"added"}
+
+
+def test_deleting_the_row_that_drives_weather_is_refused_with_a_clear_message(client, auth):
+    tid = _tender(client, auth)
+    r = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [{"target": "row", "op": "delete", "key": "EW01-001"}]})
+    assert r.status_code == 422 and "weather calculation" in r.json()["detail"]
+
+
+def test_invalid_structural_edit_via_api(client, auth):
+    tid = _tender(client, auth)
+    bad = {**ADD_QS, "key": "EW01"}
+    r = client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": [bad], "note": "duplicate code"})
+    assert r.status_code == 422 and "already used" in r.json()["detail"]
+    assert client.get(f"/api/tenders/{tid}", headers=auth).json()["latest_rev"] == 1
+
+
+def test_revision_saved_before_row_ids_still_editable(client, auth):
+    import asyncio, db as dbmod
+    tid = _tender(client, auth)
+
+    async def strip():
+        d = dbmod.get_db()
+        doc = await d.revisions.find_one({"tender_id": tid})
+        inp = doc["inputs"]
+        for row in inp["rows"]:
+            row.pop("uid", None)
+        inp["weather_links"].pop("daily_uid", None); inp["weather_links"].pop("weekly_uids", None)
+        await d.revisions.update_one({"_id": doc["_id"]}, {"$set": {"inputs": inp}})
+    asyncio.run(strip())
+    r = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [ADD_QS, ADD_ROW, ADD_PROD]})
+    assert r.status_code == 200 and r.json()["estimate"]["buildup"][0]["uid"] == "EW01-001"

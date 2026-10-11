@@ -52,6 +52,7 @@ class BuildUpRow:
     verified: str = ""
     weather_exposed: str = ""
     weather_task_type: str = ""
+    uid: str = ""                                  # permanent identity (display ids shift when rows change)
 
 
 @dataclass(frozen=True)

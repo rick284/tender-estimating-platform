@@ -4,6 +4,9 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
+from dataclasses import replace
+
+from .ids import display_ids
 from .importers.master_workbook import MasterWorkbookImport
 from .models import BuildUpRow, LibraryRate, Overlay, QSItem, WeatherToolRun
 from .money import D
@@ -23,7 +26,7 @@ def _reference(x):
     """Stored as [[name, value], ...] (no dotted keys); older saves used a dict."""
     if x is None:
         return None
-    return dict(x) if isinstance(x, list) else dict(x)
+    return dict(x)
 
 
 def to_json(m: MasterWorkbookImport) -> dict[str, Any]:
@@ -41,7 +44,7 @@ def to_json(m: MasterWorkbookImport) -> dict[str, Any]:
                   "productivity_rate": _d(r.productivity_rate), "duration_override_hrs": _d(r.duration_override_hrs),
                   "count": _d(r.count), "manual_qty": _d(r.manual_qty), "utilisation": _d(r.utilisation),
                   "waste": _d(r.waste), "job_rate_override": _d(r.job_rate_override), "task": r.task,
-                  "verified": r.verified, "weather_exposed": r.weather_exposed, "weather_task_type": r.weather_task_type}
+                  "verified": r.verified, "weather_exposed": r.weather_exposed, "weather_task_type": r.weather_task_type, "uid": r.uid}
                  for r in m.rows],
         "tool": {"exposed_pool": _d(m.tool.exposed_pool), "rain_wet_ground_cost": _d(m.tool.rain_wet_ground_cost),
                  "critical_path_delay_wd": _d(m.tool.critical_path_delay_wd),
@@ -57,6 +60,18 @@ def from_json(d: dict[str, Any]) -> MasterWorkbookImport:
     if d.get("schema") != SCHEMA:
         raise ValueError("Unsupported saved-inputs version")
     t = d["tool"]
+    m = _build(d, t)
+    # saves made before rows had permanent ids: use the display ids they had at the time
+    if any(not r.uid for r in m.rows):
+        m.rows = [replace(r, uid=u) for r, u in zip(m.rows, display_ids(m.rows))]
+    if "daily_uid" not in m.weather_links:
+        uid_at = dict(zip(m.excel_rows, (r.uid for r in m.rows)))
+        m.weather_links = {**m.weather_links, "daily_uid": uid_at[m.weather_links["daily_row"]],
+                           "weekly_uids": [uid_at[x] for x in m.weather_links["weekly_rows"]]}
+    return m
+
+
+def _build(d, t):
     return MasterWorkbookImport(
         meta=d["meta"], controls=d["controls"], weather_meta=d["weather_meta"], weather_links=d["weather_links"],
         excel_rows=list(d["excel_rows"]), qs_extra=d["qs_extra"], row_extra=d["row_extra"],
@@ -73,7 +88,7 @@ def from_json(d: dict[str, Any]) -> MasterWorkbookImport:
                          duration_override_hrs=_u(r["duration_override_hrs"]), count=_u(r["count"]),
                          manual_qty=_u(r["manual_qty"]), utilisation=_u(r["utilisation"]), waste=_u(r["waste"]),
                          job_rate_override=_u(r["job_rate_override"]), task=r["task"], verified=r["verified"],
-                         weather_exposed=r["weather_exposed"], weather_task_type=r["weather_task_type"])
+                         weather_exposed=r["weather_exposed"], weather_task_type=r["weather_task_type"], uid=r.get("uid", ""))
               for r in d["rows"]],
         tool=WeatherToolRun(exposed_pool=D(t["exposed_pool"]), rain_wet_ground_cost=D(t["rain_wet_ground_cost"]),
                             critical_path_delay_wd=D(t["critical_path_delay_wd"]),

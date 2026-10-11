@@ -33,12 +33,12 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
     qs_by_code = {q.code: q for q in m.qs}
     rows = compute_buildup(m.rows, qs_by_code, m.library)
     qs = compute_qs(m.qs, rows)
-    by_excel = dict(zip(m.excel_rows, rows))
+    by_uid = {src.uid: res for src, res in zip(m.rows, rows)}
 
     wl = m.weather_links
     wi = WeatherInputs(
-        daily_prelims=by_excel[wl["daily_row"]].applied_rate * wl["hours_per_day"],
-        weekly_hire=sum((by_excel[r].applied_rate for r in wl["weekly_rows"]), D(0)),
+        daily_prelims=by_uid[wl["daily_uid"]].applied_rate * wl["hours_per_day"],
+        weekly_hire=sum((by_uid[u].applied_rate for u in wl["weekly_uids"]), D(0)),
         recovery_allowance=m.recovery)
     weather = compute_weather(rows, m.tool, wi)
 
@@ -76,7 +76,7 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
     for res, src, ex in zip(rows, m.rows, m.row_extra):
         rec = lib.get(src.resource_code)
         buildup.append({
-            "row_id": res.row_id, "qs_code": res.qs_code, "task": src.task, "mode": src.mode,
+            "row_id": res.row_id, "uid": src.uid, "qs_code": res.qs_code, "task": src.task, "mode": src.mode,
             "resource_type": src.resource_type, "resource_code": src.resource_code,
             "resource": rec.description if rec else "", "unit": res.unit,
             "qs_qty": _f(res.qs_qty), "productivity": _f(src.productivity_rate), "productivity_unit": ex["productivity_unit"],
