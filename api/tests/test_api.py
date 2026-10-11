@@ -178,3 +178,116 @@ def test_real_hobsonville_revisions(client, auth):
     assert r.status_code == 200 and r.json()["label"] == "Rev34E"
     d = client.get(f"/api/tenders/{t['id']}/compare?a=1&b=2", headers=auth).json()["diff"]
     assert next(h for h in d["headline"] if h["key"] == "all_in")["delta"] == 63373.81
+
+
+# ---------------------------------------------------------------- editing
+def _tender(client, auth):
+    return up(client, auth).json()["id"]
+
+
+QTY = {"target": "qs", "key": "EW01", "field": "quantity", "value": 200}
+
+
+def test_preview_recalculates_without_saving(client, auth):
+    tid = _tender(client, auth)
+    r = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [QTY]})
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert j["estimate"]["qs"][0]["quantity"] == 200 and round(j["estimate"]["qs"][0]["amount"], 2) == 400.0
+    assert j["estimate"]["edited"] is True and j["estimate"]["reconciled"] is None
+    assert round(j["base"]["all_in"], 2) == 323.53 and j["estimate"]["summary"]["all_in"] > j["base"]["all_in"]
+    assert [c["field"] for c in j["changes"]] == ["quantity"]
+    d = client.get(f"/api/tenders/{tid}", headers=auth).json()
+    assert d["latest_rev"] == 1 and len(d["revisions"]) == 1                      # nothing was saved
+
+
+def test_save_creates_new_revision_and_leaves_base_untouched(client, auth):
+    tid = _tender(client, auth)
+    before = client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()
+    r = client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth,
+                    json={"edits": [QTY], "label": "Rev1-qty", "note": "Quantity updated from Rev2 drawings"})
+    assert r.status_code == 200, r.text
+    rev = r.json()
+    assert rev["n"] == 2 and rev["label"] == "Rev1-qty" and rev["edited"] is True and rev["parent_n"] == 1 and rev["change_count"] == 1
+    assert rev["note"] == "Quantity updated from Rev2 drawings"
+    t = client.get(f"/api/tenders/{tid}", headers=auth).json()
+    assert t["latest_rev"] == 2 and t["summary"]["label"] == "Rev1-qty" and t["summary"]["edited"] is True
+    after = client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()
+    assert (after["revision"], after["estimate"]) == (before["revision"], before["estimate"])      # base revision immutable
+    got = client.get(f"/api/tenders/{tid}/revisions/2", headers=auth).json()
+    assert got["revision"]["changes"][0]["before"] == "100" and got["revision"]["changes"][0]["after"] == "200"
+    assert got["estimate"]["qs"][0]["quantity"] == 200
+    cmp = client.get(f"/api/tenders/{tid}/compare?a=1&b=2", headers=auth).json()["diff"]
+    assert cmp["qs"][0]["code"] == "EW01" and cmp["qs"][0]["delta"] == 200.0
+
+
+def test_edits_chain_from_an_edited_revision(client, auth):
+    tid = _tender(client, auth)
+    client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": [QTY], "note": "first change"})
+    r = client.post(f"/api/tenders/{tid}/revisions/2/save", headers=auth, json={
+        "edits": [{"target": "commercial", "key": "CA18", "field": "pct", "value": 0.2}], "note": "raise margin to 20%"})
+    assert r.status_code == 200 and r.json()["n"] == 3 and r.json()["parent_n"] == 2
+    est = client.get(f"/api/tenders/{tid}/revisions/3", headers=auth).json()["estimate"]
+    assert est["qs"][0]["quantity"] == 200 and est["consolidated"]["margin"] == 0.2            # carries both edits
+
+
+def test_save_requires_reason_and_a_real_change(client, auth):
+    tid = _tender(client, auth)
+    path = f"/api/tenders/{tid}/revisions/1/save"
+    assert client.post(path, headers=auth, json={"edits": [QTY], "note": ""}).status_code == 422
+    assert client.post(path, headers=auth, json={"edits": [QTY], "note": "ok"}).status_code == 422
+    same = {"target": "qs", "key": "EW01", "field": "quantity", "value": 100}
+    r = client.post(path, headers=auth, json={"edits": [same], "note": "no real change here"})
+    assert r.status_code == 409 and "no changes" in r.json()["detail"].lower()
+    assert client.get(f"/api/tenders/{tid}", headers=auth).json()["latest_rev"] == 1
+
+
+@pytest.mark.parametrize("edit,msg", [
+    ({"target": "qs", "key": "EW01", "field": "quantity", "value": -1}, "less than"),
+    ({"target": "qs", "key": "NOPE", "field": "quantity", "value": 1}, "Unknown QS item"),
+    ({"target": "commercial", "key": "CA18", "field": "pct", "value": 1.5}, "more than"),
+    ({"target": "row", "key": "EW01-001", "field": "resource_code", "value": "X"}, "can't be edited"),
+])
+def test_invalid_edits_give_plain_422(client, auth, edit, msg):
+    tid = _tender(client, auth)
+    for path in ("preview", "save"):
+        r = client.post(f"/api/tenders/{tid}/revisions/1/{path}", headers=auth, json={"edits": [edit], "note": "valid reason"})
+        assert r.status_code == 422 and msg in r.json()["detail"], (path, r.text)
+
+
+def test_too_many_edits_rejected(client, auth):
+    tid = _tender(client, auth)
+    r = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [QTY] * 501})
+    assert r.status_code == 422
+
+
+def test_legacy_revision_without_inputs_cannot_be_edited(client, auth):
+    import asyncio, db as dbmod
+    tid = _tender(client, auth)
+    asyncio.run(dbmod.get_db().revisions.update_many({"tender_id": tid}, {"$set": {"inputs": None}}))
+    r = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [QTY]})
+    assert r.status_code == 409 and "Upload the workbook again" in r.json()["detail"]
+    assert client.get(f"/api/tenders/{tid}", headers=auth).json()["revisions"][0]["has_inputs"] is False
+
+
+def test_edit_endpoints_are_tenant_isolated(client, auth):
+    import config
+    tid = _tender(client, auth)
+    config.REGISTRATION_OPEN = True
+    try:
+        h2 = {"Authorization": f"Bearer {register(client, email='spy@rival.co.nz', company='Rival').json()['token']}"}
+    finally:
+        config.REGISTRATION_OPEN = False
+    for path in ("preview", "save"):
+        r = client.post(f"/api/tenders/{tid}/revisions/1/{path}", headers=h2, json={"edits": [QTY], "note": "stealing a look"})
+        assert r.status_code == 404
+    assert client.get(f"/api/tenders/{tid}", headers=auth).json()["latest_rev"] == 1
+    assert client.post(f"/api/tenders/{tid}/revisions/1/preview", json={"edits": [QTY]}).status_code == 401
+
+
+def test_original_upload_still_reconciles_and_edited_does_not(client, auth):
+    tid = _tender(client, auth)
+    assert client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]["reconciled"] is True
+    client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": [QTY], "note": "bigger area"})
+    e = client.get(f"/api/tenders/{tid}/revisions/2", headers=auth).json()["estimate"]
+    assert e["reconciled"] is None and e["reconciliation"] == []

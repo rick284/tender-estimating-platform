@@ -43,6 +43,7 @@ class MasterWorkbookImport:
     weather_meta: dict[str, str]
     weather_links: dict[str, Any]
     controls: dict[str, str]
+    reference: dict[str, float] | None = None   # totals the source workbook displayed (None once edited)
     cached: Any = field(repr=False, default=None)
 
 
@@ -179,7 +180,17 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
                 if nxt:
                     controls["cover_release"] = _s(nxt[0])
 
+    tb, cp_v, wr_v = v["Tender Build-Up"], v["Consolidated Package"], v["Weather Risk"]
+    reference = {
+        "Base direct estimate": float(D(tb["B20"].value)), "Pre-margin additions": float(D(tb["B39"].value)),
+        "Subtotal before commercial adjustments": float(D(tb["B40"].value)),
+        "Company overhead (CA17)": float(D(tb["B42"].value)), "Contractor profit (CA18)": float(D(tb["B43"].value)),
+        "Siteworks tender excl. GST": float(D(tb["B47"].value)), "Weather allowance (CA10)": float(D(wr_v["B38"].value)),
+        "Gross known package": float(D(cp_v["B12"].value)), "Working all-in tender excl. GST": float(D(cp_v["F56"].value)),
+    }
+
     return MasterWorkbookImport(
+        reference=reference,
         meta=_cover_meta(v), library=lib, qs=qs, qs_extra=qs_extra, rows=rows, row_extra=extra,
         excel_rows=excel_rows, tool=tool, recovery=D(wr["B16"].value), commercial=commercial,
         risk_feed=risk_feed, overlays=overlays, overlap=D(cp["B13"].value), weather_meta=weather_meta, weather_links=weather_links,

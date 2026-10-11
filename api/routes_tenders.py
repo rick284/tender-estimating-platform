@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -10,6 +11,9 @@ from security import current_user
 from services import (STAGES, audit, new_id, norm_name, now, read_workbook, revision_doc, revision_label, sha256,
                       summarise)
 from tender_engine.diff import diff_estimates
+from tender_engine.edits import EditError, apply_edits
+from tender_engine.estimate import compute_estimate
+from tender_engine.inputs import from_json, to_json
 
 router = APIRouter(prefix="/api/tenders", tags=["tenders"])
 
@@ -22,7 +26,9 @@ def _out(t: dict[str, Any]) -> dict[str, Any]:
 
 def _rev_out(r: dict[str, Any]) -> dict[str, Any]:
     return {"n": r["n"], "label": r["label"], "lifecycle": r["lifecycle"], "created_at": r["created_at"],
-            "source_filename": r["source_filename"], "all_in": r.get("all_in")}
+            "source_filename": r["source_filename"], "all_in": r.get("all_in"),
+            "has_inputs": bool(r.get("inputs")), "parent_n": r.get("parent_n"), "note": r.get("note", ""),
+            "change_count": len(r.get("changes") or []), "edited": r.get("parent_n") is not None}
 
 
 async def _tender(user: dict[str, Any], tender_id: str) -> dict[str, Any]:
@@ -47,7 +53,7 @@ async def list_tenders(user: dict[str, Any] = Depends(current_user)):
 async def create_tender(file: UploadFile = File(...), name: str = Form(""), client: str = Form(""),
                         label: str = Form(""), user: dict[str, Any] = Depends(current_user)):
     db = get_db()
-    data, est = await read_workbook(file)
+    data, est, inputs = await read_workbook(file)
     project = (name or est["meta"].get("project") or "Untitled tender").strip()[:160]
     lab = (label.strip() or revision_label(est, file.filename or ""))[:40]
     t = {"_id": new_id(), "org_id": user["org_id"], "name": project, "client": client.strip()[:160],
@@ -55,8 +61,7 @@ async def create_tender(file: UploadFile = File(...), name: str = Form(""), clie
          "summary": summarise(est, lab), "created_at": now(), "updated_at": now(), "created_by": user["_id"],
          "project_key": norm_name(est["meta"].get("project", project))}
     await db.tenders.insert_one(t)
-    rev = revision_doc(t, 1, lab, est, user, file.filename or "", sha256(data))
-    rev["all_in"] = est["summary"]["all_in"]
+    rev = revision_doc(t, 1, lab, est, user, file.filename or "", sha256(data), inputs=inputs)
     await db.revisions.insert_one(rev)
     await audit(db, user, "tender.create", t["_id"], project)
     return _out(t)
@@ -112,7 +117,7 @@ async def add_revision(tender_id: str, file: UploadFile = File(...), label: str 
                        confirm_different_project: bool = Form(False), user: dict[str, Any] = Depends(current_user)):
     db = get_db()
     t = await _tender(user, tender_id)
-    data, est = await read_workbook(file)
+    data, est, inputs = await read_workbook(file)
     digest = sha256(data)
     if await db.revisions.find_one({"tender_id": t["_id"], "source_sha256": digest}):
         raise HTTPException(409, "This exact workbook has already been uploaded to this tender.")
@@ -121,8 +126,7 @@ async def add_revision(tender_id: str, file: UploadFile = File(...), label: str 
                                  "Upload it as a new tender, or confirm it belongs to this one.")
     n = t["latest_rev"] + 1
     lab = (label.strip() or revision_label(est, file.filename or ""))[:40]
-    rev = revision_doc(t, n, lab, est, user, file.filename or "", digest)
-    rev["all_in"] = est["summary"]["all_in"]
+    rev = revision_doc(t, n, lab, est, user, file.filename or "", digest, inputs=inputs)
     await db.revisions.insert_one(rev)
     await db.tenders.update_one({"_id": t["_id"], "org_id": user["org_id"]},
                                 {"$set": {"latest_rev": n, "summary": summarise(est, lab), "updated_at": now()}})
@@ -141,7 +145,7 @@ async def _estimate(user: dict[str, Any], tender_id: str, n: int) -> dict[str, A
 async def get_revision(tender_id: str, n: int, user: dict[str, Any] = Depends(current_user)):
     t = await _tender(user, tender_id)
     r = await _estimate(user, t["_id"], n)
-    return {"tender": _out(t), "revision": _rev_out(r), "estimate": r["estimate"]}
+    return {"tender": _out(t), "revision": {**_rev_out(r), "changes": r.get("changes") or []}, "estimate": r["estimate"]}
 
 
 @router.get("/{tender_id}/compare")
@@ -150,3 +154,61 @@ async def compare(tender_id: str, a: int, b: int, user: dict[str, Any] = Depends
     ra, rb = await _estimate(user, t["_id"], a), await _estimate(user, t["_id"], b)
     diff = await run_in_threadpool(diff_estimates, ra["estimate"], rb["estimate"])
     return {"a": _rev_out(ra), "b": _rev_out(rb), "diff": diff}
+
+
+# ------------------------------------------------------------------ editing
+class EditsIn(BaseModel):
+    edits: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
+
+
+class SaveIn(EditsIn):
+    label: str = Field(default="", max_length=40)
+    note: str = Field(default="", max_length=2000)
+
+
+def _recalc(base_inputs: dict[str, Any], edits: list[dict[str, Any]]):
+    """CPU work: apply validated edits to saved inputs and recompute. Returns (estimate, inputs_json, changes)."""
+    try:
+        m, changes = apply_edits(from_json(base_inputs), edits)
+    except EditError as e:
+        raise HTTPException(422, str(e))
+    return compute_estimate(m), to_json(m), changes
+
+
+async def _editable(user: dict[str, Any], tender_id: str, n: int):
+    t = await _tender(user, tender_id)
+    r = await _estimate(user, t["_id"], n)
+    if not r.get("inputs"):
+        raise HTTPException(409, "This revision was saved before editing was available. Upload the workbook again to edit it.")
+    return t, r
+
+
+@router.post("/{tender_id}/revisions/{n}/preview")
+async def preview_edits(tender_id: str, n: int, body: EditsIn, user: dict[str, Any] = Depends(current_user)):
+    """Recalculate with the proposed edits. Nothing is saved."""
+    _, r = await _editable(user, tender_id, n)
+    est, _, changes = await run_in_threadpool(_recalc, r["inputs"], body.edits)
+    return {"estimate": est, "changes": changes,
+            "base": {"all_in": r["estimate"]["summary"]["all_in"], "siteworks_tender": r["estimate"]["summary"]["siteworks_tender"]}}
+
+
+@router.post("/{tender_id}/revisions/{n}/save")
+async def save_edits(tender_id: str, n: int, body: SaveIn, user: dict[str, Any] = Depends(current_user)):
+    """Save the edits as a NEW revision. The revision they were based on is left untouched."""
+    db = get_db()
+    t, r = await _editable(user, tender_id, n)
+    note = body.note.strip()
+    if len(note) < 5:
+        raise HTTPException(422, "Write a short reason for the change (at least 5 characters).")
+    est, inputs, changes = await run_in_threadpool(_recalc, r["inputs"], body.edits)
+    if not changes:
+        raise HTTPException(409, "There are no changes to save.")
+    new_n = t["latest_rev"] + 1
+    lab = (body.label.strip() or f"{r['label']}-ed{new_n}")[:40]
+    rev = revision_doc(t, new_n, lab, est, user, "(edited in platform)", sha256(json.dumps(inputs, sort_keys=True).encode()),
+                       inputs=inputs, changes=changes, parent_n=n, note=note)
+    await db.revisions.insert_one(rev)
+    await db.tenders.update_one({"_id": t["_id"], "org_id": user["org_id"]},
+                                {"$set": {"latest_rev": new_n, "summary": summarise(est, lab), "updated_at": now()}})
+    await audit(db, user, "revision.edit", t["_id"], f"{lab} from #{n}: {len(changes)} changes")
+    return _rev_out(rev)

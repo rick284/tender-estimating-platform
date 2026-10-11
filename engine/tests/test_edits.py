@@ -1,0 +1,133 @@
+import json
+from decimal import Decimal
+from pathlib import Path
+import pytest
+
+from tender_engine import D, cents
+from tender_engine.edits import EditError, apply_edits, row_ids
+from tender_engine.estimate import compute_estimate
+from tender_engine.importers import load_master_workbook
+from tender_engine.inputs import from_json, to_json
+
+PRIVATE = Path(__file__).resolve().parents[2] / "private" / "Rev34E.xlsx"
+needs_private = pytest.mark.skipif(not PRIVATE.exists(), reason="private workbook not present")
+
+
+@pytest.fixture(scope="module")
+def base():
+    return load_master_workbook(PRIVATE)
+
+
+# ---------------------------------------------------------------- serialisation
+@needs_private
+def test_json_roundtrip_recomputes_identically(base):
+    a = compute_estimate(base)
+    blob = json.loads(json.dumps(to_json(base)))               # through real JSON text
+    b = compute_estimate(from_json(blob))
+    assert a == b                                              # every figure, flag and string identical
+    assert b["reconciled"] is True and b["edited"] is False
+
+
+# ---------------------------------------------------------------- editing
+@needs_private
+def test_no_edits_changes_nothing_but_drops_reconciliation(base):
+    m, ch = apply_edits(base, [])
+    assert ch == []
+    e0, e1 = compute_estimate(base), compute_estimate(m)
+    assert e1["summary"] == e0["summary"] and e1["edited"] is True and e1["reconciled"] is None and e1["reconciliation"] == []
+
+
+@needs_private
+def test_quantity_edit_flows_to_every_total(base):
+    m, ch = apply_edits(base, [{"target": "qs", "key": "EW01", "field": "quantity", "value": "3000"}])
+    assert len(ch) == 1 and ch[0]["before"] == "2105" and ch[0]["after"] == "3000"
+    e0, e1 = compute_estimate(base), compute_estimate(m)
+    q0 = next(q for q in e0["qs"] if q["code"] == "EW01"); q1 = next(q for q in e1["qs"] if q["code"] == "EW01")
+    assert q1["amount"] > q0["amount"]
+    # EW01 is a Time x Count item: cost scales with quantity (hours = qty / productivity)
+    assert round(q1["amount"] / q0["amount"], 6) == round(3000 / 2105, 6)
+    assert e1["summary"]["all_in"] > e0["summary"]["all_in"]
+    # base direct moved by exactly the EW01 movement
+    assert round(e1["tender"]["base_direct"] - e0["tender"]["base_direct"], 2) == round(q1["amount"] - q0["amount"], 2)
+
+
+@needs_private
+def test_rate_override_and_revert_is_exact(base):
+    e0 = compute_estimate(base)
+    m, ch = apply_edits(base, [{"target": "row", "key": "EW02-001", "field": "job_rate_override", "value": 175}])
+    assert [c["field"] for c in ch] == ["job_rate_override"]
+    e1 = compute_estimate(m)
+    r = next(x for x in e1["buildup"] if x["row_id"] == "EW02-001")
+    assert r["applied_rate"] == 175.0 and r["job_override"] == 175.0
+    # editing it back (to blank) restores the original numbers and reports no net change
+    m2, ch2 = apply_edits(base, [{"target": "row", "key": "EW02-001", "field": "job_rate_override", "value": 175},
+                                 {"target": "row", "key": "EW02-001", "field": "job_rate_override", "value": ""}])
+    assert ch2 == []
+    assert compute_estimate(m2)["summary"] == e0["summary"]
+
+
+@needs_private
+def test_commercial_edits_and_true_margin(base):
+    m, ch = apply_edits(base, [{"target": "commercial", "key": "CA18", "field": "pct", "value": "0.2"},
+                               {"target": "commercial", "key": "CA17", "field": "pct", "value": "0.05"}])
+    e = compute_estimate(m)
+    t = e["tender"]
+    assert cents(D(t["overhead"])) == cents(D(t["subtotal"]) * D("0.05"))
+    assert round(t["profit"] / t["total_excl_gst"], 4) == 0.2          # true margin: share of SELL
+    assert e["consolidated"]["margin"] == 0.2 and e["consolidated"]["overhead_rate"] == 0.05
+
+
+@needs_private
+def test_switching_a_provision_on_and_overlay_edit(base):
+    m, ch = apply_edits(base, [{"target": "commercial", "key": "CA03", "field": "include", "value": "Yes"},
+                               {"target": "commercial", "key": "CA03", "field": "pct", "value": "0.02"},
+                               {"target": "overlay", "key": "Coast Concrete foundation / floor", "field": "amount", "value": 220000}])
+    e0, e1 = compute_estimate(base), compute_estimate(m)
+    ca03 = next(c for c in e1["commercial"] if c["ref"] == "CA03")
+    assert ca03["include"] and round(ca03["amount"], 2) == round(e0["tender"]["base_direct"] * 0.02, 2)
+    assert round(e1["consolidated"]["overlays_total"] - e0["consolidated"]["overlays_total"], 2) == 220000 - 210606
+
+
+@needs_private
+@pytest.mark.parametrize("edit,msg", [
+    ({"target": "qs", "key": "NOPE", "field": "quantity", "value": 1}, "Unknown QS item"),
+    ({"target": "qs", "key": "EW01", "field": "quantity", "value": -5}, "less than"),
+    ({"target": "qs", "key": "EW01", "field": "quantity", "value": "abc"}, "must be a number"),
+    ({"target": "qs", "key": "EW01", "field": "quantity", "value": "NaN"}, "must be a number"),
+    ({"target": "qs", "key": "EW01", "field": "quantity", "value": "1e99"}, "too large"),
+    ({"target": "qs", "key": "EW01", "field": "description", "value": "x"}, "Only the quantity"),
+    ({"target": "row", "key": "ZZ-001", "field": "count", "value": 1}, "Unknown build-up row"),
+    ({"target": "row", "key": "EW01-001", "field": "waste", "value": 10}, "fraction"),
+    ({"target": "row", "key": "EW01-001", "field": "resource_code", "value": "X"}, "can't be edited"),
+    ({"target": "commercial", "key": "CA18", "field": "pct", "value": 1}, "more than"),
+    ({"target": "commercial", "key": "CA99", "field": "pct", "value": 1}, "Unknown commercial"),
+    ({"target": "overlay", "key": "Coast Concrete foundation / floor", "field": "amount", "value": -1}, "less than"),
+    ({"target": "bogus"}, "Unknown edit target"),
+    ("not an object", "must be an object"),
+])
+def test_invalid_edits_rejected_with_plain_messages(base, edit, msg):
+    with pytest.raises(EditError, match=msg):
+        apply_edits(base, [edit])
+
+
+@needs_private
+def test_original_is_never_mutated(base):
+    before = json.dumps(to_json(base), sort_keys=True)
+    apply_edits(base, [{"target": "qs", "key": "EW01", "field": "quantity", "value": 1},
+                       {"target": "commercial", "key": "CA17", "field": "pct", "value": 0.5},
+                       {"target": "row", "key": "EW01-001", "field": "count", "value": 9}])
+    assert json.dumps(to_json(base), sort_keys=True) == before
+
+
+@needs_private
+def test_edit_limit(base):
+    with pytest.raises(EditError, match="Too many"):
+        apply_edits(base, [{"target": "qs", "key": "EW01", "field": "quantity", "value": 1}] * 501)
+
+
+@needs_private
+def test_edited_estimate_survives_json_roundtrip(base):
+    m, _ = apply_edits(base, [{"target": "qs", "key": "PV01", "field": "quantity", "value": 500}])
+    a = compute_estimate(m)
+    b = compute_estimate(from_json(json.loads(json.dumps(to_json(m)))))
+    assert a == b and b["edited"] is True

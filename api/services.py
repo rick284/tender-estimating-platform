@@ -13,6 +13,7 @@ from fastapi.concurrency import run_in_threadpool
 import config
 from tender_engine.estimate import compute_estimate
 from tender_engine.importers import load_master_workbook
+from tender_engine.inputs import to_json
 
 XLSX_MAGIC = b"PK\x03\x04"
 STAGES = ("estimating", "submitted", "won", "lost", "withdrawn")
@@ -26,16 +27,17 @@ def new_id() -> str:
     return uuid.uuid4().hex
 
 
-def _compute(data: bytes) -> dict[str, Any]:
+def _compute(data: bytes) -> tuple[dict[str, Any], dict[str, Any]]:
     try:
-        return compute_estimate(load_master_workbook(io.BytesIO(data)))
+        imported = load_master_workbook(io.BytesIO(data))
+        return compute_estimate(imported), to_json(imported)
     except ValueError as e:
         raise HTTPException(422, str(e))
     except Exception:
         raise HTTPException(422, "This file could not be read as a Master Estimate Workbook.")
 
 
-async def read_workbook(upload) -> tuple[bytes, dict[str, Any]]:
+async def read_workbook(upload) -> tuple[bytes, dict[str, Any], dict[str, Any]]:
     """Validate an uploaded workbook and run the engine on it (off the event loop)."""
     if not (upload.filename or "").lower().endswith(".xlsx"):
         raise HTTPException(400, "Please upload an Excel (.xlsx) workbook.")
@@ -44,7 +46,8 @@ async def read_workbook(upload) -> tuple[bytes, dict[str, Any]]:
         raise HTTPException(413, "File is larger than 25 MB.")
     if not data.startswith(XLSX_MAGIC):
         raise HTTPException(400, "That file is not a valid .xlsx workbook.")
-    return data, await run_in_threadpool(_compute, data)
+    est, inputs = await run_in_threadpool(_compute, data)
+    return data, est, inputs
 
 
 def revision_label(est: dict[str, Any], filename: str) -> str:
@@ -65,15 +68,17 @@ def summarise(est: dict[str, Any], label: str) -> dict[str, Any]:
         "label": label, "all_in": est["summary"]["all_in"], "siteworks_tender": est["summary"]["siteworks_tender"],
         "known_cost": est["summary"]["known_cost"], "release": c.get("cover_release", ""),
         "red_risks": int(c["red_risks"]) if str(c.get("red_risks", "")).isdigit() else None,
-        "reconciled": est["reconciled"], "gross_margin_on_sell": est["summary"]["gross_margin_on_sell"],
+        "reconciled": est["reconciled"], "edited": est.get("edited", False), "gross_margin_on_sell": est["summary"]["gross_margin_on_sell"],
     }
 
 
 def revision_doc(tender: dict[str, Any], n: int, label: str, est: dict[str, Any], user: dict[str, Any],
-                 filename: str, sha: str) -> dict[str, Any]:
+                 filename: str, sha: str, inputs: dict[str, Any] | None = None, changes: list | None = None,
+                 parent_n: int | None = None, note: str = "") -> dict[str, Any]:
     return {"_id": new_id(), "tender_id": tender["_id"], "org_id": tender["org_id"], "n": n, "label": label,
             "lifecycle": "WORKING", "created_at": now(), "created_by": user["_id"], "source_filename": filename,
-            "source_sha256": sha, "estimate": est}
+            "source_sha256": sha, "estimate": est, "inputs": inputs, "changes": changes or [],
+            "parent_n": parent_n, "note": note, "all_in": est["summary"]["all_in"]}
 
 
 def sha256(data: bytes) -> str:

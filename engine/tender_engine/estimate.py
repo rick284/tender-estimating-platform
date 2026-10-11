@@ -131,25 +131,20 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
         "commercial_total": _f(tender.commercial_total), "total_excl_gst": _f(tender.tender_excl_gst),
         "gst": _f(tender.gst), "total_incl_gst": _f(tender.tender_incl_gst)}
 
-    # ---- Reconciliation against what the source workbook displayed
-    v = m.cached
-    tb, cp, wr = v["Tender Build-Up"], v["Consolidated Package"], v["Weather Risk"]
-    pairs = [
-        ("Base direct estimate", qs.total_direct, tb["B20"].value),
-        ("Pre-margin additions", tender.pre_margin_total, tb["B39"].value),
-        ("Subtotal before commercial adjustments", tender.subtotal, tb["B40"].value),
-        ("Company overhead (CA17)", tender.overhead, tb["B42"].value),
-        ("Contractor profit (CA18)", tender.profit, tb["B43"].value),
-        ("Siteworks tender excl. GST", tender.tender_excl_gst, tb["B47"].value),
-        ("Weather allowance (CA10)", weather.allowance, wr["B38"].value),
-        ("Gross known package", cons.gross_known_package, cp["B12"].value),
-        ("Working all-in tender excl. GST", cons.all_in_tender, cp["F56"].value),
-    ]
+    # ---- Reconciliation against what the source workbook displayed (only for an unedited import)
+    engine_totals = {
+        "Base direct estimate": qs.total_direct, "Pre-margin additions": tender.pre_margin_total,
+        "Subtotal before commercial adjustments": tender.subtotal, "Company overhead (CA17)": tender.overhead,
+        "Contractor profit (CA18)": tender.profit, "Siteworks tender excl. GST": tender.tender_excl_gst,
+        "Weather allowance (CA10)": weather.allowance, "Gross known package": cons.gross_known_package,
+        "Working all-in tender excl. GST": cons.all_in_tender,
+    }
     reconciliation = []
-    for name, engine, wb in pairs:
-        wbd = D(wb)
-        reconciliation.append({"name": name, "engine": _f(cents(engine)), "workbook": _f(cents(wbd)),
-                               "difference": _f(cents(engine) - cents(wbd)), "ok": abs(engine - wbd) < Decimal("0.005")})
+    if m.reference is not None:
+        for name, engine in engine_totals.items():
+            wbd = D(m.reference[name])
+            reconciliation.append({"name": name, "engine": _f(cents(engine)), "workbook": _f(cents(wbd)),
+                                   "difference": _f(cents(engine) - cents(wbd)), "ok": abs(engine - wbd) < Decimal("0.005")})
 
     flag_counts: dict[str, int] = {}
     for r in rows:
@@ -166,5 +161,6 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
         "consolidated": consolidated_out, "tender": tender_out, "commercial": commercial_out,
         "qs": qs_out, "sections": sections, "buildup": buildup, "library": library, "weather": weather_out,
         "reconciliation": reconciliation, "qa_counts": flag_counts,
-        "reconciled": all(r["ok"] for r in reconciliation),
+        "reconciled": all(r["ok"] for r in reconciliation) if m.reference is not None else None,
+        "edited": m.reference is None,
     }
