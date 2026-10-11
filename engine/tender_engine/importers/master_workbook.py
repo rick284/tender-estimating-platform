@@ -46,6 +46,7 @@ class MasterWorkbookImport:
     weather_links: dict[str, Any]
     controls: dict[str, str]
     reference: dict[str, float] | None = None   # totals the source workbook displayed (None once edited)
+    weather_setup: dict | None = None            # live weather-tool setup (tender_engine.weather_setup); None = recorded tool outputs
     cached: Any = field(repr=False, default=None)
 
 

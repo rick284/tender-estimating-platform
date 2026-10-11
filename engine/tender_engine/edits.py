@@ -15,6 +15,14 @@ An edit is {"target", "key", "field", "value"} (set a value) or {"target", "op":
              add    key = new package name   value: amount, kind? (default QUOTED)
              delete key = package name
   setting    set    key = weather|consolidated  field: recovery_allowance | confirmed_overlap
+  weather    add    key = "setup"   value: station, start, working_days_per_week?, baseline_wd?   (turns the live weather tool on)
+             delete key = "setup"   (back to the recorded tool outputs)
+             set    key = "setup"   field: station | start | working_days_per_week | baseline_wd | local_factor | local_basis |
+                                           wind_override | include_wind
+             set    key = "links"   field: daily_uid | hours_per_day | weekly_uids   (rows that drive daily prelims / weekly hire)
+  weather_activity  add key = new id ("W-xxxxxx")  value: task, start, finish, critical?, qs_codes?, labour?, plant?, note?, ov_*?
+             set    key = id   field: task | start | finish | critical | qs_codes | labour | plant | note | ov_<factor>
+             delete key = id
 
 Edits apply in order; identities never shift while applying (rows are found by permanent uid, not position).
 The returned change list is the NET difference between the original and the edited inputs.
@@ -30,6 +38,7 @@ from .ids import display_ids
 from .importers.master_workbook import MasterWorkbookImport
 from .models import BuildUpRow, LibraryRate, Overlay, QSItem, MODES
 from .money import D
+from . import weather_setup as wx
 
 ROW_NUMERIC_NULLABLE = {"productivity_rate", "duration_override_hrs", "count", "manual_qty", "utilisation", "waste", "job_rate_override"}
 ROW_YESNO = {"verified", "weather_exposed"}
@@ -122,7 +131,12 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     overlays = list(base.overlays)
     ov_pos = {o.name: i for i, o in enumerate(overlays)}
     recovery, overlap = base.recovery, base.overlap
-    protected = {base.weather_links["daily_uid"], *base.weather_links["weekly_uids"]}
+    links = copy.deepcopy(base.weather_links)
+    setup = wx.clone(base.weather_setup)
+    setup_before = wx.clone(base.weather_setup)
+
+    def protected_uids():
+        return {u for u in (links.get("daily_uid"), *links.get("weekly_uids", [])) if u}
     used_codes = set(qs_by_code)
 
     def live_row(uid: str) -> _Row:
@@ -142,7 +156,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
         return q
 
     def delete_row(r: _Row):
-        if r.uid in protected:
+        if r.uid in protected_uids():
             raise EditError(f"{r.row.task or r.uid} drives the weather calculation (daily preliminaries or weekly hire) and can't be deleted.")
         r.deleted = True
 
@@ -285,6 +299,66 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
                 i = ov_pos[name]
                 overlays[i] = Overlay(overlays[i].name, _num(value, f"{name} amount"), overlays[i].kind)
 
+        elif target == "weather":
+            try:
+                if key == "setup":
+                    if op == "add":
+                        if setup is not None:
+                            raise EditError("The live weather tool is already switched on for this tender.")
+                        v = value if isinstance(value, dict) else {}
+                        setup = wx.new_setup(v.get("station"), v.get("start"), v.get("working_days_per_week", 5), v.get("baseline_wd", 0))
+                    elif op == "delete":
+                        if setup is None:
+                            raise EditError("The live weather tool isn't switched on.")
+                        setup = None
+                    else:
+                        if setup is None:
+                            raise EditError("Switch the live weather tool on first.")
+                        wx.set_field(setup, str(field), value)
+                elif key == "links":
+                    if field == "hours_per_day":
+                        links["hours_per_day"] = int(wx._num(value, "Hours per day", lo=D(1), hi=D(24)).split(".")[0])
+                    elif field == "daily_uid":
+                        uid = str(value or "")
+                        if uid:
+                            live_row(uid)
+                        links["daily_uid"] = uid
+                    elif field == "weekly_uids":
+                        uids = [str(x) for x in (value or [])]
+                        for uid in uids:
+                            live_row(uid)
+                        links["weekly_uids"] = uids
+                    else:
+                        raise EditError(f"{field!r} can't be edited on the weather links.")
+                else:
+                    raise EditError("Unknown weather setting.")
+            except wx.SetupError as ex:
+                raise EditError(str(ex))
+
+        elif target == "weather_activity":
+            if setup is None:
+                raise EditError("Switch the live weather tool on first.")
+            acts = setup["activities"]
+            try:
+                if op == "add":
+                    aid = str(key or "")
+                    if not wx.ACTIVITY_ID.match(aid) or any(a["id"] == aid for a in acts):
+                        raise EditError("That new weather activity's identity is invalid or already used.")
+                    if len(acts) >= wx.MAX_ACTIVITIES:
+                        raise EditError(f"A tender can have at most {wx.MAX_ACTIVITIES} weather activities.")
+                    acts.append(wx.build_activity(aid, value if isinstance(value, dict) else {}))
+                else:
+                    a = next((x for x in acts if x["id"] == str(key)), None)
+                    if a is None:
+                        raise EditError(f"Unknown weather activity {key!r}.")
+                    if op == "delete":
+                        acts.remove(a)
+                    else:
+                        wx.set_activity_field(a, str(field), value)
+                        wx.check_activity(a)
+            except wx.SetupError as ex:
+                raise EditError(str(ex))
+
         elif target == "setting":
             if (key, field) == ("weather", "recovery_allowance"):
                 recovery = _num(value, "Weather recovery allowance")
@@ -305,6 +379,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     m.qs_extra = {q.item.code: q.extra for q in keep_qs}
     m.library = library
     m.commercial, m.overlays, m.recovery, m.overlap = commercial, overlays, recovery, overlap
+    m.weather_links, m.weather_setup = links, setup
     m.reference = None            # no longer the workbook as received
     return m, _net_changes(base, m, rows, qs, new_library)
 
@@ -367,6 +442,7 @@ def _net_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, rows: list[_R
     for name, y in b_ov.items():
         if name not in a_ov:
             add("overlay", name, "added", name, "", f"{_fmt(y.amount)} · {y.kind}")
+    _weather_changes(a, b, add)
     add("setting", "weather", "recovery_allowance", "Weather recovery allowance", D(a.recovery), D(b.recovery))
     add("setting", "consolidated", "confirmed_overlap", "Confirmed Siteworks / Coast overlap", D(a.overlap), D(b.overlap))
     return out
@@ -374,3 +450,36 @@ def _net_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, rows: list[_R
 
 def row_ids(rows):  # backwards-compatible alias
     return display_ids(rows)
+
+
+def _weather_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:
+    sa, sb = a.weather_setup, b.weather_setup
+    if sa is None and sb is not None:
+        add("weather", "setup", "added", "Live weather tool switched on", "", f"{sb['station']} from {sb['start']}")
+    elif sa is not None and sb is None:
+        add("weather", "setup", "removed", "Live weather tool switched off", f"{sa['station']} from {sa['start']}", "")
+    if sa is not None and sb is not None:
+        labels = {"station": "Weather station", "start": "Project start", "working_days_per_week": "Working days per week",
+                  "baseline_wd": "Baseline working days", "local_factor": "Local wet-day factor", "local_basis": "Local factor basis",
+                  "wind_override": "Wind probability override", "include_wind": "Include wind proxy"}
+        for f, label in labels.items():
+            add("weather", "setup", f, label, sa[f], sb[f])
+    ia = {x["id"]: x for x in (sa["activities"] if sa else [])}
+    ib = {x["id"]: x for x in (sb["activities"] if sb else [])}
+    desc = lambda x: f"{x['task']} {x['start']} to {x['finish']}" + (" (critical path)" if x["critical"] else "")
+    for aid, x in ia.items():
+        if aid not in ib:
+            add("weather_activity", aid, "removed", f"Weather activity {x['task']}", desc(x), "")
+        else:
+            y = ib[aid]
+            for f in ("task", "start", "finish", "critical", "labour", "plant", "note"):
+                add("weather_activity", aid, f, f"Weather activity {x['task']}", x[f], y[f])
+            add("weather_activity", aid, "qs_codes", f"Weather activity {x['task']}", ",".join(x["qs_codes"]), ",".join(y["qs_codes"]))
+            for k in sorted(set(x["overrides"]) | set(y["overrides"])):
+                add("weather_activity", aid, "ov_" + k, f"Weather activity {x['task']}", x["overrides"].get(k, ""), y["overrides"].get(k, ""))
+    for aid, y in ib.items():
+        if aid not in ia:
+            add("weather_activity", aid, "added", f"Weather activity {y['task']}", "", desc(y))
+    for f in ("daily_uid", "hours_per_day"):
+        add("weather", "links", f, "Daily preliminaries link" if f == "daily_uid" else "Hours per day", a.weather_links.get(f), b.weather_links.get(f))
+    add("weather", "links", "weekly_uids", "Weekly hire links", ",".join(a.weather_links.get("weekly_uids", [])), ",".join(b.weather_links.get("weekly_uids", [])))

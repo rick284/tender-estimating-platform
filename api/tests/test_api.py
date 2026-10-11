@@ -435,3 +435,32 @@ def test_blank_tender_validation_and_isolation(client, auth):
     if other.status_code == 200:
         h = {"Authorization": f"Bearer {other.json()['token']}"}
         assert client.post("/api/tenders/blank", headers=h, json={"name": "x", "template_tender_id": src}).status_code == 404
+
+
+# ---------------------------------------------------------------- live weather tool
+WX_SETUP = {"target": "weather", "op": "add", "key": "setup", "value": {"station": "Auckland", "start": "2026-10-01", "working_days_per_week": 5, "baseline_wd": 55}}
+WX_ACT = {"target": "weather_activity", "op": "add", "key": "W-act0001",
+          "value": {"task": "Bulk earthworks", "start": "2026-10-01", "finish": "2026-10-30", "critical": True, "labour": "10000", "plant": "5000"}}
+
+
+def test_live_weather_tool_preview_save_and_reload(client, auth):
+    tid = _tender(client, auth)
+    pv = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [WX_SETUP, WX_ACT]})
+    assert pv.status_code == 200, pv.text
+    w = pv.json()["estimate"]["weather"]
+    assert w["live"] is True and w["tool"]["activities"][0]["workdays"] == 22 and w["allowance"] > 0 and w["direct_productivity"] > 0
+    sv = client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": [WX_SETUP, WX_ACT], "note": "Live weather tool on"})
+    assert sv.status_code == 200, sv.text
+    est = client.get(f"/api/tenders/{tid}/revisions/2", headers=auth).json()["estimate"]
+    assert est["weather"]["tool"]["settings"]["station"] == "Auckland"
+    # editable again after saving, and the setting can be changed
+    pv2 = client.post(f"/api/tenders/{tid}/revisions/2/preview", headers=auth,
+                      json={"edits": [{"target": "weather", "key": "setup", "field": "station", "value": "Christchurch"}]})
+    assert pv2.status_code == 200 and pv2.json()["estimate"]["weather"]["meta"]["station"] == "Christchurch"
+
+
+def test_weather_edit_errors_are_plain_422(client, auth):
+    tid = _tender(client, auth)
+    r = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth,
+                    json={"edits": [{**WX_SETUP, "value": {"station": "Atlantis", "start": "2026-10-01"}}]})
+    assert r.status_code == 422 and "station" in r.json()["detail"]

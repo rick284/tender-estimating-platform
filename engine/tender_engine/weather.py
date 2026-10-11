@@ -14,7 +14,7 @@ from decimal import Decimal, ROUND_CEILING
 from typing import Iterable
 
 from .models import RowResult, WeatherToolRun, WeatherInputs
-from .money import D, ZERO
+from .money import D, ZERO, ONE
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,7 @@ def baseline_billed_weeks(baseline_wd: Decimal, wd_per_week: Decimal) -> int:
 
 def compute_weather(rows: Iterable[RowResult], tool: WeatherToolRun, inputs: WeatherInputs) -> WeatherResult:
     pool = sum((r.weather_exposed_cost for r in rows), ZERO)
-    scale = (pool / tool.exposed_pool) if tool.exposed_pool != 0 else ZERO
+    scale = ONE if tool.live else ((pool / tool.exposed_pool) if tool.exposed_pool != 0 else ZERO)
     productivity = tool.rain_wet_ground_cost * scale
     prelims = tool.critical_path_delay_wd * inputs.daily_prelims
     hire = tool.additional_billed_weeks * inputs.weekly_hire

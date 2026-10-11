@@ -91,6 +91,7 @@ class WeatherToolRun:
     additional_billed_weeks: Decimal
     wind_sensitivity_cost: Decimal = Decimal(0)
     include_wind: bool = False
+    live: bool = False                    # True when the platform's own tool run produced the direct cost (already at the live pool)
 
 
 @dataclass(frozen=True)

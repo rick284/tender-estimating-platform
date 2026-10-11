@@ -15,6 +15,8 @@ from .models import CommercialInput, WeatherInputs
 from .money import D, cents
 from .qs import compute_qs
 from .weather import compute_weather, baseline_billed_weeks
+from .weather_setup import exposed_by_qs, run_setup
+from .models import WeatherToolRun
 
 
 def _f(x: Decimal | None) -> float | None:
@@ -42,7 +44,36 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
         daily_prelims=rate_of(wl["daily_uid"]) * wl["hours_per_day"],
         weekly_hire=sum((rate_of(u) for u in wl["weekly_uids"]), D(0)),
         recovery_allowance=m.recovery)
-    weather = compute_weather(rows, m.tool, wi)
+    tool, wm, tool_out = m.tool, dict(m.weather_meta), None
+    if m.weather_setup:
+        # live weather tool: the platform's own run of the Rev2 method replaces the recorded tool outputs
+        setup = m.weather_setup
+        tr, used, warns = run_setup(setup, exposed_by_qs(m.rows, rows), wi.daily_prelims, wi.weekly_hire, m.recovery)
+        rain = tr.direct_allowance - (tr.wind_sensitivity if tr.include_wind else D(0))
+        tool = WeatherToolRun(exposed_pool=sum((r.weather_exposed_cost for r in rows), D(0)), rain_wet_ground_cost=rain,
+                              critical_path_delay_wd=tr.critical_path_delay_wd, additional_billed_weeks=D(tr.additional_billed_weeks),
+                              wind_sensitivity_cost=tr.wind_sensitivity, include_wind=tr.include_wind, live=True)
+        wm.update({"station": setup["station"], "tool_station": f"{setup['station']} - NIWA 1991-2020 normals", "start": setup["start"],
+                   "baseline_wd": str(setup["baseline_wd"]), "wd_per_week": str(setup["working_days_per_week"]),
+                   "tool_version": "NZ_Weather_Risk_Estimating_Tool_Rev2 (live in platform)", "confidence": tr.confidence,
+                   "delay_wd": str(tr.critical_path_delay_wd), "dry_programme_wd": str(setup["baseline_wd"]),
+                   "rerun_status": "LIVE - recalculated by the platform whenever activities, dates or exposed costs change."})
+        tool_out = {
+            "settings": {k: setup[k] for k in ("station", "start", "working_days_per_week", "baseline_wd", "local_factor", "local_basis",
+                                                 "wind_override", "include_wind")},
+            "activities": [{
+                "id": a["id"], "task": a["task"], "start": a["start"], "finish": a["finish"], "critical": a["critical"],
+                "qs_codes": a["qs_codes"], "labour_input": a["labour"], "plant_input": a["plant"], "overrides": a["overrides"],
+                "note": a.get("note", ""), "labour": _f(u["labour"]), "plant": _f(u["plant"]), "workdays": r.workdays,
+                "wet_probability": _f(r.wet_probability), "wind_probability": _f(r.wind_probability),
+                "rain_impact": _f(r.rain_impact), "carryover_impact": _f(r.carryover_impact), "wind_impact": _f(r.wind_impact),
+                "combined_impact": _f(r.combined_impact if tr.include_wind else r.combined_impact_excl_wind),
+                "direct_allowance": _f(r.direct_allowance if tr.include_wind else r.direct_allowance_excl_wind),
+                "lost_wd": _f(r.lost_wd if tr.include_wind else r.lost_wd_excl_wind), "status": r.status}
+                for a, u, r in zip(setup["activities"], used, tr.activities)],
+            "red_flags": list(tr.red_flags), "warnings": warns, "confidence": tr.confidence,
+            "exposed_pool_activities": _f(tr.exposed_pool)}
+    weather = compute_weather(rows, tool, wi)
 
     commercial = []
     for c in m.commercial:
@@ -109,15 +140,17 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
         c["stage"] = stage(int(c["ref"][2:]))
 
     weather_out = {
-        "meta": m.weather_meta, "exposed_pool": _f(weather.exposed_pool), "tool_pool": _f(m.tool.exposed_pool),
-        "tool_rain_cost": _f(m.tool.rain_wet_ground_cost), "direct_productivity": _f(weather.direct_productivity),
-        "critical_path_delay_wd": _f(m.tool.critical_path_delay_wd), "daily_prelims": _f(wi.daily_prelims),
-        "critical_path_prelims": _f(weather.critical_path_prelims), "additional_weeks": _f(m.tool.additional_billed_weeks),
+        "meta": wm, "exposed_pool": _f(weather.exposed_pool), "tool_pool": _f(tool.exposed_pool),
+        "tool_rain_cost": _f(tool.rain_wet_ground_cost), "direct_productivity": _f(weather.direct_productivity),
+        "critical_path_delay_wd": _f(tool.critical_path_delay_wd), "daily_prelims": _f(wi.daily_prelims),
+        "critical_path_prelims": _f(weather.critical_path_prelims), "additional_weeks": _f(tool.additional_billed_weeks),
         "weekly_hire": _f(wi.weekly_hire), "billed_hire": _f(weather.billed_hire), "recovery": _f(weather.recovery),
-        "wind_sensitivity": _f(weather.wind_sensitivity), "wind_included": m.tool.include_wind,
+        "wind_sensitivity": _f(weather.wind_sensitivity), "wind_included": tool.include_wind, "live": tool.live, "tool": tool_out,
+        "links": {"daily_uid": m.weather_links.get("daily_uid", ""), "hours_per_day": m.weather_links.get("hours_per_day", 8),
+                  "weekly_uids": list(m.weather_links.get("weekly_uids", []))},
         "allowance": _f(weather.allowance),
-        "baseline_weeks": baseline_billed_weeks(D(m.weather_meta["baseline_wd"]), D(m.weather_meta["wd_per_week"])),
-        "planning_wd": _f(D(m.weather_meta["baseline_wd"]) + m.tool.critical_path_delay_wd)}
+        "baseline_weeks": baseline_billed_weeks(D(wm["baseline_wd"]), D(wm["wd_per_week"])),
+        "planning_wd": _f(D(wm["baseline_wd"]) + tool.critical_path_delay_wd)}
 
     consolidated_out = {
         "own_works": _f(cons.own_works), "overlays": [{"name": o.name, "amount": _f(o.amount), "kind": o.kind} for o in m.overlays],
@@ -159,7 +192,7 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
             "known_cost": _f(cons.gross_known_package), "siteworks_precommercial": _f(tender.subtotal),
             "management_reserve": _f(tender.additions.get("CA16")), "weather_allowance": _f(weather.allowance),
             "gross_margin_on_sell": _f(cons.gross_margin_on_sell), "base_direct": _f(tender.base_direct),
-            "dry_programme_wd": _f(D(m.weather_meta["baseline_wd"])), "planning_wd": weather_out["planning_wd"]},
+            "dry_programme_wd": _f(D(wm["baseline_wd"])), "planning_wd": weather_out["planning_wd"]},
         "consolidated": consolidated_out, "tender": tender_out, "commercial": commercial_out,
         "qs": qs_out, "sections": sections, "buildup": buildup, "library": library, "weather": weather_out,
         "reconciliation": reconciliation, "qa_counts": flag_counts,

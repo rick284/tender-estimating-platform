@@ -181,7 +181,6 @@ def run_setup(setup: dict[str, Any], exposed: dict[str, tuple[Decimal, Decimal]]
         acts.append(Activity(a["task"], dt.date.fromisoformat(a["start"]), dt.date.fromisoformat(a["finish"]), bool(a["critical"]),
                              lab, pla, {k: D(v) for k, v in a["overrides"].items()}, a.get("note", "")))
         used.append({"labour": lab, "plant": pla})
-    covered = sum((l + p for l, p in used), ZERO)
     all_exposed = sum((l + p for l, p in exposed.values()), ZERO)
     gap = all_exposed - sum((sum(exposed.get(c, (ZERO, ZERO))) for c in linked), ZERO)
     if gap > Decimal("0.005"):
