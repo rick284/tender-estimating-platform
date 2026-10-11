@@ -1,5 +1,7 @@
 # Golden test — 329 Hobsonville Road Childcare Centre, Rev34E (excl. GST)
 
+**Benchmark confirmed (Rick, 11 Oct 2026):** Rev34E is the current issue — Drive folder "Current Client Issue Pack Rev34E" (Rev34C and Rev34D folders are marked SUPERSEDED). Rev34F (14-Sep) was a presentation-only correction of the TPW schedule (CW/012 P&G $77,208.09 omitted visually); it changes no estimate or tender value and is not on Drive. Drive file ids: workbook 1oIV0Z3yomrz6-GydmOPdiMsP7RnBNX8i; basis report 1A2E8d4NkFIrziH3pxz3DA1C_TSmceN0C.
+
 The platform must reproduce these figures from the same inputs. Source: `01_329_Hobsonville_Road_Estimate_Rev34E.xlsx`.
 
 ## Siteworks cost chain (Tender Build-Up)

@@ -20,3 +20,8 @@ Read first: `docs/STANDARDS_TO_PLATFORM.md` (Rick's governing standards as requi
 ## Source material (Rick's Google Drive, folder "Dave Stewart"; Gmail is the 3bears Google account)
 Hobsonville job Rev34E workbook (Drive id 1oIV0Z3yomrz6-GydmOPdiMsP7RnBNX8i), Master Estimate Workbook Rev4.1, NZ Weather Risk Estimating Tool Rev2.1, decision register, pre-response check protocol, supplier pricing evidence register, outputs 03/04/05/06. Not yet seen: Master Prompt, Triple Verification prompts, other estimating know-how documents — ask Rick for them.
 Do NOT commit client/tender files into this repo without asking; the Rev34E values needed for tests live in `docs/GOLDEN_TEST_HOBSONVILLE.md`.
+
+## Source status (updated 11 Oct 2026)
+- Benchmark = Rev34E (confirmed). Drive search found NO files titled/containing "Master New Chat Starter", "Productivity and Crew Library" or a crew library — they probably live only in Rick's ChatGPT project files or under other names; ask Rick to export them. Decision Control Register (id 1uo-584QBu9705od8y2nwgFgPeURL9hO8) and Pre-Response Check Protocol (id 1KY3rZwqTIaJevxRJ-lF0ZhH28iDc5KwY) ARE on Drive (folder 1U-ebLzIftoPfpXwfaRTghjQDO4UibdJV) and were read.
+- Other completed jobs on Drive usable as additional test cases later: Goodman Felix Street Civil Estimate (Rev0, Rev3, Rev4 report), Bridle Trail (Rev11/14, Master Rebuild Rev1), Orion Point stage 5 villas (Rev C-G). Hobsonville revs 24-34 show the revision history (good for revision/diff tests).
+- IP model decided: see docs/STANDARDS_TO_PLATFORM.md section G. Rick's Construction Intelligence Register is NOT resold.
