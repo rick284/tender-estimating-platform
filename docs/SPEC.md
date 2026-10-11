@@ -64,6 +64,7 @@ Organisation, User, Project (Tender), Revision (snapshot), Document (file, type,
 - Scale rule: any measurement requires a confirmed scale/calibration from a known dimension on that sheet.
 - **Outbound**: export annotated PDF with standard PDF annotations (highlighted runs/areas/counts, label "QS code - qty - unit - source") openable in Bluebeam/Acrobat. Each markup carries ID matching the platform register (cf. Rev34E "Source & Markup Register": SRC id, QS code, document, sheet/pages, revision, URL, markup file, status, quantities, notes).
 - **Inbound**: import Bluebeam/other markup-summary CSV; match to QS items; flag differences vs AI proposal; accept/reject.
+- Read-only viewer (in scope, phase 4): click a QS quantity -> opens the sheet/page with an overlay highlight and the quantity label; no editing or measuring. Measuring stays in Bluebeam/Methvin (Rick's tools); full on-screen measuring is parked and revisited only if the import loop proves to be the bottleneck.
 - No on-screen measuring/markup editor. Phase 1 = schedules/BOQs + references + export/import. Phase 2 = vector-PDF AI measurement trial against Hobsonville drawings with an accuracy report; continue only if accuracy is acceptable; otherwise stay with estimator-measures.
 
 ## 7. Weather engine
