@@ -34,3 +34,12 @@ Do NOT commit client/tender files into this repo without asking; the Rev34E valu
 - Real finding to remember: Hobsonville Rev34C -> Rev34E changed NO costs; the +$63,373.81 is entirely OH 8%->10% and margin 12%->15%.
 - Not yet: editing/saving estimates in the app, weather tool port, Risk Truth recalculation, outputs (reports/price schedule), mailbox, review board, Knowledge Bank, Xero.
 - Run tests: `cd engine && python -m pytest -q` and `cd api && python -m pytest -q` (private workbooks in `private/` enable the golden tests).
+
+## DEPLOYED (12 Oct 2026) — first live run succeeded
+- Website: https://tender-estimating-platform.netlify.app (Netlify, site builds from `web/`, env `VITE_API_URL`).
+- API: https://tender-platform-api.onrender.com (Render free web service via `render.yaml`; Docker; sleeps after ~15 min idle).
+- Database: Rick's Atlas free cluster "Cluster0" (project "Blackline", AP-Southeast-2), database `tender_platform`, user `tender_app` (readWrite on that DB only). Shares the 512 MB free quota with Blackline.
+- Render env: ENV=production, MONGO_URL (secret), JWT_SECRET (generated), CORS_ORIGINS=https://tender-estimating-platform.netlify.app, BOOTSTRAP_EMAIL=Rick's email, REGISTRATION_OPEN=false.
+- Rick's account exists (workspace "Three Bears Projects Ltd"); Hobsonville Rev34E imported in production. Original .xlsx files are NOT stored; revisions store computed results only (inputs are not yet stored — needed for in-app editing, so re-upload after that ships).
+- Lesson: a wrong MONGO_URL password produced `bad auth` in Render logs while /api/health stayed 200 (startup is deliberately resilient). Check logs for "Could not create database indexes" after any DB change.
+- Known open item: Rick has a Render email "Blueprint Sync Failed for blackline" (Blackline app, unrelated to this repo) not yet investigated.
