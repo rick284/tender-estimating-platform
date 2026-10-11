@@ -3,15 +3,16 @@ import { ChevronRight } from "lucide-react";
 import type { Estimate } from "../lib/types";
 import { fmtNum } from "../lib/format";
 import { EditNum } from "../components/EditCells";
-import { AddQsDialog } from "../components/AddDialogs";
-import { useEdit } from "../lib/edit";
+import { AddQsDialog, AddRowDialog } from "../components/AddDialogs";
+import { newUid, useEdit } from "../lib/edit";
 import { Chip, Empty, Money, PageHeader, Panel, RagChip, SearchBox } from "../components/ui";
 
-export function QSTakeoff({ est, openRows }: { est: Estimate; openRows: (code: string) => void }) {
+export function QSTakeoff({ est, openRows, onRowAdded }: { est: Estimate; openRows: (code: string) => void; onRowAdded: (uid: string, code: string) => void }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const { editing, add, remove } = useEdit();
+  const [pricing, setPricing] = useState<string | null>(null);
+  const { editing, add, remove, set } = useEdit();
   const items = useMemo(() => {
     const t = q.trim().toLowerCase();
     return est.qs.filter((i) => !t || `${i.code} ${i.description} ${i.section} ${i.basis}`.toLowerCase().includes(t));
@@ -51,7 +52,7 @@ export function QSTakeoff({ est, openRows }: { est: Estimate; openRows: (code: s
                           <tr className="cursor-pointer" onClick={() => setOpen(isOpen ? null : i.code)} aria-expanded={isOpen}>
                             <td className="font-mono text-xs"><span className="inline-flex items-center gap-1"><ChevronRight size={12} className={`transition-transform ${isOpen ? "rotate-90" : ""}`} aria-hidden />{i.code}</span></td>
                             <td>
-                              <div className="leading-snug">{i.description} {i.status.includes("ADDED IN PLATFORM") && <Chip tone="neutral">New</Chip>}</div>
+                              <div className="leading-snug">{i.description} {i.status.includes("ADDED IN PLATFORM") && <Chip tone="neutral">New</Chip>} {i.quantity > 0 && i.rows.length === 0 && <Chip tone="neutral" title="This item has a quantity but no build-up rows, so it adds no cost">No cost rows</Chip>}</div>
                               <div className="mt-1 text-xs text-muted-foreground sm:hidden">{fmtNum(i.quantity)} {i.unit} · <RagChip value={i.rag} /></div>
                             </td>
                             <td className="hidden sm:table-cell">{i.unit}</td>
@@ -72,7 +73,8 @@ export function QSTakeoff({ est, openRows }: { est: Estimate; openRows: (code: s
                                     <span className="label mr-1">Build-up rows</span>
                                     {i.rows.length ? i.rows.map((r) => <Chip key={r} tone="neutral">{r}</Chip>) : <span className="text-muted-foreground">None (no resources priced)</span>}
                                     {i.rows.length > 0 && <button className="btn btn-ghost ml-auto !py-1" onClick={(e) => { e.stopPropagation(); openRows(i.code); }}>View build-up</button>}
-                                    {editing && <button className={`btn btn-ghost !py-1 ${i.rows.length ? "" : "ml-auto"}`} onClick={(e) => {
+                                    {editing && <button className={`btn btn-ghost !py-1 ${i.rows.length ? "" : "ml-auto"}`} onClick={(e) => { e.stopPropagation(); setPricing(i.code); }}>Add pricing row</button>}
+                                    {editing && <button className="btn btn-ghost !py-1" onClick={(e) => {
                                       e.stopPropagation();
                                       if (window.confirm(i.rows.length ? `Delete ${i.code} and its ${i.rows.length} build-up row${i.rows.length === 1 ? "" : "s"}? You can undo this before saving.` : `Delete ${i.code}? You can undo this before saving.`)) remove("qs", i.code);
                                     }}>Delete item</button>}
@@ -92,8 +94,19 @@ export function QSTakeoff({ est, openRows }: { est: Estimate; openRows: (code: s
           </div>
         </Panel>
       )}
-      <AddQsDialog open={adding} onClose={() => setAdding(false)} sections={est.sections.map((x) => x.section)} usedCodes={new Set(est.qs.map((x) => x.code))}
-        onAdd={(code, payload) => { add("qs", code, payload); setOpen(code); }} />
+      <AddQsDialog open={adding} onClose={() => setAdding(false)} sections={est.sections} usedCodes={new Set(est.qs.map((x) => x.code))}
+        onAdd={(code, payload, lump) => {
+          add("qs", code, payload); setOpen(code);
+          if (lump !== "") {              // quick price: one Lump Sum row of quantity 1 at the amount
+            const uid = newUid();
+            add("row", uid, { qs_code: code, mode: "Lump Sum / Quote", resource_code: "", task: String(payload.description) });
+            set({ target: "row", key: uid, field: "manual_qty", value: "1", original: "" });
+            set({ target: "row", key: uid, field: "job_rate_override", value: lump, original: "" });
+          } else setPricing(code);        // otherwise go straight on to pricing it
+        }} />
+      <AddRowDialog open={pricing !== null} onClose={() => setPricing(null)} qs={est.qs} defaultQs={pricing ?? ""}
+        library={est.library.map((l) => ({ code: l.code, description: l.description, unit: l.unit, rate: l.rate, category: l.category }))}
+        onAdd={(uid, row, rate) => { if (rate) add("library", rate.code, rate.payload); add("row", uid, row); onRowAdded(uid, String(row.qs_code)); }} />
     </>
   );
 }

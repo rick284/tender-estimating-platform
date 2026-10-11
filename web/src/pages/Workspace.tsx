@@ -149,6 +149,7 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
   const [err, setErr] = useState("");
   const [upload, setUpload] = useState(false);
   const [code, setCode] = useState("all");
+  const [focusUid, setFocusUid] = useState<string | null>(null);
 
   // Revisions are immutable once saved, so a loaded revision can be kept for the whole visit.
   // Switching menu pages must never refetch or blank the estimate; only a new tender or revision loads data.
@@ -301,8 +302,8 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
         {!err && shown && pg === "overview" && <Overview est={shown} go={view} />}
         {!err && shown && pg === "consolidated" && <Consolidated est={shown} />}
         {!err && shown && pg === "tender" && <Tender est={shown} />}
-        {!err && shown && pg === "qs" && <QSTakeoff est={shown} openRows={(c) => { setCode(c); view("buildup"); }} />}
-        {!err && shown && pg === "buildup" && <BuildUp est={shown} code={code} setCode={setCode} />}
+        {!err && shown && pg === "qs" && <QSTakeoff est={shown} openRows={(c) => { setCode(c); view("buildup"); }} onRowAdded={(uid, c) => { setCode(c); setFocusUid(uid); view("buildup"); }} />}
+        {!err && shown && pg === "buildup" && <BuildUp est={shown} code={code} setCode={setCode} focusUid={focusUid} />}
         {!err && shown && pg === "weather" && <Weather est={shown} />}
         {!err && shown && pg === "library" && <RateLibrary est={shown} />}
       </main>

@@ -58,3 +58,7 @@ Do NOT commit client/tender files into this repo without asking; the Rev34E valu
 - UI: Add QS item (QS Takeoff), Add row (Resource Build-Up; includes "new rate" form), Delete item/row with confirm, "View changes" dialog with per-change Undo, readable change lists, New chips. Edit keys use uids. e2e: `web/e2e/structure_e2e.py` (also edit_e2e.py, flicker.py).
 - Fixes along the way: silent-disabled Save button (now explains), CORS-safe JSON 500s with reference ids, `/api/health/db`, bar delta now uses rounded prices like the compare page.
 - Next: start a tender from scratch (tenant-level rate library + intake block), weather tool port, client outputs.
+
+## Phase 1d follow-up (12 Oct 2026)
+- Adding a QS item now leads to pricing: optional "price it now as a lump sum" (creates a Lump Sum row, qty 1), otherwise the Add row dialog opens preselected and lands in Resource Build-Up on the new row. Items with quantity but no rows show a "No cost rows" chip; "Add pricing row" button in expanded QS rows.
+- Add QS item: choosing a section fills in the next free code (EW11 etc.); can be overtyped.

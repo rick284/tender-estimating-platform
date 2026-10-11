@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { Estimate } from "../lib/types";
 import { fmtMoney, fmtNum } from "../lib/format";
@@ -36,13 +36,14 @@ function RowEditor({ r }: { r: BuildUpLine }) {
   );
 }
 
-export function BuildUp({ est, code, setCode }: { est: Estimate; code: string; setCode: (c: string) => void }) {
+export function BuildUp({ est, code, setCode, focusUid }: { est: Estimate; code: string; setCode: (c: string) => void; focusUid?: string | null }) {
   const [q, setQ] = useState("");
   const [type, setType] = useState("all");
   const [qa, setQa] = useState("all");
   const [open, setOpen] = useState<string | null>(null);
   const { editing, add } = useEdit();
   const [adding, setAdding] = useState(false);
+  useEffect(() => { if (focusUid) setOpen(focusUid); }, [focusUid]);
 
   const codes = est.qs.map((i) => i.code);
   const types = Array.from(new Set(est.buildup.map((b) => b.resource_type))).sort();
