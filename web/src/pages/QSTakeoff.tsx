@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { Estimate } from "../lib/types";
 import { fmtNum } from "../lib/format";
+import { EditNum } from "../components/EditCells";
 import { Chip, Empty, Money, PageHeader, Panel, RagChip, SearchBox } from "../components/ui";
 
 export function QSTakeoff({ est, openRows }: { est: Estimate; openRows: (code: string) => void }) {
@@ -50,7 +51,7 @@ export function QSTakeoff({ est, openRows }: { est: Estimate; openRows: (code: s
                               <div className="mt-1 text-xs text-muted-foreground sm:hidden">{fmtNum(i.quantity)} {i.unit} · <RagChip value={i.rag} /></div>
                             </td>
                             <td className="hidden sm:table-cell">{i.unit}</td>
-                            <td className="num hidden sm:table-cell">{fmtNum(i.quantity)}</td>
+                            <td className="num hidden sm:table-cell"><EditNum target="qs" id={i.code} field="quantity" original={i.quantity} label={`${i.code} quantity`} display={fmtNum(i.quantity)} /></td>
                             <td className="num hidden md:table-cell"><Money v={i.rate} dash0 /></td>
                             <td className="num"><Money v={i.amount} dash0 /></td>
                             <td className="hidden lg:table-cell"><RagChip value={i.rag} /></td>

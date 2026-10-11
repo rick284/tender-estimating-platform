@@ -100,9 +100,12 @@ export function Revisions({ detail, current, onAdd }: { detail: TenderDetail; cu
           <tbody>
             {detail.revisions.map((r) => (
               <tr key={r.n}>
-                <td><span className="font-medium">{r.label}</span> {r.n === detail.latest_rev && <Chip tone="solid">Latest</Chip>} {r.n === current && r.n !== detail.latest_rev && <Chip tone="neutral">Viewing</Chip>}</td>
+                <td>
+                  <span className="font-medium">{r.label}</span> {r.n === detail.latest_rev && <Chip tone="solid">Latest</Chip>} {r.n === current && r.n !== detail.latest_rev && <Chip tone="neutral">Viewing</Chip>} {r.edited && <Chip tone="neutral">Edited</Chip>}
+                  {r.edited && <div className="mt-1 max-w-xl text-xs text-muted-foreground">{r.change_count} change{r.change_count === 1 ? "" : "s"} from #{r.parent_n}{r.note ? ` · “${r.note}”` : ""}</div>}
+                </td>
                 <td className="hidden sm:table-cell">{fmtDate(r.created_at)}</td>
-                <td className="hidden break-all text-xs text-muted-foreground md:table-cell">{r.source_filename}</td>
+                <td className="hidden break-all text-xs text-muted-foreground md:table-cell">{r.edited ? "Edited in platform" : r.source_filename}</td>
                 <td className="num"><Money v={r.all_in} /></td>
                 <td><button className="btn btn-ghost !px-2 !py-1" onClick={() => go({ name: "tender", id: detail.id, page: "overview", rev: r.n === detail.latest_rev ? null : r.n })}>Open</button></td>
               </tr>

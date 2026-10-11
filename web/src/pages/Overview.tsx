@@ -109,7 +109,7 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
         </Panel>
       </div>
 
-      <Panel className="mt-4" title="Reconciliation to workbook" action={<Chip tone={est.reconciled ? "green" : "red"}>{est.reconciled ? "All figures agree" : "Differences found"}</Chip>} flush>
+      {est.reconciled !== null && <Panel className="mt-4" title="Reconciliation to workbook" action={<Chip tone={est.reconciled ? "green" : "red"}>{est.reconciled ? "All figures agree" : "Differences found"}</Chip>} flush>
         <div className="overflow-x-auto">
           <table className="grid-table">
             <thead><tr><th>Check</th><th className="text-right">Platform</th><th className="hidden text-right sm:table-cell">Workbook</th><th className="hidden text-right sm:table-cell">Difference</th><th className="w-16" /></tr></thead>
@@ -125,7 +125,12 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
           </table>
         </div>
         <p className="px-4 py-3 text-xs text-muted-foreground">The platform recalculates every figure from the workbook's inputs (quantities, productivities, rates, commercial settings). It does not copy the workbook's totals.</p>
-      </Panel>
+      </Panel>}
+      {est.reconciled === null && (
+        <Panel className="mt-4" title="Edited in the platform">
+          <p className="text-sm text-muted-foreground">This revision was changed inside the platform, so there is no source workbook to reconcile it against. Use <strong className="text-foreground">Revisions</strong> to compare it with the revision it was based on and see exactly what moved the price.</p>
+        </Panel>
+      )}
     </>
   );
 }

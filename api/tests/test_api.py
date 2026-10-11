@@ -291,3 +291,19 @@ def test_original_upload_still_reconciles_and_edited_does_not(client, auth):
     client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": [QTY], "note": "bigger area"})
     e = client.get(f"/api/tenders/{tid}/revisions/2", headers=auth).json()["estimate"]
     assert e["reconciled"] is None and e["reconciliation"] == []
+
+
+def test_reuploading_same_file_enables_editing_on_a_legacy_revision(client, auth):
+    import asyncio, db as dbmod
+    tid = _tender(client, auth)
+    before = client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]
+    asyncio.run(dbmod.get_db().revisions.update_many({"tender_id": tid}, {"$set": {"inputs": None}}))
+    assert client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [QTY]}).status_code == 409
+    r = client.post(f"/api/tenders/{tid}/revisions", headers=auth, files={"file": ("a.xlsx", make_workbook())})
+    assert r.status_code == 200 and r.json()["upgraded"] is True and r.json()["n"] == 1 and r.json()["has_inputs"] is True
+    d = client.get(f"/api/tenders/{tid}", headers=auth).json()
+    assert d["latest_rev"] == 1 and len(d["revisions"]) == 1                       # no new revision created
+    assert client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"] == before   # estimate untouched
+    assert client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [QTY]}).status_code == 200
+    again = client.post(f"/api/tenders/{tid}/revisions", headers=auth, files={"file": ("a.xlsx", make_workbook())})
+    assert again.status_code == 409                                                # now it IS a plain duplicate

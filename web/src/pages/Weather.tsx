@@ -1,5 +1,6 @@
 import type { Estimate } from "../lib/types";
 import { fmtMoney, fmtNum } from "../lib/format";
+import { EditNum } from "../components/EditCells";
 import { Chip, Money, PageHeader, Panel, Stat } from "../components/ui";
 
 export function Weather({ est }: { est: Estimate }) {
@@ -20,7 +21,7 @@ export function Weather({ est }: { est: Estimate }) {
               <thead><tr><th>Component</th><th>Basis</th><th className="text-right">Amount</th></tr></thead>
               <tbody>
                 {steps.map(([a, b, v]) => (
-                  <tr key={a}><td className="font-medium">{a}</td><td className="text-muted-foreground">{b}</td><td className="num"><Money v={v} dash0 /></td></tr>
+                  <tr key={a}><td className="font-medium">{a}</td><td className="text-muted-foreground">{b}</td><td className="num">{a.startsWith("Project recovery") ? <EditNum target="setting" id="weather" field="recovery_allowance" original={w.recovery} dp={2} width="w-28" label="Weather recovery allowance" display={<Money v={v} dash0 />} /> : <Money v={v} dash0 />}</td></tr>
                 ))}
                 <tr className="total-row"><td colSpan={2}>Weather allowance to CA10</td><td className="num"><Money v={w.allowance} /></td></tr>
                 <tr><td colSpan={2} className="text-muted-foreground">AMBER wind proxy sensitivity ({w.wind_included ? "included" : "excluded by default"})</td><td className="num"><Money v={w.wind_sensitivity} dash0 /></td></tr>

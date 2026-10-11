@@ -43,3 +43,11 @@ Do NOT commit client/tender files into this repo without asking; the Rev34E valu
 - Rick's account exists (workspace "Three Bears Projects Ltd"); Hobsonville Rev34E imported in production. Original .xlsx files are NOT stored; revisions store computed results only (inputs are not yet stored — needed for in-app editing, so re-upload after that ships).
 - Lesson: a wrong MONGO_URL password produced `bad auth` in Render logs while /api/health stayed 200 (startup is deliberately resilient). Check logs for "Could not create database indexes" after any DB change.
 - Known open item: Rick has a Render email "Blueprint Sync Failed for blackline" (Blackline app, unrelated to this repo) not yet investigated.
+
+## Phase 1c done (12 Oct 2026): editable estimates
+- Edit mode in the workspace: change QS quantities, build-up inputs (productivity, hours override, count, qty, utilisation %, waste %, job rate, verified, weather exposed), commercial lines (on/off, %, amount), subcontract amounts, weather recovery, confirmed overlap. Totals recalculate live via `POST .../revisions/{n}/preview`; `POST .../save` writes a NEW immutable revision (reason required, >=5 chars) with its net change list; the base revision is never touched.
+- Engine: `tender_engine/edits.py` (validated edits, net change list), `inputs.py` (JSON round-trip). Edited estimates have `reconciled: null`, `edited: true`.
+- Revisions saved before this have no stored inputs: re-uploading the SAME file enables editing on that revision (no new revision, stored estimate untouched).
+- Fixed menu flicker (Workspace refetched + blanked on every page click). e2e scripts in `web/e2e/`.
+- Edit values: percentages are typed as % in the UI (10 = 0.10 sent). Money fields display 2dp but change detection uses full precision.
+- Known gaps: leaving the tender while editing loses edits (only a browser-unload warning); no per-line reasons (one reason per save); library rates are not editable here (use job rate override); no add/delete of QS items or build-up rows yet (needed to build a tender from scratch).

@@ -80,7 +80,7 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
             "resource_type": src.resource_type, "resource_code": src.resource_code,
             "resource": rec.description if rec else "", "unit": res.unit,
             "qs_qty": _f(res.qs_qty), "productivity": _f(src.productivity_rate), "productivity_unit": ex["productivity_unit"],
-            "hours": _f(res.applied_duration_hrs), "count": _f(src.count), "manual_qty": _f(src.manual_qty),
+            "hours": _f(res.applied_duration_hrs), "duration_override": _f(src.duration_override_hrs), "count": _f(src.count), "manual_qty": _f(src.manual_qty),
             "utilisation": _f(src.utilisation), "waste": _f(src.waste),
             "library_rate": _f(res.library_rate), "job_override": _f(src.job_rate_override),
             "applied_rate": _f(res.applied_rate), "cost": _f(res.cost),

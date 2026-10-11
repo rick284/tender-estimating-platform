@@ -119,7 +119,13 @@ async def add_revision(tender_id: str, file: UploadFile = File(...), label: str 
     t = await _tender(user, tender_id)
     data, est, inputs = await read_workbook(file)
     digest = sha256(data)
-    if await db.revisions.find_one({"tender_id": t["_id"], "source_sha256": digest}):
+    dup = await db.revisions.find_one({"tender_id": t["_id"], "source_sha256": digest})
+    if dup and not dup.get("inputs"):
+        # Saved before editing existed: attach the inputs so it can be edited. The stored estimate is left untouched.
+        await db.revisions.update_one({"_id": dup["_id"]}, {"$set": {"inputs": inputs}})
+        await audit(db, user, "revision.enable_editing", t["_id"], f"{dup['label']} (n={dup['n']})")
+        return {**_rev_out({**dup, "inputs": inputs}), "upgraded": True}
+    if dup:
         raise HTTPException(409, "This exact workbook has already been uploaded to this tender.")
     if norm_name(est["meta"].get("project", "")) != t.get("project_key") and not confirm_different_project:
         raise HTTPException(409, f"This workbook is for \"{est['meta'].get('project', 'a different project')}\", not \"{t['name']}\". "

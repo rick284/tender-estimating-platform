@@ -83,9 +83,9 @@ export function SearchBox({ value, onChange, placeholder }: { value: string; onC
   );
 }
 
-export function Select({ value, onChange, options, label }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; label: string }) {
+export function Select({ value, onChange, options, label, disabled }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; label: string; disabled?: boolean }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} className="h-9 border bg-background px-2 text-sm focus:border-primary">
+    <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} aria-label={label} className="h-9 border bg-background px-2 text-sm focus:border-primary disabled:opacity-50">
       {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   );

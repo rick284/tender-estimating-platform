@@ -1,5 +1,6 @@
 import type { Estimate } from "../lib/types";
 import { fmtMoney, fmtPct } from "../lib/format";
+import { EditNum } from "../components/EditCells";
 import { Chip, Money, PageHeader, Panel } from "../components/ui";
 
 export function Consolidated({ est }: { est: Estimate }) {
@@ -7,7 +8,7 @@ export function Consolidated({ est }: { est: Estimate }) {
   const row = (label: string, v: number, strong = false, note?: string) => (
     <tr className={strong ? "total-row" : ""} key={label}>
       <td>{label}{note && <div className="text-xs font-normal text-muted-foreground">{note}</div>}</td>
-      <td className="num"><Money v={v} /></td>
+      <td className="num">{label.startsWith("Confirmed") ? <EditNum target="setting" id="consolidated" field="confirmed_overlap" original={c.confirmed_overlap} dp={2} width="w-32" label="Confirmed overlap" display={<Money v={v} />} /> : <Money v={v} />}</td>
     </tr>
   );
   return (
@@ -21,7 +22,7 @@ export function Consolidated({ est }: { est: Estimate }) {
               {c.overlays.map((o) => (
                 <tr key={o.name}>
                   <td>{o.name}<div className="mt-0.5"><Chip tone="neutral">{o.kind.toLowerCase()}</Chip></div></td>
-                  <td className="num"><Money v={o.amount} /></td>
+                  <td className="num"><EditNum target="overlay" id={o.name} field="amount" original={o.amount} dp={2} width="w-32" label={`${o.name} amount`} display={<Money v={o.amount} />} /></td>
                 </tr>
               ))}
               {row("Gross current known package", c.gross_known_package, true)}

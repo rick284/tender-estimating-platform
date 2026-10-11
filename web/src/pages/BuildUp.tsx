@@ -2,13 +2,43 @@ import { Fragment, useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { Estimate } from "../lib/types";
 import { fmtMoney, fmtNum } from "../lib/format";
+import { EditCheck, EditNum } from "../components/EditCells";
+import { useEdit } from "../lib/edit";
+import type { BuildUpLine } from "../lib/types";
 import { Chip, Empty, Money, PageHeader, Panel, QaChip, RagChip, SearchBox, Select } from "../components/ui";
+
+function RowEditor({ r }: { r: BuildUpLine }) {
+  const f = (label: string, field: string, original: number | null, opts: { scale?: number; hint?: string } = {}) => (
+    <label className="block"><span className="label">{label}</span>
+      <div className="mt-1"><EditNum target="row" id={r.row_id} field={field} original={original} display="" scale={opts.scale} width="w-full" label={`${r.row_id} ${label}`} placeholder={opts.hint} /></div></label>
+  );
+  const time = r.mode === "Time x Count", qty = r.mode === "QS Qty x Factor", direct = r.mode === "Direct Qty", lump = r.mode === "Lump Sum / Quote";
+  return (
+    <div className="sm:col-span-2 lg:col-span-3 border border-amber-line bg-background p-4">
+      <div className="label mb-3">Edit this row <span className="font-normal normal-case tracking-normal text-muted-foreground">· {r.mode}. Leave a box blank to clear it.</span></div>
+      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        {time && f(`Productivity (${r.productivity_unit || "units/hr"})`, "productivity_rate", r.productivity)}
+        {time && f("Hours override", "duration_override_hrs", r.duration_override, { hint: `${Math.round(r.hours * 100) / 100} calc` })}
+        {(time || qty) && f("Count / factor", "count", r.count)}
+        {(direct || lump) && f("Quantity", "manual_qty", r.manual_qty)}
+        {time && f("Utilisation %", "utilisation", r.utilisation, { scale: 100, hint: "100" })}
+        {(qty || direct) && f("Waste %", "waste", r.waste, { scale: 100, hint: "0" })}
+        {f(`Job rate override ($/${r.unit || "unit"})`, "job_rate_override", r.job_override, { hint: String(r.library_rate) })}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-6 text-sm">
+        <label className="flex items-center gap-2"><EditCheck target="row" id={r.row_id} field="verified" original={r.verified} label={`${r.row_id} verified`} /> Verified</label>
+        <label className="flex items-center gap-2"><EditCheck target="row" id={r.row_id} field="weather_exposed" original={r.weather_exposed} label={`${r.row_id} weather exposed`} /> Weather exposed (labour / plant)</label>
+      </div>
+    </div>
+  );
+}
 
 export function BuildUp({ est, code, setCode }: { est: Estimate; code: string; setCode: (c: string) => void }) {
   const [q, setQ] = useState("");
   const [type, setType] = useState("all");
   const [qa, setQa] = useState("all");
   const [open, setOpen] = useState<string | null>(null);
+  const { editing } = useEdit();
 
   const codes = est.qs.map((i) => i.code);
   const types = Array.from(new Set(est.buildup.map((b) => b.resource_type))).sort();
@@ -72,6 +102,7 @@ export function BuildUp({ est, code, setCode }: { est: Estimate; code: string; s
                         <tr>
                           <td colSpan={9} className="!bg-muted/40 !p-0">
                             <dl className="grid gap-x-8 gap-y-3 p-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                              {editing && <RowEditor r={r} />}
                               <div><dt className="label">QS item</dt><dd className="mt-0.5">{r.qs_code} · {fmtNum(r.qs_qty)} {est.qs.find((i) => i.code === r.qs_code)?.unit}</dd></div>
                               <div><dt className="label">Calculation mode</dt><dd className="mt-0.5">{r.mode}</dd></div>
                               <div><dt className="label">Productivity</dt><dd className="mt-0.5">{r.productivity ? `${fmtNum(r.productivity)} ${r.productivity_unit}` : "—"}</dd></div>

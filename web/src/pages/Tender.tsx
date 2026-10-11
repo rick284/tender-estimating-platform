@@ -1,13 +1,29 @@
 import type { Estimate } from "../lib/types";
 import { fmtPct } from "../lib/format";
+import { EditCheck, EditNum } from "../components/EditCells";
+import { useEdit } from "../lib/edit";
 import { Chip, Money, PageHeader, Panel } from "../components/ui";
+
+function Basis({ c }: { c: Estimate["commercial"][number] }) {
+  const { editing } = useEdit();
+  const pctMethod = c.method === "%" || c.method === "Markup %" || c.method === "Margin %";
+  const amtMethod = c.method === "PC Sum" || c.method === "Fixed Amount";
+  const text = c.method === "%" || c.method === "Markup %" || c.method === "Margin %" ? `${c.method.replace(" %", "")} ${fmtPct(c.pct, 1)}` : c.method;
+  if (!editing) return <>{c.include ? text : <Chip tone="neutral">Off</Chip>}</>;
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <label className="flex items-center gap-1.5 text-xs"><EditCheck target="commercial" id={c.ref} field="include" original={c.include} label={`${c.ref} included`} /> On</label>
+      <span className="text-xs text-muted-foreground">{c.method}</span>
+      {pctMethod && <span className="inline-flex items-center gap-1"><EditNum target="commercial" id={c.ref} field="pct" original={c.pct} scale={100} width="w-20" label={`${c.ref} percentage`} display="" /><span className="text-xs">%</span></span>}
+      {amtMethod && <span className="inline-flex items-center gap-1"><span className="text-xs">$</span><EditNum target="commercial" id={c.ref} field="pc_sum" original={c.pc_sum} dp={2} width="w-28" label={`${c.ref} amount`} display="" /></span>}
+    </div>
+  );
+}
 
 export function Tender({ est }: { est: Estimate }) {
   const t = est.tender;
   const pre = est.commercial.filter((c) => c.stage === "pre");
   const com = est.commercial.filter((c) => c.stage === "commercial");
-  const how = (c: Estimate["commercial"][number]) =>
-    c.method === "%" || c.method === "Markup %" || c.method === "Margin %" ? `${c.method.replace(" %", "")} ${fmtPct(c.pct, 1)}` : c.method;
   return (
     <>
       <PageHeader title="Tender build-up" sub="Siteworks only. Base direct cost flows from the QS Takeoff; commercial provisions flow from Commercial Inputs. Nothing is entered on this page." />
@@ -26,7 +42,7 @@ export function Tender({ est }: { est: Estimate }) {
               {pre.map((c) => (
                 <tr key={c.ref} className={c.include ? "" : "text-muted-foreground"}>
                   <td><span className="font-mono text-xs">{c.ref}</span> {c.name}</td>
-                  <td>{c.include ? how(c) : <Chip tone="neutral">Off</Chip>}</td>
+                  <td><Basis c={c} /></td>
                   <td className="num"><Money v={c.include ? c.amount : null} dash0 /></td>
                 </tr>
               ))}
@@ -37,7 +53,7 @@ export function Tender({ est }: { est: Estimate }) {
               {com.filter((c) => c.ref !== "CA21").map((c) => (
                 <tr key={c.ref} className={c.include ? "" : "text-muted-foreground"}>
                   <td><span className="font-mono text-xs">{c.ref}</span> {c.name}</td>
-                  <td>{c.include ? how(c) : <Chip tone="neutral">Off</Chip>}</td>
+                  <td><Basis c={c} /></td>
                   <td className="num"><Money v={c.include ? c.amount : null} dash0 /></td>
                 </tr>
               ))}

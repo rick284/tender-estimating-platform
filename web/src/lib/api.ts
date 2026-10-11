@@ -1,4 +1,4 @@
-import type { Diff, Estimate, RevisionInfo, Stage, Tender, TenderDetail, TenderList, User } from "./types";
+import type { Change, Diff, Edit, Estimate, RevisionInfo, Stage, Tender, TenderDetail, TenderList, User } from "./types";
 
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
 const TOKEN_KEY = "tp_token";
@@ -50,5 +50,7 @@ export const api = {
   deleteTender: (id: string) => request<{ deleted: boolean }>(`/api/tenders/${id}`, { method: "DELETE" }),
   addRevision: (id: string, file: File, confirm: boolean) => request<RevisionInfo>(`/api/tenders/${id}/revisions`, { method: "POST", body: form({ file, confirm_different_project: confirm }) }),
   revision: (id: string, n: number) => request<{ tender: Tender; revision: RevisionInfo; estimate: Estimate }>(`/api/tenders/${id}/revisions/${n}`),
+  preview: (id: string, n: number, edits: Edit[]) => request<{ estimate: Estimate; changes: Change[]; base: { all_in: number; siteworks_tender: number } }>(`/api/tenders/${id}/revisions/${n}/preview`, { method: "POST", body: JSON.stringify({ edits }) }),
+  saveEdits: (id: string, n: number, edits: Edit[], label: string, note: string) => request<RevisionInfo>(`/api/tenders/${id}/revisions/${n}/save`, { method: "POST", body: JSON.stringify({ edits, label, note }) }),
   compare: (id: string, a: number, b: number) => request<{ a: RevisionInfo; b: RevisionInfo; diff: Diff }>(`/api/tenders/${id}/compare?a=${a}&b=${b}`),
 };
