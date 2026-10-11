@@ -1,4 +1,5 @@
 import type { Estimate } from "../lib/types";
+import { INTAKE_FIELDS } from "../lib/intake";
 import { fmtMoney, fmtNum, fmtPct } from "../lib/format";
 import { Chip, Money, PageHeader, Panel, Stat } from "../components/ui";
 import type { TenderPage } from "../components/Shell";
@@ -15,11 +16,25 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
     }, []),
   ];
   const total = parts.reduce((a, p) => a + p.v, 0);
+  const intake = INTAKE_FIELDS.filter((f) => est.meta[f.key]);
+  const empty = est.qs.length === 0;
   const holds = /HOLD/i.test(ct.release_status || "");
+  const released = !!ct.release_status && !/^NOT RELEASED$/i.test(ct.release_status);
 
   return (
     <>
       <PageHeader title="Tender overview" sub={est.meta.snapshot} />
+
+      {empty && (
+        <Panel className="mb-4" title="Getting started">
+          <ol className="list-decimal space-y-1 pl-5 text-sm">
+            <li>Press <strong>Edit</strong> at the top, then open <button className="underline underline-offset-4" onClick={() => go("qs")}>QS Takeoff</button> and add your quantities.</li>
+            <li>Price each item with build-up rows (plant, labour, materials) or a quick lump sum.</li>
+            <li>Add subcontract quotes under <button className="underline underline-offset-4" onClick={() => go("consolidated")}>Consolidated Package</button>.</li>
+            <li>Review overhead and margin under <button className="underline underline-offset-4" onClick={() => go("tender")}>Tender Build-Up</button>, then save with a reason.</li>
+          </ol>
+        </Panel>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-3">
         <Panel className="xl:col-span-2" title="What will this cost? (excl. GST)">
@@ -28,7 +43,7 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
               <div className="label">Working all-in tender</div>
               <div className="num !text-left font-mono text-3xl font-semibold leading-none sm:text-4xl">{fmtMoney(s.all_in)}</div>
               <p className="mt-3 text-sm text-muted-foreground">
-                {est.meta.commercial}. Supplier and material costs inside Siteworks are already in its cost chain; Coast and Allied are separate subcontract overlays added once.
+                {est.meta.commercial ? `${est.meta.commercial}. Supplier and material costs inside Siteworks are already in its cost chain; Coast and Allied are separate subcontract overlays added once.` : "Your own works plus any subcontract packages, with overhead and margin applied once. Supplier and material costs are already inside the build-up."}
               </p>
             </div>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-4">
@@ -38,7 +53,7 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
               <Stat label="Weather-adjusted" value={`${fmtNum(Math.round(s.planning_wd * 10) / 10)} WD`} />
             </dl>
           </div>
-          <div className="mt-6" role="img" aria-label="Package split">
+          {total > 0 ? <div className="mt-6" role="img" aria-label="Package split">
             <div className="flex h-3 w-full overflow-hidden">
               {parts.map((p) => <div key={p.name} className={p.shade} style={{ width: `${(p.v / total) * 100}%` }} />)}
             </div>
@@ -51,11 +66,11 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
                 </li>
               ))}
             </ul>
-          </div>
+          </div> : <p className="mt-6 text-sm text-muted-foreground">Nothing is priced yet, so there is no package split to show.</p>}
         </Panel>
 
-        <Panel title="Release controls" action={<Chip tone={holds ? "red" : "green"}>{holds ? "Hold" : "Pass"}</Chip>}>
-          <p className="text-sm leading-snug">{ct.release_status}</p>
+        <Panel title="Release controls" action={released ? <Chip tone={holds ? "red" : "green"}>{holds ? "Hold" : "Pass"}</Chip> : <Chip tone="neutral">Not released</Chip>}>
+          <p className="text-sm leading-snug">{ct.release_status || "Not released"}</p>
           <dl className="mt-4 divide-y border-y text-sm">
             {[
               ["Red risks", ct.red_risks, +ct.red_risks > 0],
@@ -66,13 +81,22 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
             ].map(([k, v, bad]) => (
               <div key={String(k)} className="flex items-center justify-between py-2">
                 <dt className="text-muted-foreground">{k}</dt>
-                <dd><Chip tone={bad ? "red" : "green"}>{String(v)}</Chip></dd>
+                <dd>{v === "" || v == null ? <Chip tone="neutral">Not started</Chip> : <Chip tone={bad ? "red" : "green"}>{String(v)}</Chip>}</dd>
               </div>
             ))}
           </dl>
           <p className="mt-3 text-xs text-muted-foreground">Status shown as recorded in the workbook. Risk Truth and release gates are recalculated by the platform in a later phase.</p>
         </Panel>
       </div>
+
+      {intake.length > 0 && (
+        <Panel className="mt-4" title="Tender intake">
+          <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+            {est.meta.tender_level && <div><dt className="label">Estimate level</dt><dd className="mt-0.5 text-sm">{est.meta.tender_level}</dd></div>}
+            {intake.map((f) => <div key={f.key} className={f.long ? "sm:col-span-2" : ""}><dt className="label">{f.label}</dt><dd className="mt-0.5 whitespace-pre-line text-sm leading-snug">{est.meta[f.key]}</dd></div>)}
+          </dl>
+        </Panel>
+      )}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Panel title="Siteworks cost chain" flush action={<button className="btn btn-ghost !py-1" onClick={() => go("tender")}>Open</button>}>
@@ -92,7 +116,7 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
           </table>
         </Panel>
 
-        <Panel title="Rate verification" flush>
+        {ct.rate_green !== "" && <Panel title="Rate verification" flush>
           <table className="grid-table">
             <thead><tr><th>Status</th><th className="text-right">Rows</th><th className="text-right">Cost exposure</th></tr></thead>
             <tbody>
@@ -106,7 +130,7 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
             </tbody>
           </table>
           <p className="px-4 py-3 text-xs text-muted-foreground">From the workbook's Rate Verification sheet. AMBER means a benchmark or allowance with a check still open and a firm-up action assigned.</p>
-        </Panel>
+        </Panel>}
       </div>
 
       {est.reconciled !== null && <Panel className="mt-4" title="Reconciliation to workbook" action={<Chip tone={est.reconciled ? "green" : "red"}>{est.reconciled ? "All figures agree" : "Differences found"}</Chip>} flush>
@@ -126,7 +150,7 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
         </div>
         <p className="px-4 py-3 text-xs text-muted-foreground">The platform recalculates every figure from the workbook's inputs (quantities, productivities, rates, commercial settings). It does not copy the workbook's totals.</p>
       </Panel>}
-      {est.reconciled === null && (
+      {est.reconciled === null && !empty && (
         <Panel className="mt-4" title="Edited in the platform">
           <p className="text-sm text-muted-foreground">This revision was changed inside the platform, so there is no source workbook to reconcile it against. Use <strong className="text-foreground">Revisions</strong> to compare it with the revision it was based on and see exactly what moved the price.</p>
         </Panel>

@@ -27,7 +27,7 @@ export function QSTakeoff({ est, openRows, onRowAdded }: { est: Estimate; openRo
         sub="Measured, provided and allowance quantities with their section cost. Each amount is the sum of its resource build-up rows. Open a line for its source and status."
         actions={<>{editing && <button className="btn btn-solid" onClick={() => setAdding(true)}>Add QS item</button>}<SearchBox value={q} onChange={setQ} placeholder="Search code, description or section" /></>}
       />
-      {sections.length === 0 ? <Empty title="No matching items" body="Try a different search term." /> : (
+      {sections.length === 0 ? (est.qs.length === 0 ? <Empty title="No QS items yet" body={editing ? "Use Add QS item to enter your first quantity." : "Press Edit at the top, then use Add QS item to enter your first quantity."} /> : <Empty title="No matching items" body="Try a different search term." />) : (
         <Panel flush>
           <div className="overflow-x-auto">
             <table className="grid-table">

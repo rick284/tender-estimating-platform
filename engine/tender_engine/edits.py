@@ -12,6 +12,8 @@ An edit is {"target", "key", "field", "value"} (set a value) or {"target", "op":
   library    add    key = new code       value: description, unit, base_rate, category, source?
   commercial set    key = CA ref         fields: include, pct, pc_sum
   overlay    set    key = package name   field : amount
+             add    key = new package name   value: amount, kind? (default QUOTED)
+             delete key = package name
   setting    set    key = weather|consolidated  field: recovery_allowance | confirmed_overlap
 
 Edits apply in order; identities never shift while applying (rows are found by permanent uid, not position).
@@ -262,12 +264,26 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
                 raise EditError(f"{field!r} can't be edited on a commercial line.")
 
         elif target == "overlay":
-            if key not in ov_pos:
-                raise EditError(f"Unknown subcontract package {key!r}.")
-            if field != "amount":
-                raise EditError("Only the amount of a subcontract package can be edited.")
-            i = ov_pos[key]
-            overlays[i] = Overlay(overlays[i].name, _num(value, f"{key} amount"), overlays[i].kind)
+            name = str(key or "").strip()
+            if op == "add":
+                name = _text(key, "Package name", maxlen=80)
+                if name.lower() in {o.name.lower() for o in overlays}:
+                    raise EditError(f"A subcontract package called {name!r} already exists.")
+                v = value if isinstance(value, dict) else {}
+                overlays.append(Overlay(name, _num(v.get("amount"), f"{name} amount"), _text(v.get("kind") or "QUOTED", "Package type", maxlen=40)))
+                ov_pos[name] = len(overlays) - 1
+            elif op == "delete":
+                if name not in ov_pos:
+                    raise EditError(f"Unknown subcontract package {name!r}.")
+                overlays = [o for o in overlays if o.name != name]
+                ov_pos = {o.name: i for i, o in enumerate(overlays)}
+            else:
+                if name not in ov_pos:
+                    raise EditError(f"Unknown subcontract package {name!r}.")
+                if field != "amount":
+                    raise EditError("Only the amount of a subcontract package can be edited.")
+                i = ov_pos[name]
+                overlays[i] = Overlay(overlays[i].name, _num(value, f"{name} amount"), overlays[i].kind)
 
         elif target == "setting":
             if (key, field) == ("weather", "recovery_allowance"):
@@ -342,8 +358,15 @@ def _net_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, rows: list[_R
     for x, y in zip(a.commercial, b.commercial):
         for f in ("include", "pct", "pc_sum"):
             add("commercial", x["ref"], f, f"{x['ref']} {x['name']}", x[f], y[f])
-    for x, y in zip(a.overlays, b.overlays):
-        add("overlay", x.name, "amount", x.name, x.amount, y.amount)
+    a_ov, b_ov = {o.name: o for o in a.overlays}, {o.name: o for o in b.overlays}
+    for name, x in a_ov.items():
+        if name not in b_ov:
+            add("overlay", name, "removed", name, f"{_fmt(x.amount)} · {x.kind}", "")
+        else:
+            add("overlay", name, "amount", name, x.amount, b_ov[name].amount)
+    for name, y in b_ov.items():
+        if name not in a_ov:
+            add("overlay", name, "added", name, "", f"{_fmt(y.amount)} · {y.kind}")
     add("setting", "weather", "recovery_allowance", "Weather recovery allowance", D(a.recovery), D(b.recovery))
     add("setting", "consolidated", "confirmed_overlap", "Confirmed Siteworks / Coast overlap", D(a.overlap), D(b.overlap))
     return out

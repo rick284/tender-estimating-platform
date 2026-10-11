@@ -67,7 +67,7 @@ export function BuildUp({ est, code, setCode, focusUid }: { est: Estimate; code:
         {editing && <button className="btn btn-solid !py-1.5" onClick={() => setAdding(true)}>Add row</button>}
         <span className="ml-auto text-sm text-muted-foreground">{rows.length} of {est.buildup.length} rows</span>
       </div>
-      {rows.length === 0 ? <Empty title="No rows match" body="Clear a filter or change the search." /> : (
+      {rows.length === 0 ? (est.buildup.length === 0 ? <Empty title="No build-up rows yet" body="Rows price your QS items. Add a QS item first, then add its plant, labour and material rows here." /> : <Empty title="No rows match" body="Clear a filter or change the search." />) : (
         <Panel flush>
           <div className="overflow-x-auto">
             <table className="grid-table">

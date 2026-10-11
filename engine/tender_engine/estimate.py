@@ -36,9 +36,11 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
     by_uid = {src.uid: res for src, res in zip(m.rows, rows)}
 
     wl = m.weather_links
+    # a tender started from scratch has no weather-linked rows until the weather tool is set up for it
+    rate_of = lambda u: by_uid[u].applied_rate if u in by_uid else D(0)
     wi = WeatherInputs(
-        daily_prelims=by_uid[wl["daily_uid"]].applied_rate * wl["hours_per_day"],
-        weekly_hire=sum((by_uid[u].applied_rate for u in wl["weekly_uids"]), D(0)),
+        daily_prelims=rate_of(wl["daily_uid"]) * wl["hours_per_day"],
+        weekly_hire=sum((rate_of(u) for u in wl["weekly_uids"]), D(0)),
         recovery_allowance=m.recovery)
     weather = compute_weather(rows, m.tool, wi)
 

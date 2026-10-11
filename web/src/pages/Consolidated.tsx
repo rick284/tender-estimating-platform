@@ -1,10 +1,15 @@
+import { useState } from "react";
 import type { Estimate } from "../lib/types";
 import { fmtMoney, fmtPct } from "../lib/format";
 import { EditNum } from "../components/EditCells";
+import { AddOverlayDialog } from "../components/AddDialogs";
+import { useEdit } from "../lib/edit";
 import { Chip, Money, PageHeader, Panel } from "../components/ui";
 
 export function Consolidated({ est }: { est: Estimate }) {
   const c = est.consolidated;
+  const { editing, add, remove } = useEdit();
+  const [adding, setAdding] = useState(false);
   const row = (label: string, v: number, strong = false, note?: string) => (
     <tr className={strong ? "total-row" : ""} key={label}>
       <td>{label}{note && <div className="text-xs font-normal text-muted-foreground">{note}</div>}</td>
@@ -22,9 +27,12 @@ export function Consolidated({ est }: { est: Estimate }) {
               {c.overlays.map((o) => (
                 <tr key={o.name}>
                   <td>{o.name}<div className="mt-0.5"><Chip tone="neutral">{o.kind.toLowerCase()}</Chip></div></td>
-                  <td className="num"><EditNum target="overlay" id={o.name} field="amount" original={o.amount} dp={2} width="w-32" label={`${o.name} amount`} display={<Money v={o.amount} />} /></td>
+                  <td className="num"><EditNum target="overlay" id={o.name} field="amount" original={o.amount} dp={2} width="w-32" label={`${o.name} amount`} display={<Money v={o.amount} />} />
+                    {editing && <button className="btn btn-ghost ml-2 !px-2 !py-1" aria-label={`Remove ${o.name}`} onClick={() => { if (window.confirm(`Remove ${o.name}? You can undo this before saving.`)) remove("overlay", o.name); }}>Remove</button>}</td>
                 </tr>
               ))}
+              {c.overlays.length === 0 && <tr><td colSpan={2} className="text-sm text-muted-foreground">No subcontract packages yet.{editing ? "" : " Switch to Edit to add one."}</td></tr>}
+              {editing && <tr><td colSpan={2}><button className="btn btn-solid !py-1.5" onClick={() => setAdding(true)}>Add subcontract package</button></td></tr>}
               {row("Gross current known package", c.gross_known_package, true)}
               {row("Confirmed Siteworks / Coast overlap", -c.confirmed_overlap, false, c.confirmed_overlap === 0 ? "Interface closed: no overlap remains" : undefined)}
               {row("Known package after overlap", c.known_after_overlap, true)}
@@ -46,7 +54,8 @@ export function Consolidated({ est }: { est: Estimate }) {
           </p>
         </Panel>
       </div>
-      <p className="mt-4 text-sm text-muted-foreground">Release position: {est.controls.cover_release}. {fmtMoney(c.all_in)} is a working figure until the technical holds in the release controls are resolved, excluded or formally accepted.</p>
+      <AddOverlayDialog open={adding} onClose={() => setAdding(false)} usedNames={new Set(c.overlays.map((o) => o.name))} onAdd={(name, payload) => add("overlay", name, payload)} />
+      <p className="mt-4 text-sm text-muted-foreground">Release position: {est.controls.cover_release || est.controls.release_status || "not released"}. {fmtMoney(c.all_in)} is a working figure until the technical holds in the release controls are resolved, excluded or formally accepted.</p>
     </>
   );
 }

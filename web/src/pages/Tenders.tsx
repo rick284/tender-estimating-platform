@@ -4,39 +4,87 @@ import { api } from "../lib/api";
 import { fmtAgo, fmtCompactMoney, fmtMoney } from "../lib/format";
 import { go } from "../lib/route";
 import { STAGES, type Stage, type Tender, type TenderList } from "../lib/types";
+import { INTAKE_FIELDS, TENDER_LEVELS } from "../lib/intake";
 import { Modal } from "../components/Modal";
 import { Chip, Empty, PageHeader, Panel, SearchBox, Stat } from "../components/ui";
 
 const releaseTone = (r: string) => (/HOLD/i.test(r) ? "red" : r ? "green" : "neutral") as "red" | "green" | "neutral";
 
-function NewTender({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (t: Tender) => void }) {
+const field = "mt-1 w-full border bg-background px-3 text-sm focus:border-primary";
+
+function NewTender({ open, onClose, onCreated, tenders }: { open: boolean; onClose: () => void; onCreated: (t: Tender) => void; tenders: Tender[] }) {
+  const [mode, setMode] = useState<"scratch" | "upload">("scratch");
   const [file, setFile] = useState<File | null>(null);
   const [client, setClient] = useState("");
+  const [name, setName] = useState("");
+  const [level, setLevel] = useState("Tender");
+  const [intake, setIntake] = useState<Record<string, string>>({});
+  const [from, setFrom] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (open) { setFile(null); setClient(""); setErr(""); } }, [open]);
-  const submit = async (e: FormEvent) => {
-    e.preventDefault(); if (!file) { setErr("Choose a workbook first."); return; }
+  useEffect(() => { if (open) { setFile(null); setClient(""); setName(""); setLevel("Tender"); setIntake({}); setFrom(""); setErr(""); } }, [open]);
+  const run = async (fn: () => Promise<Tender>) => {
     setBusy(true); setErr("");
-    try { onCreated(await api.createTender(file, client)); } catch (x) { setErr(x instanceof Error ? x.message : "Upload failed."); } finally { setBusy(false); }
+    try { onCreated(await fn()); } catch (x) { setErr(x instanceof Error ? x.message : "That didn't work."); } finally { setBusy(false); }
   };
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (mode === "upload") { if (!file) { setErr("Choose a workbook first."); return; } void run(() => api.createTender(file, client)); return; }
+    if (!name.trim()) { setErr("Give the tender a name."); return; }
+    void run(() => api.createBlankTender(name.trim(), { ...intake, tender_level: level }, from || null));
+  };
+  const tab = (id: "scratch" | "upload", label: string) => (
+    <button type="button" role="tab" aria-selected={mode === id} onClick={() => { setMode(id); setErr(""); }}
+      className={`flex-1 px-3 py-2 font-heading text-2xs font-bold uppercase tracking-wider ${mode === id ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>{label}</button>
+  );
   return (
     <Modal open={open} onClose={onClose} title="New tender">
-      <form onSubmit={submit} className="space-y-4">
-        <p className="text-sm text-muted-foreground">Upload the Master Estimate Workbook. The platform recalculates every figure, creates the tender and saves this as its first revision.</p>
-        <div className="border-2 border-dashed px-4 py-6 text-center">
-          <FileSpreadsheet className="mx-auto mb-2 text-muted-foreground" size={24} strokeWidth={1.5} aria-hidden />
-          <div className="min-h-5 break-all text-sm">{file ? file.name : "No file chosen"}</div>
-          <button type="button" className="btn btn-ghost mt-3" onClick={() => ref.current?.click()}>Choose workbook (.xlsx)</button>
-          <input ref={ref} type="file" accept=".xlsx" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-        </div>
-        <label className="block"><span className="label">Client or head contractor (optional)</span>
-          <input value={client} onChange={(e) => setClient(e.target.value)} maxLength={160} className="mt-1 h-10 w-full border bg-background px-3 text-sm focus:border-primary" /></label>
+      <form onSubmit={submit} className="space-y-4" noValidate>
+        <div role="tablist" aria-label="How to start" className="flex border">{tab("scratch", "Start from scratch")}{tab("upload", "Upload a workbook")}</div>
+        {mode === "upload" ? (
+          <>
+            <p className="text-sm text-muted-foreground">Upload a Master Estimate Workbook. The platform recalculates every figure, creates the tender and saves this as its first revision.</p>
+            <div className="border-2 border-dashed px-4 py-6 text-center">
+              <FileSpreadsheet className="mx-auto mb-2 text-muted-foreground" size={24} strokeWidth={1.5} aria-hidden />
+              <div className="min-h-5 break-all text-sm">{file ? file.name : "No file chosen"}</div>
+              <button type="button" className="btn btn-ghost mt-3" onClick={() => ref.current?.click()}>Choose workbook (.xlsx)</button>
+              <input ref={ref} type="file" accept=".xlsx" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            </div>
+            <label className="block"><span className="label">Client or head contractor (optional)</span>
+              <input value={client} onChange={(e) => setClient(e.target.value)} maxLength={160} className={`${field} h-10`} /></label>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground">Start with an empty estimate. Your rates, overhead and margin carry over from an earlier tender; quantities, rows and allowances start blank so nothing is priced until you add it. Everything here can be filled in later.</p>
+            <label className="block"><span className="label">Tender name</span>
+              <input value={name} onChange={(e) => setName(e.target.value)} maxLength={160} className={`${field} h-10`} placeholder="e.g. 12 Smith Road Subdivision, civil works" autoFocus /></label>
+            <label className="block"><span className="label">Estimate level</span>
+              <select value={level} onChange={(e) => setLevel(e.target.value)} className={`${field} h-10`}>{TENDER_LEVELS.map((l) => <option key={l}>{l}</option>)}</select></label>
+            {INTAKE_FIELDS.slice(0, 4).map((f) => (
+              <label key={f.key} className="block"><span className="label">{f.label}</span>
+                <input value={intake[f.key] ?? ""} onChange={(e) => setIntake({ ...intake, [f.key]: e.target.value })} maxLength={200} className={`${field} h-10`} placeholder={f.hint} /></label>
+            ))}
+            <details className="border px-3 py-2">
+              <summary className="cursor-pointer text-sm font-medium">More intake details (optional)</summary>
+              <div className="mt-3 space-y-4">
+                {INTAKE_FIELDS.slice(4).map((f) => (
+                  <label key={f.key} className="block"><span className="label">{f.label}</span>
+                    <textarea value={intake[f.key] ?? ""} onChange={(e) => setIntake({ ...intake, [f.key]: e.target.value })} maxLength={2000} rows={2} className={`${field} py-2`} placeholder={f.hint} /></label>
+                ))}
+              </div>
+            </details>
+            <label className="block"><span className="label">Borrow rates and commercial settings from</span>
+              <select value={from} onChange={(e) => setFrom(e.target.value)} className={`${field} h-10`}>
+                <option value="">Most recent tender that can be edited</option>
+                {tenders.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.summary.label})</option>)}
+              </select></label>
+          </>
+        )}
         {err && <div role="alert" className="border border-red-line bg-red-bg px-4 py-3 text-sm text-red-fg">{err}</div>}
         <div className="flex justify-end gap-2">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-solid" disabled={busy}>{busy ? "Calculating…" : "Create tender"}</button>
+          <button className="btn btn-solid" disabled={busy}>{busy ? "Creating…" : mode === "upload" ? "Create tender" : "Start tender"}</button>
         </div>
       </form>
     </Modal>
@@ -87,7 +135,7 @@ export function Tenders() {
       {!data && !err && <div className="text-sm text-muted-foreground" aria-live="polite">Loading tenders…</div>}
 
       {data && data.totals.count === 0 && (
-        <Empty title="No tenders yet" body="Upload a Master Estimate Workbook to create your first tender. Each later version you upload becomes a revision you can compare." />
+        <Empty title="No tenders yet" body="Upload a Master Estimate Workbook to create your first tender. Once you have one, you can also start new tenders from scratch, borrowing its rates. Each later version you upload becomes a revision you can compare." />
       )}
 
       {data && data.totals.count > 0 && (
@@ -162,7 +210,7 @@ export function Tenders() {
           )}
         </>
       )}
-      <NewTender open={openNew} onClose={() => setOpenNew(false)} onCreated={(t) => { setOpenNew(false); go({ name: "tender", id: t.id, page: "overview", rev: null }); }} />
+      <NewTender tenders={data?.tenders ?? []} open={openNew} onClose={() => setOpenNew(false)} onCreated={(t) => { setOpenNew(false); go({ name: "tender", id: t.id, page: "overview", rev: null }); }} />
     </main>
   );
 }

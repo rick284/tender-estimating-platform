@@ -54,6 +54,8 @@ export const api = {
   me: () => request<User>("/api/auth/me"),
   tenders: () => request<TenderList>("/api/tenders"),
   createTender: (file: File, client: string) => request<Tender>("/api/tenders", { method: "POST", body: form({ file, client }) }),
+  createBlankTender: (name: string, intake: Record<string, string>, templateId: string | null) =>
+    request<Tender>("/api/tenders/blank", { method: "POST", body: JSON.stringify({ name, intake, template_tender_id: templateId }) }),
   tender: (id: string) => request<TenderDetail>(`/api/tenders/${id}`),
   setStage: (id: string, stage: Stage) => request<Tender>(`/api/tenders/${id}`, { method: "PATCH", body: JSON.stringify({ stage }) }),
   setClient: (id: string, client: string) => request<Tender>(`/api/tenders/${id}`, { method: "PATCH", body: JSON.stringify({ client }) }),

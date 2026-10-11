@@ -11,6 +11,7 @@ from db import get_db
 from security import current_user
 from services import (STAGES, audit, new_id, norm_name, now, read_workbook, revision_doc, revision_label, sha256,
                       summarise)
+from tender_engine.blank import IntakeError, blank_from_template
 from tender_engine.diff import diff_estimates
 from tender_engine.edits import EditError, apply_edits
 from tender_engine.estimate import compute_estimate
@@ -66,6 +67,49 @@ async def create_tender(file: UploadFile = File(...), name: str = Form(""), clie
     rev = revision_doc(t, 1, lab, est, user, file.filename or "", sha256(data), inputs=inputs)
     await db.revisions.insert_one(rev)
     await audit(db, user, "tender.create", t["_id"], project)
+    return _out(t)
+
+
+class BlankIn(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    template_tender_id: str | None = None
+    intake: dict[str, str] = Field(default_factory=dict)
+
+
+@router.post("/blank")
+async def create_blank_tender(body: BlankIn, user: dict[str, Any] = Depends(current_user)):
+    """Start a tender from scratch. Rates, overhead/margin and other commercial settings come from an earlier
+    tender in this workspace (the chosen one, or the most recently updated one that can be edited)."""
+    db = get_db()
+    if body.template_tender_id:
+        candidates = [await _tender(user, body.template_tender_id)]
+    else:
+        candidates = await db.tenders.find({"org_id": user["org_id"]}).sort("updated_at", -1).to_list(50)
+    src = None
+    for c in candidates:
+        r = await db.revisions.find_one({"tender_id": c["_id"], "org_id": user["org_id"], "inputs": {"$ne": None}}, sort=[("n", -1)])
+        if r:
+            src = r
+            break
+    if src is None:
+        raise HTTPException(409, "A new tender borrows its rates and commercial settings from an earlier one, and this workspace "
+                                 "doesn't have one that can be edited yet. Upload a Master Estimate Workbook first (re-upload an older one to enable editing).")
+    try:
+        m = from_json(src["inputs"])
+        blank = await run_in_threadpool(blank_from_template, m, body.name, body.intake)
+    except IntakeError as e:
+        raise HTTPException(422, str(e))
+    est = await run_in_threadpool(compute_estimate, blank)
+    inputs = to_json(blank)
+    lab = "Rev0"
+    t = {"_id": new_id(), "org_id": user["org_id"], "name": body.name.strip()[:160], "client": body.intake.get("client", "").strip()[:160],
+         "location": body.intake.get("location", "").strip()[:160], "stage": "estimating", "latest_rev": 1,
+         "summary": summarise(est, lab), "created_at": now(), "updated_at": now(), "created_by": user["_id"],
+         "project_key": norm_name(body.name)}
+    await db.tenders.insert_one(t)
+    rev = revision_doc(t, 1, lab, est, user, "(started from scratch)", sha256(json.dumps(inputs, sort_keys=True).encode() + t["_id"].encode()), inputs=inputs)
+    await db.revisions.insert_one(rev)
+    await audit(db, user, "tender.create_blank", t["_id"], f"{t['name']} from tender {src['tender_id']} rev {src['n']}")
     return _out(t)
 
 

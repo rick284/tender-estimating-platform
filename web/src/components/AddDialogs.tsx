@@ -165,3 +165,41 @@ export function AddRowDialog({ open, onClose, qs, library, defaultQs, onAdd }: {
     </Modal>
   );
 }
+
+const OVERLAY_KINDS = ["QUOTED", "ALLOWANCE", "PROVISIONAL"] as const;
+
+/** A subcontract package: priced outside the build-up and added ONCE to the consolidated package. */
+export function AddOverlayDialog({ open, onClose, usedNames, onAdd }: {
+  open: boolean; onClose: () => void; usedNames: Set<string>;
+  onAdd: (name: string, payload: Record<string, unknown>) => void;
+}) {
+  const [f, setF] = useState({ name: "", amount: "", kind: "QUOTED" });
+  const [err, setErr] = useState("");
+  useEffect(() => { if (open) { setF({ name: "", amount: "", kind: "QUOTED" }); setErr(""); } }, [open]);
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const name = f.name.trim();
+    if (!name) return setErr("Name the package, for example the subcontractor and what they are doing.");
+    if ([...usedNames].some((n) => n.toLowerCase() === name.toLowerCase())) return setErr(`There is already a package called "${name}".`);
+    if (f.amount.trim() === "" || !Number.isFinite(Number(f.amount)) || Number(f.amount) < 0) return setErr("The amount needs a number that isn't negative.");
+    onAdd(name, { amount: f.amount.trim(), kind: f.kind });
+    onClose();
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Add subcontract package">
+      <form onSubmit={submit} className="space-y-4" noValidate>
+        <p className="text-sm text-muted-foreground">A subcontract or supplier package that is priced outside your own build-up. It is added once to the consolidated package, then overhead and margin apply. Don't also price the same work in the build-up.</p>
+        <label className="block"><span className="label">Package</span><input className={input} value={f.name} onChange={set("name")} maxLength={80} placeholder="e.g. Smith Concrete, foundations and floor" autoFocus /></label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block"><span className="label">Amount excl. GST</span>
+            <div className="mt-1 flex items-center gap-2"><span className="text-sm">$</span><input className={`${input} !mt-0`} inputMode="decimal" value={f.amount} onChange={set("amount")} /></div></label>
+          <label className="block"><span className="label">Type</span>
+            <select className={input} value={f.kind} onChange={set("kind")}>{OVERLAY_KINDS.map((k) => <option key={k}>{k}</option>)}</select></label>
+        </div>
+        {err && <Err msg={err} />}
+        <div className="flex justify-end gap-2"><button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-solid">Add package</button></div>
+      </form>
+    </Modal>
+  );
+}

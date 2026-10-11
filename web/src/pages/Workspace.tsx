@@ -274,7 +274,9 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
                 options={detail.revisions.map((r) => ({ value: String(r.n), label: `${r.label}${r.n === detail.latest_rev ? " · latest" : ""}` }))} />
               {est?.controls.cover_release && <Chip tone={/HOLD/i.test(est.controls.cover_release) ? "red" : "green"} title="Release status shown in the workbook cover">{est.controls.cover_release}</Chip>}
               {est && (est.reconciled === null
-                ? <Chip tone="neutral" title="Changed inside the platform; compare with the revision it was based on">Edited in platform</Chip>
+                ? (detail.revisions.find((r) => r.n === cur)?.parent_n == null
+                  ? <Chip tone="neutral" title="This tender was started in the platform, not from a workbook">Started in platform</Chip>
+                  : <Chip tone="neutral" title="Changed inside the platform; compare with the revision it was based on">Edited in platform</Chip>)
                 : <Chip tone={est.reconciled ? "green" : "red"} title="Every figure is recomputed by the platform and compared with the workbook">{est.reconciled ? "Reconciled to workbook" : "Differs from workbook"}</Chip>)}
               {editing
                 ? <Chip tone="solid">Editing</Chip>

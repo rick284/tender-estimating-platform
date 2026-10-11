@@ -388,3 +388,50 @@ def test_revision_saved_before_row_ids_still_editable(client, auth):
     asyncio.run(strip())
     r = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [ADD_QS, ADD_ROW, ADD_PROD]})
     assert r.status_code == 200 and r.json()["estimate"]["buildup"][0]["uid"] == "EW01-001"
+
+
+# ---------------------------------------------------------------- tender from scratch
+INTAKE = {"client": "Acme Developments", "location": "Albany", "tender_level": "Tender", "scope": "Civil works to new depot"}
+
+
+def test_blank_tender_needs_an_earlier_tender_to_borrow_from(client, auth):
+    r = client.post("/api/tenders/blank", headers=auth, json={"name": "First job", "intake": INTAKE})
+    assert r.status_code == 409 and "Master Estimate Workbook" in r.json()["detail"]
+
+
+def test_blank_tender_created_empty_with_borrowed_rates_and_is_editable(client, auth):
+    src = _tender(client, auth)
+    r = client.post("/api/tenders/blank", headers=auth, json={"name": "New depot", "intake": INTAKE})
+    assert r.status_code == 200, r.text
+    t = r.json()
+    assert t["name"] == "New depot" and t["client"] == "Acme Developments" and t["location"] == "Albany" and t["id"] != src
+    est = client.get(f"/api/tenders/{t['id']}/revisions/1", headers=auth).json()["estimate"]
+    assert est["qs"] == [] and est["buildup"] == [] and est["summary"]["all_in"] == 0
+    assert [x["code"] for x in est["library"]] == ["PL-EXC"]                       # rates borrowed
+    assert est["meta"]["scope"] == "Civil works to new depot"
+    lst = client.get("/api/tenders", headers=auth).json()
+    assert lst["totals"]["count"] == 2
+    # can be built up straight away: add a QS item, a priced row, and a subcontract package
+    edits = [
+        {"target": "qs", "op": "add", "key": "EW01", "value": {"section": "Earthworks", "description": "Strip", "unit": "m2", "quantity": "100", "basis": "MEASURED"}},
+        {"target": "row", "op": "add", "key": "N-row0001", "value": {"qs_code": "EW01", "mode": "Time x Count", "resource_code": "PL-EXC", "task": "Strip"}},
+        {"target": "row", "key": "N-row0001", "field": "productivity_rate", "value": "50"},
+        {"target": "overlay", "op": "add", "key": "Pipes Ltd", "value": {"amount": "1000"}},
+    ]
+    pv = client.post(f"/api/tenders/{t['id']}/revisions/1/preview", headers=auth, json={"edits": edits})
+    assert pv.status_code == 200, pv.text
+    assert pv.json()["estimate"]["consolidated"]["overlays_total"] == 1000 and pv.json()["estimate"]["summary"]["all_in"] > 1000
+    sv = client.post(f"/api/tenders/{t['id']}/revisions/1/save", headers=auth, json={"edits": edits, "note": "First pass build-up"})
+    assert sv.status_code == 200, sv.text
+
+
+def test_blank_tender_validation_and_isolation(client, auth):
+    src = _tender(client, auth)
+    assert client.post("/api/tenders/blank", headers=auth, json={"name": "", "intake": {}}).status_code == 422
+    assert client.post("/api/tenders/blank", headers=auth, json={"name": "x", "intake": {"tender_level": "Guess"}}).status_code == 422
+    assert client.post("/api/tenders/blank", headers=auth, json={"name": "x", "intake": {"scope": "a" * 3000}}).status_code == 422
+    # another workspace can't borrow from this one
+    other = client.post("/api/auth/register", json={"email": "o@example.com", "password": "correct horse battery", "name": "O", "company": "Other"})
+    if other.status_code == 200:
+        h = {"Authorization": f"Bearer {other.json()['token']}"}
+        assert client.post("/api/tenders/blank", headers=h, json={"name": "x", "template_tender_id": src}).status_code == 404

@@ -62,3 +62,10 @@ Do NOT commit client/tender files into this repo without asking; the Rev34E valu
 ## Phase 1d follow-up (12 Oct 2026)
 - Adding a QS item now leads to pricing: optional "price it now as a lump sum" (creates a Lump Sum row, qty 1), otherwise the Add row dialog opens preselected and lands in Resource Build-Up on the new row. Items with quantity but no rows show a "No cost rows" chip; "Add pricing row" button in expanded QS rows.
 - Add QS item: choosing a section fills in the next free code (EW11 etc.); can be overtyped.
+
+## Phase 1e done (12 Oct 2026): start a tender from scratch
+- Tenders > New tender > "Start from scratch": intake form (name, level Concept/Feasibility/Tender/Variation, client, location, contract type, pricing basis + optional scope, documents, programme, site constraints, inclusions/exclusions, assumptions, missing info) creates Rev0 with NO quantities/rows/subcontract packages. Borrowed from an earlier editable tender (chosen, or most recent): rate library, commercial rates/switches (overhead, margin, GST...), weather station. Job dollar amounts (PC sums, management reserve) are cleared. API `POST /api/tenders/blank`; engine `tender_engine/blank.py`. First-ever tender must still come from a workbook upload (needs a rate library to borrow).
+- Subcontract packages can now be added/removed (engine overlay add/delete; Consolidated Package page in edit mode).
+- Blank tenders have no weather-linked rows: weather allowance is 0 until the weather tool is ported/set up per tender; Risk Engine lines (CA01/CA02) are 0 until Risk Truth is built.
+- Fixed: Resource Build-Up went blank-white on revisions saved before rows had `uid` (api.revision fills uid from row_id); ErrorBoundary per page shows a readable message instead of a blank screen.
+- e2e: `web/e2e/blank_e2e.py`.
