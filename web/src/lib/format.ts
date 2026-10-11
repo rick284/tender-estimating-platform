@@ -23,3 +23,26 @@ export function rag(text: string | undefined): "GREEN" | "AMBER" | "RED" | "" {
   if (t.startsWith("RED")) return "RED";
   return "";
 }
+
+const dateFmt = new Intl.DateTimeFormat("en-NZ", { day: "numeric", month: "short", year: "numeric" });
+export function fmtDate(iso: string | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso.endsWith("Z") || /[+-]\d\d:\d\d$/.test(iso) ? iso : iso + "Z");
+  return Number.isNaN(d.getTime()) ? "—" : dateFmt.format(d);
+}
+export function fmtAgo(iso: string | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso.endsWith("Z") || /[+-]\d\d:\d\d$/.test(iso) ? iso : iso + "Z").getTime();
+  const mins = Math.round((Date.now() - d) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const h = Math.round(mins / 60);
+  if (h < 24) return `${h} h ago`;
+  const days = Math.round(h / 24);
+  return days < 30 ? `${days} d ago` : dateFmt.format(new Date(d));
+}
+export function fmtCompactMoney(v: number): string {
+  if (Math.abs(v) >= 1e6) return `$${(v / 1e6).toFixed(2)}m`;
+  if (Math.abs(v) >= 1e3) return `$${(v / 1e3).toFixed(0)}k`;
+  return `$${v.toFixed(0)}`;
+}

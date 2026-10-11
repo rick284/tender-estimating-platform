@@ -1,47 +1,28 @@
-import { useCallback, useEffect, useState } from "react";
-import { importWorkbook, loadDemo } from "./lib/api";
-import type { Estimate } from "./lib/types";
-import { NAV, Shell, type PageId } from "./components/Shell";
-import { Overview } from "./pages/Overview";
-import { Consolidated } from "./pages/Consolidated";
-import { Tender } from "./pages/Tender";
-import { QSTakeoff } from "./pages/QSTakeoff";
-import { BuildUp } from "./pages/BuildUp";
-import { Weather } from "./pages/Weather";
-import { RateLibrary } from "./pages/Library";
-import { ImportScreen } from "./pages/Import";
+import { useEffect } from "react";
+import { AuthProvider, useAuth } from "./lib/auth";
+import { go, useRoute } from "./lib/route";
+import { Shell } from "./components/Shell";
+import { Login } from "./pages/Login";
+import { Tenders } from "./pages/Tenders";
+import { Workspace } from "./pages/Workspace";
 
-const ids = NAV.map((n) => n.id) as string[];
-const fromHash = (): PageId => { const h = window.location.hash.replace(/^#\/?/, ""); return (ids.includes(h) ? h : "overview") as PageId; };
+function Routes() {
+  const { user, loading, logout } = useAuth();
+  const route = useRoute();
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user && route.name !== "login") go({ name: "login" });
+    if (user && route.name === "login") go({ name: "tenders" });
+  }, [user, loading, route.name]);
+
+  if (loading) return <div className="p-8 text-sm text-muted-foreground" aria-live="polite">Loading…</div>;
+  if (!user) return route.name === "login" ? <Login /> : null;
+  if (route.name === "tender") return <Workspace id={route.id} page={route.page} rev={route.rev} user={user} onLogout={logout} />;
+  if (route.name === "tenders") return <Shell user={user} route={route} onLogout={logout}><Tenders /></Shell>;
+  return null;
+}
 
 export default function App() {
-  const [est, setEst] = useState<Estimate | null>(null);
-  const [page, setPage] = useState<PageId>(fromHash());
-  const [code, setCode] = useState("all");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [demo, setDemo] = useState(false);
-
-  useEffect(() => { const f = () => setPage(fromHash()); window.addEventListener("hashchange", f); return () => window.removeEventListener("hashchange", f); }, []);
-  useEffect(() => { fetch("/api/demo").then((r) => setDemo(r.ok)).catch(() => setDemo(false)); }, []);
-  const go = useCallback((p: PageId) => { window.location.hash = `/${p}`; setPage(p); }, []);
-
-  const run = async (fn: () => Promise<Estimate>) => {
-    setBusy(true); setError("");
-    try { setEst(await fn()); } catch (e) { setError(e instanceof Error ? e.message : "Something went wrong."); } finally { setBusy(false); }
-  };
-
-  if (!est) return <ImportScreen busy={busy} error={error} demoAvailable={demo} onFile={(f) => run(() => importWorkbook(f))} onDemo={() => run(loadDemo)} />;
-
-  return (
-    <Shell est={est} page={page} onGo={go} onReset={() => { setEst(null); setCode("all"); }}>
-      {page === "overview" && <Overview est={est} go={go} />}
-      {page === "consolidated" && <Consolidated est={est} />}
-      {page === "tender" && <Tender est={est} />}
-      {page === "qs" && <QSTakeoff est={est} openRows={(c) => { setCode(c); go("buildup"); }} />}
-      {page === "buildup" && <BuildUp est={est} code={code} setCode={setCode} />}
-      {page === "weather" && <Weather est={est} />}
-      {page === "library" && <RateLibrary est={est} />}
-    </Shell>
-  );
+  return <AuthProvider><Routes /></AuthProvider>;
 }

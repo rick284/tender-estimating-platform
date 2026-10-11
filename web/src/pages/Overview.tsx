@@ -1,9 +1,9 @@
 import type { Estimate } from "../lib/types";
 import { fmtMoney, fmtNum, fmtPct } from "../lib/format";
 import { Chip, Money, PageHeader, Panel, Stat } from "../components/ui";
-import type { PageId } from "../components/Shell";
+import type { TenderPage } from "../components/Shell";
 
-export function Overview({ est, go }: { est: Estimate; go: (p: PageId) => void }) {
+export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => void }) {
   const s = est.summary, c = est.consolidated, ct = est.controls;
   const parts = [
     { name: "Siteworks pre-commercial (incl. Management Reserve)", v: c.own_works, shade: "bg-primary" },

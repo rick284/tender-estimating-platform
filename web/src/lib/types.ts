@@ -38,3 +38,32 @@ export interface BuildUpLine {
   qa: string; workbook_qa: string; verified: boolean; confidence: string; rag: string; quote_ref: string;
   source_date: string; assumption: string; note: string; library_source: string;
 }
+
+export interface User { id: string; email: string; name: string; role: string; org_id: string; org_name: string | null }
+export type Stage = "estimating" | "submitted" | "won" | "lost" | "withdrawn";
+export const STAGES: { id: Stage; label: string }[] = [
+  { id: "estimating", label: "Estimating" }, { id: "submitted", label: "Submitted" },
+  { id: "won", label: "Won" }, { id: "lost", label: "Lost" }, { id: "withdrawn", label: "Withdrawn" },
+];
+export interface TenderSummary {
+  label: string; all_in: number; siteworks_tender: number; known_cost: number; release: string;
+  red_risks: number | null; reconciled: boolean; gross_margin_on_sell: number;
+}
+export interface Tender {
+  id: string; name: string; client: string; location: string; stage: Stage; latest_rev: number;
+  summary: TenderSummary; created_at: string; updated_at: string;
+}
+export interface RevisionInfo { n: number; label: string; lifecycle: string; created_at: string; source_filename: string; all_in: number | null }
+export interface TenderDetail extends Tender { revisions: RevisionInfo[] }
+export interface TenderList { tenders: Tender[]; totals: { count: number; by_stage: Record<Stage, { count: number; value: number }> } }
+export interface Diff {
+  settings: { key: string; label: string; a: number; b: number }[];
+  headline: { key: string; label: string; a: number | null; b: number | null; delta: number }[];
+  sections: { section: string; a: number | null; b: number | null; delta: number }[];
+  qs: { code: string; description: string; unit: string; kind: string; qty_a: number | null; qty_b: number | null; amount_a: number | null; amount_b: number | null; delta: number }[];
+  buildup: { row_id: string; qs_code: string; task: string; resource: string; kind: string; rate_a: number | null; rate_b: number | null; hours_a: number | null; hours_b: number | null; cost_a: number | null; cost_b: number | null; delta: number }[];
+  commercial: { ref: string; name: string; include_a: boolean | null; include_b: boolean; amount_a: number | null; amount_b: number; delta: number }[];
+  overlays: { name: string; a: number | null; b: number | null; delta: number }[];
+  counts: Record<string, number>;
+  identical: boolean;
+}
