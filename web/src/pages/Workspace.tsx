@@ -61,19 +61,32 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
   const [upload, setUpload] = useState(false);
   const [code, setCode] = useState("all");
 
-  const load = useCallback(async () => {
-    setErr("");
-    try {
-      const d = await api.tender(id);
-      setDetail(d);
-      const n = rev ?? d.latest_rev;
-      if (!d.revisions.some((r) => r.n === n)) { go({ name: "tender", id, page, rev: null }); return; }
-      setEst(null);
-      setEst((await api.revision(id, n)).estimate);
-    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't load this tender."); }
-  }, [id, rev, page]);
-  useEffect(() => { setDetail(null); setEst(null); }, [id]);
-  useEffect(() => { load(); }, [load]);
+  // Revisions are immutable once saved, so a loaded revision can be kept for the whole visit.
+  // Switching menu pages must never refetch or blank the estimate; only a new tender or revision loads data.
+  const cache = useRef(new Map<string, Estimate>());
+  const pageRef = useRef(page);
+  pageRef.current = page;
+
+  const loadDetail = useCallback(async () => {
+    try { setDetail(await api.tender(id)); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't load this tender."); }
+  }, [id]);
+  useEffect(() => { setDetail(null); setEst(null); setErr(""); loadDetail(); }, [id, loadDetail]);
+
+  const wanted = rev ?? detail?.latest_rev ?? null;
+  useEffect(() => {
+    if (!detail || wanted === null) return;
+    if (!detail.revisions.some((r) => r.n === wanted)) { go({ name: "tender", id, page: pageRef.current, rev: null }); return; }
+    const key = `${id}:${wanted}`;
+    const hit = cache.current.get(key);
+    if (hit) { setEst(hit); return; }
+    let live = true;
+    setEst(null);
+    api.revision(id, wanted)
+      .then((r) => { cache.current.set(key, r.estimate); if (live) setEst(r.estimate); })
+      .catch((e) => { if (live) setErr(e instanceof Error ? e.message : "Couldn't load this revision."); });
+    return () => { live = false; };
+  }, [detail, id, wanted]);
 
   const cur = rev ?? detail?.latest_rev ?? 1;
   const view = (p: TenderPage) => go({ name: "tender", id, page: p, rev });
@@ -121,7 +134,7 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
         {!err && est && pg === "library" && <RateLibrary est={est} />}
       </main>
       <UploadRevision open={upload} onClose={() => setUpload(false)} tenderId={id}
-        onDone={() => { setUpload(false); go({ name: "tender", id, page: "revisions", rev: null }); load(); }} />
+        onDone={() => { setUpload(false); go({ name: "tender", id, page: "revisions", rev: null }); loadDetail(); }} />
     </Shell>
   );
 }
