@@ -1,0 +1,27 @@
+PROJECT INTAKE BLOCK (copy/paste)
+
+1) Job name:
+2) Location (NZ/AU + region/state):
+3) Client / head contractor:
+4) Job type (what is it really): (subdivision, commercial pad, driveway + platform, roading, 3 waters, retaining, new build, reno, etc)
+5) Work package required: (earthworks only, drainage only, civils only, foundations only, full build, etc)
+6) Estimate purpose: (budget, feasibility, tender, variation, cost plus check, bank funding, etc)
+7) Estimate level: (Concept / Feasibility / Tender / Variation-delta)
+8) Pricing basis: (use my rates / allowances only / mix)
+9) Contract type: (LS, SOR, cost plus, GMP, labour only, supply + install, subcontract)
+10) What “done” looks like: (deliverables expected, format, deadlines, who it’s for)
+
+11) Programme constraints: (start date, milestones, access dates, working days/week, hours/day, target working-day duration, expected calendar span, shutdowns/public holidays, number of crews and simultaneous work fronts)
+12) Site constraints: (access, laydown, neighbours, noise, dust, live services, traffic, waterways, contamination, slope)
+13) Scope boundaries I already know: (what is in, what is out, grey areas)
+14) Documents provided: (plans, specs, geotech, survey, schedules, tender addenda, photos, emails)
+15) Missing docs you suspect exist: (geotech, ESCP, services as-builts, structural, details, council conditions)
+
+16) Key assumptions you want locked in early: (cart distance, tip location, dewatering by others, testing by others, etc)
+17) Known risks / red flags: (client reputation, incomplete design, tight access, wet season, provisional sums, etc)
+18) Interfaces to confirm: (surveyor, geotech, TMP, utility owners, testing lab, retaining, services, pavement, landscaping)
+19) Inclusions wording style: (tight/legal, practical/site-scope, or both)
+20) Questions you want answered first: (your top 3 unknowns)
+
+Attachments: Upload PDFs first, then any emails/photos/site notes.
+Special instruction: If anything is missing, don’t guess, convert it into an RFI with impact.

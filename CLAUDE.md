@@ -3,7 +3,7 @@
 Owner: Rick (non-technical; wants step-by-step walkthroughs, plain language, no unexplained jargon).
 Purpose: a standalone, sellable (managed web subscription) tender-estimating platform for smaller NZ civil/commercial contractors. It recreates Rick's ChatGPT-built estimating system without depending on a chat session.
 
-Read first: `docs/SPEC.md` (platform spec) and `docs/GOLDEN_TEST_HOBSONVILLE.md` (acceptance test numbers).
+Read first: `docs/STANDARDS_TO_PLATFORM.md` (Rick's governing standards as requirements; OVERRIDES SPEC.md where they differ), then `docs/SPEC.md` and `docs/GOLDEN_TEST_HOBSONVILLE.md` (acceptance test numbers). Original standards: `docs/standards/`.
 
 ## Non-negotiable rules
 1. **Arithmetic is deterministic code**, never the AI. The AI reads documents, drafts, flags and explains. Totals must reproduce the Hobsonville Rev34E workbook to the cent (golden test).
