@@ -22,11 +22,12 @@ function Basis({ c }: { c: Estimate["commercial"][number] }) {
 
 export function Tender({ est }: { est: Estimate }) {
   const t = est.tender;
+  const gst = est.commercial.find((c) => c.ref === "CA21");
   const pre = est.commercial.filter((c) => c.stage === "pre");
   const com = est.commercial.filter((c) => c.stage === "commercial");
   return (
     <>
-      <PageHeader title="Tender build-up" sub="Siteworks only. Base direct cost flows from the QS Takeoff; commercial provisions flow from Commercial Inputs. Nothing is entered on this page." />
+      <PageHeader title="Tender build-up" sub="Siteworks only. Base direct cost flows from the QS Takeoff. Press Edit to switch commercial lines on or off and change their percentages and amounts, including GST at the bottom." />
       <Panel flush>
         <div className="overflow-x-auto">
           <table className="grid-table min-w-[36rem]">
@@ -58,7 +59,14 @@ export function Tender({ est }: { est: Estimate }) {
                 </tr>
               ))}
               <tr className="total-row"><td colSpan={2}>Siteworks tender excl. GST</td><td className="num"><Money v={t.total_excl_gst} /></td></tr>
-              <tr><td colSpan={2} className="text-muted-foreground">GST (switched off in Commercial Inputs)</td><td className="num"><Money v={t.gst} dash0 /></td></tr>
+              {gst && (
+                <tr className={gst.include ? "" : "text-muted-foreground"}>
+                  <td><span className="font-mono text-xs">{gst.ref}</span> {gst.name}</td>
+                  <td><Basis c={gst} /></td>
+                  <td className="num"><Money v={gst.include ? t.gst : null} dash0 /></td>
+                </tr>
+              )}
+              <tr className="total-row"><td colSpan={2}>Siteworks tender incl. GST{gst && !gst.include ? " (GST off, same as excl. GST)" : ""}</td><td className="num"><Money v={t.total_incl_gst} /></td></tr>
             </tbody>
           </table>
         </div>
