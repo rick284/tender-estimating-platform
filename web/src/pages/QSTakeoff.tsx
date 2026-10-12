@@ -29,7 +29,7 @@ export function QSTakeoff({ est, openRows, onRowAdded }: { est: Estimate; openRo
       />
       {sections.length === 0 ? (est.qs.length === 0 ? <Empty title="No QS items yet" body={editing ? "Use Add QS item to enter your first quantity." : "Press Edit at the top, then use Add QS item to enter your first quantity."} /> : <Empty title="No matching items" body="Try a different search term." />) : (
         <Panel flush>
-          <div className="overflow-x-auto">
+          <div className="grid-scroll">
             <table className="grid-table">
               <thead>
                 <tr>

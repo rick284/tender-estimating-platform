@@ -17,7 +17,7 @@ export function Weather({ est }: { est: Estimate }) {
       <PageHeader title="Weather risk" sub={est.weather.live ? "The weather allowance (CA10) is worked out by the platform from NIWA climate normals and the weather-exposed activities listed below." : "The weather allowance (CA10) is calculated from the approved weather tool's outputs, scaled to the labour and plant that is actually exposed to weather in this estimate."} />
       <div className="grid gap-4 lg:grid-cols-3">
         <Panel className="lg:col-span-2" title="Allowance calculation" flush>
-          <div className="overflow-x-auto">
+          <div className="grid-scroll">
             <table className="grid-table min-w-[32rem]">
               <thead><tr><th>Component</th><th>Basis</th><th className="text-right">Amount</th></tr></thead>
               <tbody>

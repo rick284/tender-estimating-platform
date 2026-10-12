@@ -18,7 +18,7 @@ export function RateLibrary({ est }: { est: Estimate }) {
         actions={<><SearchBox value={q} onChange={setQ} placeholder="Search code, description or source" /><Select label="Category" value={cat} onChange={setCat} options={[{ value: "all", label: "All categories" }, ...cats.map((c) => ({ value: c, label: c }))]} /></>} />
       {rows.length === 0 ? <Empty title="No rates match" body="Clear the search or category." /> : (
         <Panel flush>
-          <div className="overflow-x-auto">
+          <div className="grid-scroll">
             <table className="grid-table min-w-[48rem]">
               <thead><tr><th className="w-36">Code</th><th className="min-w-[14rem]">Description</th><th className="hidden w-28 sm:table-cell">Category</th><th className="w-20">Unit</th><th className="w-28 text-right">Rate</th><th className="hidden w-16 lg:table-cell">Used</th><th className="hidden lg:table-cell">Source</th></tr></thead>
               <tbody>

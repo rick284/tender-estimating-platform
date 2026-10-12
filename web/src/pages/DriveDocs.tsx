@@ -192,7 +192,7 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
                     </div>}>
                     {reading && <div className="border-b bg-muted px-4 py-2 text-sm" aria-live="polite">{reading}</div>}
                     {files.length === 0 ? <div className="p-4"><Empty title="No files" body="This folder has no files yet." /></div> : (
-                      <div className="overflow-x-auto">
+                      <div className="grid-scroll">
                         <table className="grid-table min-w-[56rem]">
                           <thead><tr><th className="w-8"></th><th>File</th><th>Folder</th><th>Revision</th><th>Status</th><th>Text</th><th>Modified</th><th className="text-right">Size</th></tr></thead>
                           <tbody>

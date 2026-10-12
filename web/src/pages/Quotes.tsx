@@ -66,7 +66,7 @@ export function Quotes({ est }: { est: Estimate }) {
       </Panel>
       {quotes.length === 0 ? <Empty title="No quotes recorded yet" body={editing ? "Use Add quote to record a supplier or subcontractor price." : "Press Edit to record the supplier and subcontractor quotes behind this price."} /> : (
         <Panel flush>
-          <div className="overflow-x-auto">
+          <div className="grid-scroll">
             <table className="grid-table min-w-[64rem]">
               <thead><tr><th className="min-w-[4rem]">Ref</th><th className="min-w-[12rem]">Package</th><th className="min-w-[11rem]">Supplier</th><th className="min-w-[6rem]">QS items</th><th className="min-w-[7rem] text-right">Amount</th><th className="min-w-[10rem]">Status</th><th className="min-w-[18rem]">Notes and action</th><th className="min-w-[11rem]">Evidence</th>{editing && <th />}</tr></thead>
               <tbody>

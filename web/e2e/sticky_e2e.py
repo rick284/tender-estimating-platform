@@ -24,5 +24,10 @@ with sync_playwright() as p:
             h1 = pg.locator("h1").first.bounding_box(); bar = pg.get_by_text("Tender", exact=True).first.bounding_box()
             assert h1 and 0 <= h1["y"] < 200 and (w < 1024 or (bar and bar["y"] >= 0)), (w, page, h1, bar)
             print(w, page, "title at y=%d, tender bar at y=%d" % (h1["y"], bar["y"]))
+            if page in ("qs", "buildup", "quotes"):
+                pg.evaluate("document.querySelector('.grid-scroll').scrollTop = 99999"); pg.wait_for_timeout(300)
+                th = pg.locator(".grid-scroll thead th:visible").first.bounding_box(); vh = pg.viewport_size["height"]
+                assert th and 0 < th["y"] < vh - 40, (w, page, "column headings not in view", th)
+                print(w, page, "column heading at y=%d (scrolled to the last row)" % th["y"])
             if page == "qs": pg.screenshot(path=SHOT + f"sticky_{w}.png")
 print("OK")

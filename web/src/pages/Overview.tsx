@@ -141,7 +141,7 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
       </div>
 
       {est.reconciled !== null && <Panel className="mt-4" title="Reconciliation to workbook" action={<Chip tone={est.reconciled ? "green" : "red"}>{est.reconciled ? "All figures agree" : "Differences found"}</Chip>} flush>
-        <div className="overflow-x-auto">
+        <div className="grid-scroll">
           <table className="grid-table">
             <thead><tr><th>Check</th><th className="text-right">Platform</th><th className="hidden text-right sm:table-cell">Workbook</th><th className="hidden text-right sm:table-cell">Difference</th><th className="w-16" /></tr></thead>
             <tbody>

@@ -69,7 +69,7 @@ export function BuildUp({ est, code, setCode, focusUid }: { est: Estimate; code:
       </div>
       {rows.length === 0 ? (est.buildup.length === 0 ? <Empty title="No build-up rows yet" body="Rows price your QS items. Add a QS item first, then add its plant, labour and material rows here." /> : <Empty title="No rows match" body="Clear a filter or change the search." />) : (
         <Panel flush>
-          <div className="overflow-x-auto">
+          <div className="grid-scroll">
             <table className="grid-table sm:min-w-[46rem]">
               <thead>
                 <tr>

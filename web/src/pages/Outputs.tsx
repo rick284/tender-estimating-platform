@@ -77,7 +77,7 @@ export function Outputs({ est, tenderId, rev }: { est: Estimate; tenderId: strin
         <div className="border-b px-4 py-3 text-sm text-muted-foreground">
           {sch.auto ? "Automatic format: one line per QS section and one per subcontract package. If the client gave you their own schedule, use their format." : <>Format: <strong className="text-foreground">{sch.name || "Client format"}</strong>{sch.client && <> · {sch.client}</>}</>}
         </div>
-        <div className="overflow-x-auto">
+        <div className="grid-scroll">
           <table className="grid-table min-w-[28rem]">
             <thead><tr><th className="w-28">Ref</th><th className="min-w-[14rem]">Trade</th><th className="w-40 text-right">Total (excl. GST)</th></tr></thead>
             <tbody>
@@ -99,7 +99,7 @@ export function Outputs({ est, tenderId, rev }: { est: Estimate; tenderId: strin
 
       <Panel className="mt-4" title="Where each cost goes" flush
         action={sch.unmapped.length > 0 ? <Chip tone="red">{sch.unmapped.length} not mapped</Chip> : <Chip tone="green">All mapped</Chip>}>
-        <div className="overflow-x-auto">
+        <div className="grid-scroll">
           <table className="grid-table min-w-[48rem]">
             <thead><tr><th className="min-w-[14rem]">Item</th><th className="w-28">Type</th><th className="w-36 text-right">Amount</th><th className="w-80">Schedule line</th></tr></thead>
             <tbody>

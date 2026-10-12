@@ -82,7 +82,7 @@ export function RiskTruth({ est }: { est: Estimate }) {
             </div>
           </Panel>
           <Panel flush>
-            <div className="overflow-x-auto">
+            <div className="grid-scroll">
               <table className="grid-table min-w-[86rem]">
                 <thead><tr><th className="min-w-[6rem]">Ref</th><th className="min-w-[18rem]">Exposure</th><th className="min-w-[14rem]">Already priced at</th><th className="min-w-[12rem]">Calculation</th><th className="min-w-[7rem] text-right">Provision</th><th className="min-w-[5rem]">Adds cost?</th><th className="min-w-[12rem]">Aimed at</th><th className="min-w-[7rem]">Evidence</th><th className="min-w-[7rem]">Status</th>{editing && <th className="min-w-[3rem]" />}</tr></thead>
                 <tbody>

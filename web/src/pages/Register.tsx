@@ -90,7 +90,7 @@ export function Register({ est }: { est: Estimate }) {
       </div>
       {rows.length === 0 ? <Empty title={`No ${tab.label.toLowerCase()} yet`} body={editing ? `Use Add ${tab.one} to record one. ${tab.hint}` : `${tab.hint} Press Edit to add one.`} /> : (
         <Panel flush>
-          <div className="overflow-x-auto">
+          <div className="grid-scroll">
             <table className="grid-table min-w-[60rem]">
               {kind === "rfi" && <>
                 <thead><tr><th className="w-24">Ref</th><th className="min-w-[14rem]">Item</th><th className="min-w-[18rem]">Detail</th><th className="w-28">Status</th><th className="w-28">Rating</th>{editing && <th />}</tr></thead>

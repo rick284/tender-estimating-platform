@@ -47,6 +47,9 @@
 
 @media (max-width: 639px) { .grid-table :where(td, thead th) { padding-left: 0.5rem; padding-right: 0.5rem; } }
 .grid-table td { overflow-wrap: break-word; }
+/* A table panel scrolls inside itself (both ways) so its column headings can stay in view; sized to what is left under the fixed bars. */
+.grid-scroll { overflow: auto; max-height: calc(100vh - 14rem); }
+@media (min-width: 1024px) { .grid-scroll { max-height: calc(100vh - var(--tbar, 4rem) - 10rem); } }
 dd, dt { overflow-wrap: anywhere; }
 .grid-table td.num, .grid-table td.nowrap { overflow-wrap: normal; }
 

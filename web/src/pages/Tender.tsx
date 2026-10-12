@@ -42,7 +42,7 @@ export function Tender({ est }: { est: Estimate }) {
     <>
       <PageHeader title="Tender build-up" sub="Siteworks only. Base direct cost flows from the QS Takeoff. Press Edit to switch commercial lines on or off and change their percentages and amounts, including GST at the bottom." />
       <Panel flush>
-        <div className="overflow-x-auto">
+        <div className="grid-scroll">
           <table className="grid-table min-w-[36rem]">
             <thead><tr><th>Item</th><th>Basis</th><th className="text-right">Amount excl. GST</th></tr></thead>
             <tbody>

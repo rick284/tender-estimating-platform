@@ -103,7 +103,7 @@ export function ManagementReserve({ est }: { est: Estimate }) {
           </Panel>
           {r.items.length === 0 ? <Empty title="No unresolved items recorded" body={editing ? "Use Add item to record what cannot realistically be closed out before the price goes in." : "Press Edit to record the unresolved items behind the reserve."} /> : (
             <Panel flush>
-              <div className="overflow-x-auto">
+              <div className="grid-scroll">
                 <table className="grid-table min-w-[64rem]">
                   <thead><tr><th className="w-20">Ref</th><th className="w-64">Unresolved item</th><th className="w-36 text-right">Extra cost if adverse</th><th className="w-32">Probability</th><th className="w-28">Evidence</th><th className="w-44 text-right">Weighted (tender effect)</th><th className="w-28">Counted?</th><th className="w-24">Status</th>{editing && <th className="w-12" />}</tr></thead>
                   <tbody>

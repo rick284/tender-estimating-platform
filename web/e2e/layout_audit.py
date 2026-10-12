@@ -39,14 +39,14 @@ JS = r"""
     if (!vis(e)) return;
     const c = e.closest('td, th, label, dialog > div, .panel, section, div'); if (!c) return;
     const a = e.getBoundingClientRect(), b = c.getBoundingClientRect();
-    const sc = e.closest('.overflow-x-auto, .overflow-auto'); 
+    const sc = e.closest('.overflow-x-auto, .overflow-auto, .grid-scroll'); 
     if (a.right > b.right + 1.5 && !(c.matches('div') )) issues.push({k: 'input-overflows-cell', d: `${label(e)} right ${Math.round(a.right)} > cell ${Math.round(b.right)}`});
     if (a.width < 28 && e.tagName !== 'INPUT') issues.push({k: 'control-too-narrow', d: `${label(e)} ${Math.round(a.width)}px`});
     if (e.tagName === 'INPUT' && a.width < 36 && e.type !== 'hidden') issues.push({k: 'control-too-narrow', d: `${label(e)} ${Math.round(a.width)}px`});
   });
   document.querySelectorAll('button, .btn, a.btn').forEach((e) => {
     if (!vis(e)) return; const a = e.getBoundingClientRect();
-    if (a.width > window.innerWidth + 1 || a.right > window.innerWidth + 2 && !e.closest('.overflow-x-auto, .overflow-auto')) issues.push({k: 'button-off-screen', d: `${(e.textContent || '').trim().slice(0, 30)} right ${Math.round(a.right)} / ${window.innerWidth}`});
+    if (a.width > window.innerWidth + 1 || a.right > window.innerWidth + 2 && !e.closest('.overflow-x-auto, .overflow-auto, .grid-scroll')) issues.push({k: 'button-off-screen', d: `${(e.textContent || '').trim().slice(0, 30)} right ${Math.round(a.right)} / ${window.innerWidth}`});
     const lines = (() => { const r = document.createRange(); r.selectNodeContents(e); return new Set(Array.from(r.getClientRects()).filter(x => x.width > 0).map(x => Math.round(x.top / 4))).size; })();
     if (lines > 2 && (e.textContent || '').trim().length < 24) issues.push({k: 'button-text-wraps', d: `"${(e.textContent || '').trim()}" ${lines} lines in ${Math.round(a.width)}px`});
   });

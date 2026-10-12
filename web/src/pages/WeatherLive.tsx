@@ -112,7 +112,7 @@ export function WeatherLive({ est }: { est: Estimate }) {
         {t.activities.length === 0 ? (
           <p className="px-4 py-6 text-sm text-muted-foreground">No activities yet. Add each block of outdoor work with its dates; the allowance is worked out per activity, and only critical-path activities add delay.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="grid-scroll">
             <table className="grid-table min-w-[64rem]">
               <thead><tr>
                 <th>Work</th><th>Dates</th><th className="text-center">Critical</th><th>QS items</th>

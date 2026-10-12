@@ -107,7 +107,7 @@ export function Programme({ est }: { est: Estimate }) {
         </p>
       )}
       <Panel flush>
-        <div className="overflow-x-auto">
+        <div className="grid-scroll">
           <table className="grid-table min-w-[64rem]">
             <thead><tr><th className="w-20">Code</th><th className="min-w-[17rem]">Task</th><th className="w-20 text-right">Days</th><th className="w-32">Follows</th><th className="w-[6.5rem]">Start</th><th className="w-[6.5rem]">Finish</th><th className="w-16 text-right">Float</th><th className="w-[14%] min-w-[7rem]">Timeline ({p.duration} WD)</th><th className="w-32" />{editing && <th className="w-24" />}</tr></thead>
             <tbody>
