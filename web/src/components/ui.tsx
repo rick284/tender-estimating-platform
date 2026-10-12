@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { fmtMoney } from "../lib/format";
 
-export function Chip({ tone, children, title }: { tone: "green" | "amber" | "red" | "neutral" | "solid"; children: ReactNode; title?: string }) {
+export function Chip({ tone, children, title, bar }: { tone: "green" | "amber" | "red" | "neutral" | "solid"; children: ReactNode; title?: string; bar?: boolean }) {
   const cls = {
     green: "bg-green-bg text-green-fg border-green-line",
     amber: "bg-amber-bg text-amber-fg border-amber-line",
@@ -10,7 +10,7 @@ export function Chip({ tone, children, title }: { tone: "green" | "amber" | "red
     solid: "bg-primary text-primary-foreground border-primary",
   }[tone];
   return (
-    <span title={title} className={`inline-flex items-center gap-1.5 border px-1.5 py-0.5 font-heading text-2xs font-bold uppercase leading-4 tracking-wider whitespace-nowrap ${cls}`}>
+    <span title={title} className={`inline-flex items-center gap-1.5 border ${bar ? "h-9 px-3" : "px-1.5 py-0.5 leading-4"} font-heading text-2xs font-bold uppercase tracking-wider whitespace-nowrap ${cls}`}>
       {tone !== "neutral" && tone !== "solid" && <span aria-hidden className="h-1.5 w-1.5" style={{ background: `hsl(var(--${tone}-line))` }} />}
       {children}
     </span>

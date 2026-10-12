@@ -285,8 +285,9 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
 
   return (
     <Shell user={user} route={{ name: "tender", id, page: pg, rev }} tenderName={detail?.name} onLogout={onLogout}>
-      <div className="border-b bg-background">
-        <div className="mx-auto flex max-w-[88rem] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-6">
+      {/* The bar is exactly as tall as the brand block in the side menu (4rem, border included) so the two lines run straight across; every control in it is 2.25rem tall */}
+      <div className="flex min-h-16 items-center border-b bg-background">
+        <div className="mx-auto flex w-full max-w-[88rem] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 sm:px-6">
           <div className="min-w-0 flex-1">
             <div className="label">Tender</div>
             <div className="truncate font-heading text-sm font-bold uppercase" title={detail?.name}>{detail?.name ?? "Loading…"}</div>
@@ -295,18 +296,18 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
             <div className="flex flex-wrap items-center gap-2">
               <Select label="Revision" disabled={editing} value={String(cur)} onChange={(v) => go({ name: "tender", id, page: pg, rev: +v === detail.latest_rev ? null : +v })}
                 options={detail.revisions.map((r) => ({ value: String(r.n), label: `${r.label}${r.n === detail.latest_rev ? " · latest" : ""}` }))} />
-              {est?.controls.cover_release && <Chip tone={/HOLD/i.test(est.controls.cover_release) ? "red" : "green"} title="Release status shown in the workbook cover">{est.controls.cover_release}</Chip>}
+              {est?.controls.cover_release && <Chip bar tone={/HOLD/i.test(est.controls.cover_release) ? "red" : "green"} title="Release status shown in the workbook cover">{est.controls.cover_release}</Chip>}
               {est && (est.reconciled === null
                 ? (detail.revisions.find((r) => r.n === cur)?.parent_n == null
-                  ? <Chip tone="neutral" title="This tender was started in the platform, not from a workbook">Started in platform</Chip>
-                  : <Chip tone="neutral" title="Changed inside the platform; compare with the revision it was based on">Edited in platform</Chip>)
-                : <Chip tone={est.reconciled ? "green" : "red"} title="Every figure is recomputed by the platform and compared with the workbook">{est.reconciled ? "Reconciled to workbook" : "Differs from workbook"}</Chip>)}
+                  ? <Chip bar tone="neutral" title="This tender was started in the platform, not from a workbook">Started in platform</Chip>
+                  : <Chip bar tone="neutral" title="Changed inside the platform; compare with the revision it was based on">Edited in platform</Chip>)
+                : <Chip bar tone={est.reconciled ? "green" : "red"} title="Every figure is recomputed by the platform and compared with the workbook">{est.reconciled ? "Reconciled to workbook" : "Differs from workbook"}</Chip>)}
               {editing
-                ? <Chip tone="solid">Editing</Chip>
+                ? <Chip bar tone="solid">Editing</Chip>
                 : <>
-                    <button className="btn btn-solid !py-1.5" disabled={!est || !curInfo?.has_inputs} onClick={() => setEditing(true)}
+                    <button className="btn btn-solid h-9 !py-0" disabled={!est || !curInfo?.has_inputs} onClick={() => setEditing(true)}
                       title={curInfo && !curInfo.has_inputs ? "This revision was saved before editing was available. Upload the workbook again to edit it." : "Change quantities, rates and settings and recalculate"}>Edit</button>
-                    <button className="btn btn-ghost !py-1.5" onClick={() => setUpload(true)}>New revision</button>
+                    <button className="btn btn-ghost h-9 !py-0" onClick={() => setUpload(true)}>New revision</button>
                   </>}
             </div>
           )}
