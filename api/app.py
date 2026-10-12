@@ -20,6 +20,7 @@ from routes_tenders import router as tenders_router  # noqa: E402
 from routes_weather import router as weather_router  # noqa: E402
 from routes_drive import router as drive_router  # noqa: E402
 from routes_ai import router as ai_router  # noqa: E402
+from routes_takeoff import router as takeoff_router  # noqa: E402
 
 
 log = logging.getLogger("tender.api")
@@ -58,6 +59,7 @@ app.include_router(tenders_router)
 app.include_router(weather_router)
 app.include_router(drive_router)
 app.include_router(ai_router)
+app.include_router(takeoff_router)
 
 
 @app.get("/api/health")

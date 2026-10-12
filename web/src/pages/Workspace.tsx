@@ -23,6 +23,7 @@ import { DriveDocs } from "./DriveDocs";
 import { RiskTruth } from "./RiskTruth";
 import { ManagementReserve } from "./ManagementReserve";
 import { AiDraft } from "./AiDraft";
+import { Takeoff } from "./Takeoff";
 import { Programme } from "./Programme";
 import { Revisions } from "./Revisions";
 import type { User } from "../lib/types";
@@ -334,6 +335,7 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
         {!err && shown && pg === "programme" && <Programme est={shown} />}
         {!err && shown && pg === "quotes" && <Quotes est={shown} />}
         {!err && pg === "ai" && <AiDraft tenderId={id} />}
+        {!err && shown && pg === "takeoff" && <Takeoff est={shown} tenderId={id} goQs={() => view("qs")} />}
         {!err && pg === "drive" && <DriveDocs tenderId={id} />}
         {!err && shown && pg === "outputs" && <Outputs est={shown} tenderId={id} rev={cur} />}
         {!err && shown && pg === "library" && <RateLibrary est={shown} />}

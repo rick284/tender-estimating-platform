@@ -87,7 +87,20 @@ export interface DriveTextSummary { file_id: string; name: string; path: string;
 export interface IntakePart { file_id: string; name: string; page_from: number; page_to: number }
 export interface IntakePlan { batches: { index: number; chars: number; parts: IntakePart[] }[]; skipped: { name: string; reason: string }[]; total_chars: number; files: number; max_batches: number }
 
+export interface TakeoffComponent { label: string; value: number; unit: string; doc: string; file: string; sheet: string; page: number; source: string; quote: string; found: boolean | null }
+export interface TakeoffLine {
+  id: string; run: string; description: string; section: string; unit: string; operation: string; method: "READ" | "COUNTED" | "SCALED" | "CALCULATED"; confidence: "high" | "medium" | "low"; notes: string;
+  quantity: number; quantity_claimed: number | null; components: TakeoffComponent[]; status: "verified" | "check" | "unverified"; problems: string[];
+  decision: { decision: "accepted" | "rejected"; reason?: string } | null; created_at: string;
+}
+export interface TakeoffQs { description: string; unit: string; quantity: number; basis: string; source: string; notes: string; section_hint: string }
+
 export const api = {
+  takeoffRun: (id: string, fileIds: string[], pictures: { file_id: string; page: number }[]) =>
+    request<{ run: string; lines: TakeoffLine[]; not_measurable: { what: string; why: string }[]; files_sent: string[]; pictures: number }>(`/api/takeoff/tenders/${id}/run`, { method: "POST", body: JSON.stringify({ file_ids: fileIds, pictures }) }),
+  takeoffLines: (id: string) => request<{ lines: TakeoffLine[] }>(`/api/takeoff/tenders/${id}/lines`),
+  takeoffAccept: (lid: string, commit: boolean) => request<{ decision: "accepted" | "pending"; qs: TakeoffQs }>(`/api/takeoff/lines/${lid}/decision`, { method: "POST", body: JSON.stringify({ decision: "accepted", commit }) }),
+  takeoffReject: (lid: string, reason: string) => request<{ decision: "rejected" }>(`/api/takeoff/lines/${lid}/decision`, { method: "POST", body: JSON.stringify({ decision: "rejected", reason }) }),
   aiIntakePlan: (id: string) => request<IntakePlan>(`/api/ai/tenders/${id}/intake/plan`),
   aiDraftParts: (id: string, parts: IntakePart[], run: string) => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ parts, run }) }),
   driveTexts: (id: string) => request<{ texts: DriveTextSummary[] }>(`/api/drive/tenders/${id}/texts`),

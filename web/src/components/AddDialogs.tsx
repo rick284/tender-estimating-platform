@@ -32,13 +32,15 @@ function suggestCode(sec: { section: string; items: string[] } | undefined, used
   return prefix + String(n).padStart(width, "0");
 }
 
-export function AddQsDialog({ open, onClose, sections: secs, usedCodes, onAdd }: {
+export function AddQsDialog({ open, onClose, sections: secs, usedCodes, onAdd, initial }: {
   open: boolean; onClose: () => void; sections: { section: string; items: string[] }[]; usedCodes: Set<string>;
+  initial?: { section?: string; description?: string; unit?: string; quantity?: string; basis?: string; source?: string; notes?: string };
   onAdd: (code: string, payload: Record<string, unknown>, lumpSum: string) => void;
 }) {
   const sections = secs.map((x) => x.section);
   const codeFor = (section: string) => suggestCode(secs.find((x) => x.section === section), usedCodes);
-  const blank = { code: codeFor(sections[0] ?? ""), section: sections[0] ?? "__new", newSection: "", description: "", unit: "", quantity: "", basis: "", source: "", lump: "" };
+  const startSection = initial?.section && sections.includes(initial.section) ? initial.section : sections[0] ?? "__new";
+  const blank = { code: codeFor(startSection === "__new" ? "" : startSection), section: startSection, newSection: "", description: initial?.description ?? "", unit: initial?.unit ?? "", quantity: initial?.quantity ?? "", basis: initial?.basis ?? "", source: initial?.source ?? "", lump: "" };
   const [f, setF] = useState(blank);
   const [err, setErr] = useState("");
   useEffect(() => { if (open) { setF({ ...blank }); setErr(""); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps

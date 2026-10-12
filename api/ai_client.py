@@ -58,9 +58,17 @@ class AnthropicProvider:
             raise self._friendly(e)
         return getattr(m, "display_name", None) or model
 
-    def draft_json(self, key: str, model: str, system: str, user: str, schema: dict[str, Any]) -> dict[str, Any]:
+    def draft_json(self, key: str, model: str, system: str, user: str, schema: dict[str, Any], images: list[tuple[str, bytes]] | None = None) -> dict[str, Any]:
+        """images: optional [(caption, PNG bytes)] shown to the model before the text (drawing pages for a takeoff)."""
         client = self._client(key)
-        kw: dict[str, Any] = dict(model=model, max_tokens=16000, system=system, messages=[{"role": "user", "content": user}],
+        content: Any = user
+        if images:
+            import base64
+            content = []
+            for caption, png in images:
+                content += [{"type": "text", "text": caption}, {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.b64encode(png).decode()}}]
+            content.append({"type": "text", "text": user})
+        kw: dict[str, Any] = dict(model=model, max_tokens=16000, system=system, messages=[{"role": "user", "content": content}],
                                   output_config={"effort": "high", "format": {"type": "json_schema", "schema": schema}})
         try:
             try:   # server-side fallback if the main model declines a request (Claude API default for this model family)

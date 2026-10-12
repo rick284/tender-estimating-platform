@@ -276,3 +276,73 @@ def test_intake_plan_skips_superseded_archive_and_scans_and_runs_in_parts_withou
         ai_client.CLIENT = None
     assert r1.status_code == 200 and r1.json()["batch"] == "RUN1" and r1.json()["proposals"][0]["status"] == "verified"
     assert r2.json()["proposals"][0]["status"] == "duplicate"
+
+
+# ---------------------------------------------------------------- takeoff
+def takeoff_item(**kw):
+    base = {"description": "Earthworks area", "section": "earthworks", "unit": "m2", "operation": "single", "quantity": 2105, "method": "READ", "confidence": "high", "notes": "",
+            "components": [{"label": "area", "value": 2105, "unit": "m2", "doc": "D1", "sheet": "A1", "page": 1, "source": "stated_area", "quote": "fill 1,310m3 and cut 113m3"}]}
+    base.update(kw)
+    return base
+
+
+def run_takeoff(client, auth, tid, items, files=("F-civil",)):
+    ai_client.CLIENT = FakeClient(items)
+    try:
+        return client.post(f"/api/takeoff/tenders/{tid}/run", headers=auth, json={"file_ids": list(files)})
+    finally:
+        ai_client.CLIENT = None
+
+
+def test_takeoff_checks_every_line_does_the_arithmetic_and_hands_the_estimator_a_prefilled_qs_item(client, auth, ai):
+    assert run_takeoff(client, auth, ai, []).status_code == 503                                       # no key yet
+    on(client, auth)
+    good = takeoff_item(components=[{"label": "fill", "value": 1310, "unit": "m3", "doc": "D1", "sheet": "A1", "page": 1, "source": "read_text", "quote": "fill 1,310m3 and cut 113m3"}], quantity=1310, unit="m3", description="Bulk fill")
+    bad = takeoff_item(description="Invented", quantity=900, components=[{"label": "x", "value": 900, "unit": "m2", "doc": "D1", "sheet": "A1", "page": 1, "source": "read_text", "quote": "earthworks area is 900m2"}])
+    scaled = takeoff_item(description="Wall length", unit="lm", method="SCALED", quantity=70, components=[{"label": "wall", "value": 70, "unit": "lm", "doc": "D1", "sheet": "A1", "page": 1, "source": "scaled", "quote": ""}])
+    r = run_takeoff(client, auth, ai, [good, bad, scaled])
+    assert r.status_code == 200, r.text
+    by = {x["description"]: x for x in r.json()["lines"]}
+    assert by["Bulk fill"]["status"] == "verified" and by["Bulk fill"]["quantity"] == 1310
+    assert by["Invented"]["status"] == "unverified" and by["Wall length"]["status"] == "check"
+    assert by["Bulk fill"]["components"][0]["file"] == "Civil Drawings Rev C.pdf"
+    assert client.get(f"/api/takeoff/tenders/{ai}/lines", headers=auth).json()["lines"].__len__() == 3
+    # an unverified line cannot be accepted; a verified one returns a pre-filled QS item built from the platform's number
+    assert client.post(f"/api/takeoff/lines/{by['Invented']['id']}/decision", headers=auth, json={"decision": "accepted"}).status_code == 409
+    peek = client.post(f"/api/takeoff/lines/{by['Bulk fill']['id']}/decision", headers=auth, json={"decision": "accepted", "commit": False}).json()
+    assert peek["decision"] == "pending" and peek["qs"]["quantity"] == 1310                       # cancelling the Add dialog leaves the line open
+    assert [x for x in client.get(f"/api/takeoff/tenders/{ai}/lines", headers=auth).json()["lines"] if x["description"] == "Bulk fill"][0]["decision"] is None
+    a = client.post(f"/api/takeoff/lines/{by['Bulk fill']['id']}/decision", headers=auth, json={"decision": "accepted"}).json()
+    assert a["qs"]["quantity"] == 1310 and a["qs"]["basis"] == "PROVIDED" and a["qs"]["unit"] == "m3" and "Civil Drawings Rev C.pdf" in a["qs"]["source"] and a["qs"]["section_hint"] == "earthworks"
+    w = client.post(f"/api/takeoff/lines/{by['Wall length']['id']}/decision", headers=auth, json={"decision": "accepted"}).json()
+    assert w["qs"]["basis"] == "MEASURED" and "check on the drawing" in w["qs"]["notes"]
+    assert client.post(f"/api/takeoff/lines/{by['Invented']['id']}/decision", headers=auth, json={"decision": "rejected"}).status_code == 422       # a reason is needed
+    assert client.post(f"/api/takeoff/lines/{by['Invented']['id']}/decision", headers=auth, json={"decision": "rejected", "reason": "not on the drawing"}).status_code == 200
+
+
+def test_takeoff_does_not_repeat_lines_and_pictures_are_limited_to_chosen_documents(client, auth, ai):
+    on(client, auth)
+    ok = takeoff_item(description="Bulk fill", unit="m3", quantity=1310, components=[{"label": "fill", "value": 1310, "unit": "m3", "doc": "D1", "sheet": "A1", "page": 1, "source": "read_text", "quote": "fill 1,310m3 and cut 113m3"}])
+    assert run_takeoff(client, auth, ai, [ok]).status_code == 200
+    ai_client.CLIENT = FakeClient([])
+    try:
+        client.post(f"/api/takeoff/tenders/{ai}/run", headers=auth, json={"file_ids": ["F-civil"]})
+        assert "Bulk fill: 1310" in json.dumps(ai_client.CLIENT.calls[0]["messages"])             # earlier lines are listed so they are not proposed again
+        r = client.post(f"/api/takeoff/tenders/{ai}/run", headers=auth, json={"file_ids": ["F-civil"], "pictures": [{"file_id": "F-arch", "page": 1}]})
+        assert r.status_code == 422
+    finally:
+        ai_client.CLIENT = None
+
+
+def test_pictures_are_sent_as_image_blocks_before_the_text():
+    fake = FakeClient([])
+    ai_client.CLIENT = fake
+    try:
+        try:
+            ai_client.PROVIDERS["anthropic"].draft_json(KEY, "m", "sys", "the text", {"type": "object"}, images=[("D1 page 3:", b"\x89PNG")])
+        except ai_client.AIError:
+            pass                                                       # the stand-in's answer has no usable items; only the request matters here
+    finally:
+        ai_client.CLIENT = None
+    content = fake.calls[0]["messages"][0]["content"]
+    assert [c["type"] for c in content] == ["text", "image", "text"] and content[1]["source"]["media_type"] == "image/png" and content[2]["text"] == "the text"

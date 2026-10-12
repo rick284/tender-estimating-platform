@@ -9,7 +9,7 @@ import re
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-PROMPT_VERSION = "takeoff-v1"
+PROMPT_VERSION = "takeoff-v2"
 SECTIONS = ("earthworks", "pavements", "retaining", "kerbs_external", "drainage", "parking", "esc", "other")
 SOURCES = ("read_text", "schedule", "stated_area", "counted", "scaled", "constant")
 CONSTANTS = (Decimal("3.14159265"), Decimal("0.78539816"), Decimal("0.7854"), Decimal("3.1416"), Decimal("3.14159"), Decimal("0.785398"))   # pi, pi/4: the only constants a component may be without a quote
@@ -38,6 +38,7 @@ SCHEMA: dict[str, Any] = {
 SYSTEM = """You are assisting a senior NZ civil and commercial estimator with a quantity takeoff. You PROPOSE takeoff lines; the estimator checks and approves every one.
 
 Rules:
+0. The documents are labelled D1, D2 and so on. Every component names its document in `doc` using that label, and `page` is the page number inside that document. Page images, if supplied, are captioned with the document label and page number; the printed scale on a sheet is in its title block.
 1. Prefer numbers WRITTEN on the drawings (dimensions, area schedules, notes, site calculations) over numbers you scale from the picture. Mark each component's `source`: read_text, schedule, stated_area, counted (items you counted), or scaled (measured off the image).
 2. For any number you READ, give a short `quote` copied exactly from that page's text, and the sheet code and page. For counted or scaled components leave `quote` empty and say in `notes` how you counted or scaled (what you measured, which scale bar or printed scale).
 3. List the components and the operation (single / sum / product). The platform does the arithmetic from your components; `quantity` must match it.
@@ -141,9 +142,14 @@ def verify(items: list[dict[str, Any]], pages: dict[Any, Any]) -> list[dict[str,
     return out
 
 
-def build_user_message(project: str, sheets: dict[str, int], pages: list[dict[str, Any]], numbers_only: bool = False) -> str:
-    lines = [f"PROJECT: {project}", "", "SHEET INDEX (code -> page)", ", ".join(f"{k}: p{v}" for k, v in sheets.items()), "", "PAGE TEXT"]
-    for p in pages:
-        if p["text"].strip():
-            lines += [f"[page {p['n']}]", p["text"].strip(), ""]
+def build_user_message(project: str, docs: list[dict[str, Any]], existing: list[dict[str, Any]] | None = None) -> str:
+    """docs: [{label, name, pages:[{n, text}]}]. existing: earlier takeoff lines [{description, unit, quantity}] so a later part does not repeat them."""
+    lines = [f"PROJECT: {project}", "", "DOCUMENTS"] + [f"{d['label']} = {d['name']} ({len(d['pages'])} pages)" for d in docs]
+    if existing:
+        lines += ["", "ALREADY PROPOSED (do not repeat)"] + [f"- {x['description']}: {x['quantity']} {x['unit']}" for x in existing[:150]]
+    lines += ["", "PAGE TEXT"]
+    for d in docs:
+        for p in d["pages"]:
+            if p["text"].strip():
+                lines += [f"=== {d['label']} page {p['n']} ===", p["text"].strip(), ""]
     return "\n".join(lines)
