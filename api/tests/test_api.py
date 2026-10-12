@@ -104,7 +104,7 @@ def test_upload_validation(client, auth):
     import openpyxl, io
     buf = io.BytesIO(); openpyxl.Workbook().save(buf)
     r = client.post("/api/tenders", headers=auth, files={"file": ("a.xlsx", buf.getvalue())})
-    assert r.status_code == 422 and "missing sheets" in r.json()["detail"]
+    assert r.status_code == 422 and "are missing" in r.json()["detail"] and "Resource Rate Library" in r.json()["detail"]
 
 
 def test_new_revision_and_compare(client, auth):
@@ -644,3 +644,29 @@ def test_live_path_old_revision_upgrade_then_agreed_reserve_adjudication(client,
     # editing again from the saved revision still works, and the commercial line cannot be edited behind the reserve's back
     again = client.post(f"/api/tenders/{tid}/revisions/{n}/preview", headers=auth, json={"edits": [{"target": "commercial", "key": "CA16", "field": "pc_sum", "value": "1"}]})
     assert again.status_code == 422 and "Management Reserve page" in again.json()["detail"]
+
+
+# ---------------------------------------------------------------- workbooks that are not the Hobsonville layout
+def _without_sheets(*names):
+    import io, openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(make_workbook()))
+    for n in names:
+        del wb[n]
+    buf = io.BytesIO(); wb.save(buf)
+    return buf.getvalue()
+
+
+def test_a_workbook_without_a_consolidated_package_uploads_and_says_what_was_left_out(client, auth):
+    r = client.post("/api/tenders", headers=auth, files={"file": ("old.xlsx", _without_sheets("Consolidated Package"))})
+    assert r.status_code == 200, r.text
+    tid = r.json()["id"]
+    est = client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]
+    assert any("No Consolidated Package" in n for n in est["import_notes"]) and est["consolidated"]["overlays"] == []
+    assert client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]["tender"]["base_direct"] > 0
+    # editing still works on it
+    assert client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": [QTY]}).status_code == 200
+
+
+def test_a_workbook_missing_an_essential_sheet_is_refused_with_a_useful_message(client, auth):
+    r = client.post("/api/tenders", headers=auth, files={"file": ("bad.xlsx", _without_sheets("Commercial Inputs"))})
+    assert r.status_code == 422 and "Commercial Inputs (overhead, margin and allowances)" in r.json()["detail"]

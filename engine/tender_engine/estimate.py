@@ -197,6 +197,8 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
     reconciliation = []
     if m.reference is not None:
         for name, engine in engine_totals.items():
+            if name not in m.reference:                  # a figure this workbook doesn't have (e.g. no Consolidated Package sheet)
+                continue
             wbd = D(m.reference[name])
             reconciliation.append({"name": name, "engine": _f(cents(engine)), "workbook": _f(cents(wbd)),
                                    "difference": _f(cents(engine) - cents(wbd)), "ok": abs(engine - wbd) < Decimal("0.005")})
@@ -224,6 +226,7 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
         "risk_truth": _risk_truth_out(m, rtr), "management_reserve": mr_out, "register": m.register, "register_summary": register_status_summary(m.register), "quotes": m.quotes, "programme": programme_out,
         "reconciled": all(r["ok"] for r in reconciliation) if m.reference is not None else None,
         "edited": m.reference is None,
+        "import_notes": list(m.notes),
     }
 
 

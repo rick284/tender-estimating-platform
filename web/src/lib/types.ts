@@ -31,6 +31,7 @@ export interface Estimate {
   reconciliation: { name: string; engine: number; workbook: number; difference: number; ok: boolean }[];
   qa_counts: Record<string, number>;
   reconciled: boolean | null;
+  import_notes?: string[];
   edited: boolean;
 }
 export interface QSLine {

@@ -53,6 +53,7 @@ class MasterWorkbookImport:
     risk_truth: list = field(default_factory=list)  # Risk Truth exposures (tender_engine.risk_truth)
     management_reserve: dict | None = None         # Management Reserve adjudication (tender_engine.management_reserve); None = CA16 stays a plain line
     programme: dict | None = None                # programme tasks, predecessors and calendar (tender_engine.programme); None = not set up
+    notes: list = field(default_factory=list)    # plain-language notes from the import (a sheet was missing, rows were left unread ...)
     cached: Any = field(repr=False, default=None)
 
 
@@ -288,12 +289,86 @@ def _reserve_from_commercial(commercial: list[dict], ws=None) -> dict | None:
 
 def _register_with_risk_truth(v) -> list[dict]:
     """Register from the Cover sheet; where the workbook has a Risk Truth tab its risk list (the controlling one) replaces the Cover's older key risks."""
-    reg = _register_from_cover(v["Cover & Instructions"])
+    reg = _register_from_cover(v["Cover & Instructions"]) if "Cover & Instructions" in v.sheetnames else []
     if "Risk Truth" in v.sheetnames:
         risks, _ = _risks_and_exposures_from_risk_truth(v["Risk Truth"])
         if risks:
             reg = [x for x in reg if x["kind"] != "risk"] + risks
     return reg
+
+
+class _Either:
+    """Cell access that prefers the value Excel calculated and falls back to what was typed into the cell (a workbook never opened in Excel has no calculated
+    values; a formula that was never calculated is never returned as a value)."""
+    def __init__(self, formulas, values):
+        self._f, self._v = formulas, values
+
+    def __getitem__(self, addr):
+        class _C:
+            pass
+        c = _C()
+        val = self._v[addr].value
+        if val is None:
+            val = self._f[addr].value
+            if isinstance(val, str) and val.startswith("="):
+                val = None
+        c.value = val
+        return c
+
+
+def _numstr(x, default: str) -> str:
+    """A cell that should hold a number, as text for the weather settings; anything else (a formula that was never calculated, 'TBC') gives the default."""
+    n = _num_or0(x) if not (isinstance(x, str) and x.strip() == "") else 0
+    if isinstance(x, (int, float)) and not isinstance(x, bool):
+        return str(x)
+    try:
+        float(str(x).replace(",", "").strip())
+        return str(x).strip()
+    except ValueError:
+        return default
+
+
+_CODE_LIKE = re.compile(r"^[A-Za-z]{1,4}[-_]?\d{1,4}[A-Za-z]?$")
+
+
+def _num_or0(x):
+    """A cell that should hold a number: text such as 'TBC' or a stray error counts as 0 rather than stopping the import."""
+    if isinstance(x, bool) or x is None or x == "":
+        return 0
+    if isinstance(x, (int, float)):
+        return x
+    try:
+        return float(str(x).replace(",", "").replace("$", "").strip())
+    except ValueError:
+        return 0
+
+
+# The overlay names the platform already uses (so schedules, mappings and saved work keep working) for the Hobsonville wording of each package.
+_LEGACY_OVERLAY_NAMES = (("coast concrete foundation", "Coast Concrete foundation / floor"), ("public stormwater", "Allied public stormwater / detention base"),
+                         ("public setout", "Allied public setout / as-built / signoff"), ("private drainage", "Allied private drainage"))
+
+
+def _overlays_from_consolidated(ws) -> tuple[list[Overlay], Any]:
+    """Subcontract packages from the Consolidated Package sheet by reading what the rows say, not fixed cell addresses: a package is a row with an amount
+    that is NOT in the siteworks direct cost (column D = No) and is not a calculated total. The confirmed overlap is the row whose label says overlap."""
+    overlays: list[Overlay] = []
+    overlap = D(0)
+    for r in range(5, min(ws.max_row, 60) + 1):
+        label, amount, cls, inc = _s(ws.cell(r, 1).value), ws.cell(r, 2).value, _s(ws.cell(r, 3).value), _s(ws.cell(r, 4).value)
+        low = label.lower()
+        if low.startswith(("gross", "current known package", "working all-in")):
+            if low.startswith("gross"):
+                break
+            continue
+        if not isinstance(amount, (int, float)) or isinstance(amount, bool):
+            continue
+        if "overlap" in low:
+            overlap = D(amount)
+            continue
+        if inc.strip().lower() == "no" and "CALCULATED" not in cls.upper():
+            name = next((n for key, n in _LEGACY_OVERLAY_NAMES if key in low), label[:80])
+            overlays.append(Overlay(name, D(amount), cls or "QUOTED"))
+    return overlays, overlap
 
 
 def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
@@ -302,17 +377,21 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
         source.seek(0)
     v = openpyxl.load_workbook(source, data_only=True)
 
-    required = ["Resource Rate Library", "QS Takeoff", "Resource Build-Up", "Commercial Inputs",
-                "Weather Risk", "Consolidated Package", "Tender Build-Up"]
-    missing = [n for n in required if n not in f.sheetnames]
+    # Only these four sheets are essential. Everything else is optional: a workbook from an older or different job that lacks a sheet still loads,
+    # and the notes below say what was left out and how to fill it in on the platform.
+    required = {"Resource Rate Library": "the rates", "QS Takeoff": "the quantities", "Resource Build-Up": "the cost build-up rows", "Commercial Inputs": "overhead, margin and allowances"}
+    missing = [f"{n} ({what})" for n, what in required.items() if n not in f.sheetnames]
     if missing:
-        raise ValueError(f"Not a Master Estimate Workbook (missing sheets: {', '.join(missing)})")
+        raise ValueError(f"This doesn't look like a Master Estimate Workbook. These sheets are needed and are missing: {', '.join(missing)}. "
+                         f"The sheets found were: {', '.join(f.sheetnames[:12])}{'…' if len(f.sheetnames) > 12 else ''}.")
+    notes: list[str] = []
+    have = set(f.sheetnames)
 
     lib: dict[str, LibraryRate] = {}
     ws = f["Resource Rate Library"]
-    for r in range(5, 86):
+    for r in range(5, ws.max_row + 1):
         code = ws.cell(r, 1).value
-        if code:
+        if code and (r <= 85 or _CODE_LIKE.match(_s(code))):   # beyond the template's own rows, only cells that look like a rate code
             lib[str(code)] = LibraryRate(
                 code=str(code), category=_s(ws.cell(r, 2).value), description=_s(ws.cell(r, 3).value),
                 unit=_s(ws.cell(r, 5).value), operator_included=_s(ws.cell(r, 7).value),
@@ -322,9 +401,9 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
     qs: list[QSItem] = []
     qs_extra: dict[str, dict[str, str]] = {}
     ws, wv = f["QS Takeoff"], v["QS Takeoff"]
-    for r in range(3, 41):
+    for r in range(3, ws.max_row + 1):
         code = ws.cell(r, 2).value
-        if code:
+        if code and (r <= 40 or _CODE_LIKE.match(_s(code))):   # items added below the template's rows are read too
             qs.append(QSItem(code=str(code), section=_s(ws.cell(r, 1).value), description=_s(ws.cell(r, 3).value),
                              unit=_s(ws.cell(r, 4).value), quantity=D(ws.cell(r, 5).value)))
             qs_extra[str(code)] = {
@@ -338,9 +417,9 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
     extra: list[dict[str, str]] = []
     excel_rows: list[int] = []
     ws, wv = f["Resource Build-Up"], v["Resource Build-Up"]
-    for r in range(7, 307):
+    for r in range(7, ws.max_row + 1):
         code = ws.cell(r, 2).value
-        if not code:
+        if not code or (r > 306 and not _CODE_LIKE.match(_s(code))):
             continue
         c = lambda col: ws[f"{col}{r}"].value
         rows.append(BuildUpRow(
@@ -353,32 +432,39 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
                       "note": _s(c("AJ")), "workbook_qa": _s(wv[f"AI{r}"].value)})
         excel_rows.append(r)
 
-    wr = f["Weather Risk"]
-    tool = WeatherToolRun(
-        exposed_pool=D(wr["B23"].value), rain_wet_ground_cost=D(wr["B24"].value),
-        critical_path_delay_wd=D(wr["B26"].value), additional_billed_weeks=D(wr["B27"].value),
-        wind_sensitivity_cost=D(wr["B28"].value), include_wind=(wr["B29"].value == "Yes"))
-    wv_ = v["Weather Risk"]
-    weather_meta = {
-        "station": _s(wr["B6"].value), "start": _s(wv_["B7"].value)[:10], "baseline_wd": _s(wr["B8"].value),
-        "wd_per_week": _s(wr["B9"].value), "tool_version": _s(wr["B19"].value), "tool_station": _s(wr["B20"].value),
-        "confidence": _s(wr["B30"].value), "rerun_status": _s(wr["B31"].value),
-        "delay_wd": _s(wr["B26"].value), "dry_programme_wd": _s(wr["B8"].value),
-    }
-
-    # The workbook derives daily time-related prelims and weekly hire from specific build-up rows.
-    f13, f14 = _s(wr["B13"].value), _s(wr["B14"].value)
-    m13 = re.search(r"Y(\d+)\*(\d+)", f13)
-    m14 = re.findall(r"Y(\d+)", f14)
-    if not m13 or not m14:
-        raise ValueError("Weather Risk B13/B14 do not reference build-up rate rows; cannot link weather costs")
-    weather_links = {"daily_row": int(m13.group(1)), "hours_per_day": int(m13.group(2)),
-                     "weekly_rows": [int(x) for x in m14]}
-    # permanent row identities (initially the display id); the weather cost links follow rows by uid
-    rows = [replace(r, uid=u) for r, u in zip(rows, display_ids(rows))]
+    rows = [replace(r, uid=u) for r, u in zip(rows, display_ids(rows))]      # permanent row identities (initially the display id)
     uid_at = dict(zip(excel_rows, (r.uid for r in rows)))
-    weather_links["daily_uid"] = uid_at[weather_links["daily_row"]]
-    weather_links["weekly_uids"] = [uid_at[r] for r in weather_links["weekly_rows"]]
+    no_links = {"daily_row": 0, "hours_per_day": 8, "weekly_rows": [], "daily_uid": "", "weekly_uids": []}
+    if "Weather Risk" not in have:
+        notes.append("No Weather Risk sheet in the workbook: the weather allowance is zero. Set the weather tool up on the Weather Risk page.")
+        tool = WeatherToolRun(exposed_pool=D(0), rain_wet_ground_cost=D(0), critical_path_delay_wd=D(0), additional_billed_weeks=D(0), wind_sensitivity_cost=D(0), include_wind=False)
+        weather_meta = {"station": "", "start": "", "baseline_wd": "0", "wd_per_week": "5", "tool_version": "", "tool_station": "", "confidence": "NOT RUN",
+                        "rerun_status": "No weather sheet in the imported workbook", "delay_wd": "0", "dry_programme_wd": "0"}
+        weather_links, recovery = dict(no_links), D(0)
+    else:
+        wr, wv_ = f["Weather Risk"], _Either(f["Weather Risk"], v["Weather Risk"])
+        tool = WeatherToolRun(
+            exposed_pool=D(_num_or0(wv_["B23"].value)), rain_wet_ground_cost=D(_num_or0(wv_["B24"].value)),
+            critical_path_delay_wd=D(_num_or0(wv_["B26"].value)), additional_billed_weeks=D(_num_or0(wv_["B27"].value)),
+            wind_sensitivity_cost=D(_num_or0(wv_["B28"].value)), include_wind=(wv_["B29"].value == "Yes"))
+        weather_meta = {
+            "station": _s(wv_["B6"].value), "start": _s(wv_["B7"].value)[:10], "baseline_wd": _numstr(wv_["B8"].value, "0"),
+            "wd_per_week": _numstr(wv_["B9"].value, "5"), "tool_version": _s(wv_["B19"].value), "tool_station": _s(wv_["B20"].value),
+            "confidence": _s(wv_["B30"].value), "rerun_status": _s(wv_["B31"].value),
+            "delay_wd": _numstr(wv_["B26"].value, "0"), "dry_programme_wd": _numstr(wv_["B8"].value, "0"),
+        }
+        recovery = D(_num_or0(wv_["B16"].value))
+        # The workbook derives daily time-related prelims and weekly hire from specific build-up rows (formulas like =Y584*8 and =Y295+Y330).
+        m13 = re.search(r"Y(\d+)\*(\d+)", _s(wr["B13"].value))
+        m14 = re.findall(r"Y(\d+)", _s(wr["B14"].value))
+        if m13 and m14 and int(m13.group(1)) in uid_at and all(int(x) in uid_at for x in m14):
+            weather_links = {"daily_row": int(m13.group(1)), "hours_per_day": int(m13.group(2)), "weekly_rows": [int(x) for x in m14]}
+            weather_links["daily_uid"] = uid_at[weather_links["daily_row"]]
+            weather_links["weekly_uids"] = [uid_at[r] for r in weather_links["weekly_rows"]]
+        else:
+            weather_links = dict(no_links)
+            notes.append("The workbook's weather sheet does not point at build-up rows for daily preliminaries and weekly hire, so the weather costs are not linked. "
+                         "Link them on the Weather Risk page if you want the platform to work the weather allowance out.")
 
     ci = f["Commercial Inputs"]
     commercial: list[dict] = []
@@ -389,50 +475,68 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
                                    pct=D(ci.cell(r, 4).value), pc_sum=D(ci.cell(r, 5).value),
                                    include=_s(ci.cell(r, 6).value), basis=_s(v["Commercial Inputs"].cell(r, 8).value),
                                    note=_s(v["Commercial Inputs"].cell(r, 13).value)))
-    rt = v["Risk Truth"]
-    risk_feed = {"CA01": D(rt["B12"].value), "CA02": D(rt["B13"].value)}
+    if "Risk Truth" in have:
+        rt = v["Risk Truth"]
+        risk_feed = {"CA01": D(_num_or0(rt["B12"].value)), "CA02": D(_num_or0(rt["B13"].value))}
+    else:
+        rt = None
+        risk_feed = {"CA01": D(0), "CA02": D(0)}
+        notes.append("No Risk Truth sheet: no risk exposures were loaded and the risk allowances CA01 and CA02 are zero. Record exposures on the Risk Truth page.")
 
-    cp = f["Consolidated Package"]
-    overlays = [
-        Overlay("Coast Concrete foundation / floor", D(cp["B6"].value), "QUOTED"),
-        Overlay("Allied public stormwater / detention base", D(cp["B7"].value), "QUOTED BASE"),
-        Overlay("Allied public setout / as-built / signoff", D(cp["B8"].value), "CONFIRMED ADDITIONAL"),
-        Overlay("Allied private drainage", D(cp["B10"].value), "QUOTED / ALLOCATED"),
-    ]
+    cp, overlays, overlap = None, [], D(0)
+    if "Consolidated Package" in have:
+        cp = f["Consolidated Package"]
+        overlays, overlap = _overlays_from_consolidated(v["Consolidated Package"])
+        if not overlays:
+            notes.append("The Consolidated Package sheet lists no subcontract packages that could be recognised. Add them on the Consolidated Package page.")
+    else:
+        notes.append("No Consolidated Package sheet: no subcontract packages were loaded, so the all-in package equals the siteworks tender. Add subcontract quotes on the Consolidated Package page.")
 
-    cv = v["Cover & Instructions"]
-    rv = v["Rate Verification"]
+    cv = v["Cover & Instructions"] if "Cover & Instructions" in have else None
+    rv = v["Rate Verification"] if "Rate Verification" in have else None
+    if rv is None:
+        notes.append("No Rate Verification sheet: the rate-evidence counts are blank.")
+    g = lambda ws, cell: _s(ws[cell].value) if ws is not None else ""
     controls = {
-        "release_status": _s(rt["B15"].value),
-        "red_risks": _s(rt["B16"].value), "red_exposures": _s(rt["B17"].value),
-        "duplicate_gate": _s(rt["B18"].value), "programme_gate": _s(rt["B19"].value),
-        "tender_equals_risk_truth": _s(rt["B21"].value),
-        "rate_green": _s(rv["B4"].value), "rate_amber": _s(rv["B5"].value), "rate_red": _s(rv["F4"].value),
-        "rate_green_cost": _s(rv["C4"].value), "rate_amber_cost": _s(rv["C5"].value), "rate_red_cost": _s(rv["G4"].value),
+        "release_status": g(rt, "B15"),
+        "red_risks": g(rt, "B16"), "red_exposures": g(rt, "B17"),
+        "duplicate_gate": g(rt, "B18"), "programme_gate": g(rt, "B19"),
+        "tender_equals_risk_truth": g(rt, "B21"),
+        "rate_green": g(rv, "B4"), "rate_amber": g(rv, "B5"), "rate_red": g(rv, "F4"),
+        "rate_green_cost": g(rv, "C4"), "rate_amber_cost": g(rv, "C5"), "rate_red_cost": g(rv, "G4"),
         "cover_release": "",
     }
-    for row in cv.iter_rows(min_row=1, max_row=60):
+    for row in (cv.iter_rows(min_row=1, max_row=60) if cv is not None else []):
         for cell in row:
             if cell.value == "Release status":
                 nxt = [c.value for c in row if c.column > cell.column and c.value not in (None, "")]
                 if nxt:
                     controls["cover_release"] = _s(nxt[0])
 
-    tb, cp_v, wr_v = v["Tender Build-Up"], v["Consolidated Package"], v["Weather Risk"]
-    reference = {
-        "Base direct estimate": float(D(tb["B20"].value)), "Pre-margin additions": float(D(tb["B39"].value)),
-        "Subtotal before commercial adjustments": float(D(tb["B40"].value)),
-        "Company overhead (CA17)": float(D(tb["B42"].value)), "Contractor profit (CA18)": float(D(tb["B43"].value)),
-        "Siteworks tender excl. GST": float(D(tb["B47"].value)), "Weather allowance (CA10)": float(D(wr_v["B38"].value)),
-        "Gross known package": float(D(cp_v["B12"].value)), "Working all-in tender excl. GST": float(D(cp_v["F56"].value)),
-    }
+    # What the source workbook displayed, so the platform can prove it reproduces it. Only the figures the workbook actually has are compared.
+    reference: dict[str, float] | None = None
+    if "Tender Build-Up" in have:
+        tb = v["Tender Build-Up"]
+        reference = {
+            "Base direct estimate": float(D(_num_or0(tb["B20"].value))), "Pre-margin additions": float(D(_num_or0(tb["B39"].value))),
+            "Subtotal before commercial adjustments": float(D(_num_or0(tb["B40"].value))),
+            "Company overhead (CA17)": float(D(_num_or0(tb["B42"].value))), "Contractor profit (CA18)": float(D(_num_or0(tb["B43"].value))),
+            "Siteworks tender excl. GST": float(D(_num_or0(tb["B47"].value)))}
+        if "Weather Risk" in have:
+            reference["Weather allowance (CA10)"] = float(D(_num_or0(v["Weather Risk"]["B38"].value)))
+        if "Consolidated Package" in have:
+            cp_v = v["Consolidated Package"]
+            reference["Gross known package"] = float(D(_num_or0(cp_v["B12"].value)))
+            reference["Working all-in tender excl. GST"] = float(D(_num_or0(cp_v["F56"].value)))
+    else:
+        notes.append("No Tender Build-Up sheet: the platform's totals could not be compared with the workbook's own, so the revision shows no reconciliation.")
 
     return MasterWorkbookImport(
         reference=reference,
-        meta=_cover_meta(v), library=lib, qs=qs, qs_extra=qs_extra, rows=rows, row_extra=extra,
-        excel_rows=excel_rows, tool=tool, recovery=D(wr["B16"].value), commercial=commercial,
-        risk_feed=risk_feed, overlays=overlays, overlap=D(cp["B13"].value), weather_meta=weather_meta, weather_links=weather_links,
-        controls=controls, register=_register_with_risk_truth(v),
+        meta=_cover_meta(v) if cv is not None else {}, library=lib, qs=qs, qs_extra=qs_extra, rows=rows, row_extra=extra,
+        excel_rows=excel_rows, tool=tool, recovery=recovery, commercial=commercial,
+        risk_feed=risk_feed, overlays=overlays, overlap=overlap, weather_meta=weather_meta, weather_links=weather_links,
+        controls=controls, register=_register_with_risk_truth(v), notes=notes,
         risk_truth=_risks_and_exposures_from_risk_truth(v["Risk Truth"])[1] if "Risk Truth" in v.sheetnames else [],
         management_reserve=_reserve_from_commercial(commercial, v["Commercial Inputs"]),
         quotes=_quotes_from_sheet(v["Supplier Quote Register"]) if "Supplier Quote Register" in v.sheetnames else [],

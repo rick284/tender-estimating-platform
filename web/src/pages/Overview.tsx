@@ -25,6 +25,13 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
     <>
       <PageHeader title="Tender overview" sub={est.meta.snapshot} />
 
+      {(est.import_notes?.length ?? 0) > 0 && (
+        <Panel className="mb-4" title="Imported from the workbook: what was left out">
+          <p className="mb-2 text-sm">The workbook was read, but it differs from the standard layout. Nothing below was guessed; each item says how to fill it in here.</p>
+          <ul className="list-disc space-y-1 pl-5 text-sm">{est.import_notes!.map((n) => <li key={n}>{n}</li>)}</ul>
+        </Panel>
+      )}
+
       {empty && (
         <Panel className="mb-4" title="Getting started">
           <ol className="list-decimal space-y-1 pl-5 text-sm">

@@ -45,6 +45,12 @@ def make_workbook(project="Test Depot Civil Works", rev="Rev1", qty=100, rate=10
 
     cp = wb["Consolidated Package"]
     cp["B6"] = coast; cp["B7"] = 0; cp["B8"] = 0; cp["B10"] = 0; cp["B13"] = 0
+    # labels and the "included in siteworks direct?" column as in the real template: the importer reads packages by what the rows say
+    for r, (label, cls) in {6: ("Coast Concrete foundation/floor subcontract", "QUOTED"), 7: ("Allied public stormwater/detention base", "QUOTED BASE"),
+                            8: ("Allied public setout/as-built/signoff additional", "CONFIRMED ADDITIONAL"), 10: ("Allied private drainage total", "QUOTED / ALLOCATED")}.items():
+        cp.cell(r, 1, label); cp.cell(r, 3, cls); cp.cell(r, 4, "No")
+    cp["A13"] = "Confirmed Siteworks/Coast overlap after clarification"
+    cp["A12"] = "GROSS CURRENT KNOWN PACKAGE"
 
     base = qty / 50 * rate
     sub = base
