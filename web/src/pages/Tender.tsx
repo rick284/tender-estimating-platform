@@ -1,10 +1,10 @@
 import type { Estimate } from "../lib/types";
-import { fmtPct } from "../lib/format";
+import { fmtMoney, fmtPct } from "../lib/format";
 import { EditCheck, EditField, EditNum } from "../components/EditCells";
 import { useEdit } from "../lib/edit";
 import { Chip, Money, PageHeader, Panel } from "../components/ui";
 
-const METHOD_LABEL: Record<string, string> = { "%": "Percentage", "PC Sum": "PC sum ($)", "Markup %": "Markup %", "Margin %": "Margin % (true margin)", "Fixed Amount": "Fixed amount ($)" };
+const METHOD_LABEL: Record<string, string> = { "%": "Percentage", "PC Sum": "PC sum ($)", "Markup %": "Markup %", "Margin %": "Margin % (true margin)", "Fixed Amount": "Fixed amount ($)", "Risk Engine": "From Risk Truth (platform)" };
 // What a percentage is taken of, so the estimator knows what typing 2 means
 const PCT_OF = (ref: string, method: string) => (method === "Margin %" ? "true margin on cost" : method === "Markup %" ? (ref === "CA18" ? "of cost" : "of subtotal") : ref === "CA19" || ref === "CA20" ? "of subtotal" : ref === "CA21" ? "of tender" : "of base direct");
 
@@ -12,16 +12,23 @@ function Basis({ c }: { c: Estimate["commercial"][number] }) {
   const { editing } = useEdit();
   const pctMethod = c.method === "%" || c.method === "Markup %" || c.method === "Margin %";
   const amtMethod = c.method === "PC Sum" || c.method === "Fixed Amount";
-  const text = c.method === "%" || c.method === "Markup %" || c.method === "Margin %" ? `${c.method.replace(" %", "")} ${fmtPct(c.pct, 1)}` : c.method;
+  const text = pctMethod ? `${c.method.replace(" %", "")} ${fmtPct(c.pct, 1)}` : c.method;
   if (!editing) return <>{c.include ? text : <Chip tone="neutral">Off</Chip>}</>;
+  // Three fixed columns (switch | basis | value) so every row lines up: the switch, the basis and the $ / % box start at the same place down the page.
+  const manualRisk = (c.ref === "CA01" || c.ref === "CA02") && c.method !== "Risk Engine" && (c.engine_value ?? 0) > 0;
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <label className="flex items-center gap-1.5 text-xs"><EditCheck target="commercial" id={c.ref} field="include" original={c.include} label={`${c.ref} included`} /> On</label>
-      {c.methods && c.methods.length > 1
-        ? <EditField target="commercial" id={c.ref} field="method" value={c.method} kind="select" width="w-44" label={`${c.ref} basis`} options={c.methods.map((m) => ({ value: m, label: METHOD_LABEL[m] ?? m }))} />
-        : <span className="text-xs text-muted-foreground">{c.method}</span>}
-      {pctMethod && <span className="inline-flex items-center gap-1"><EditNum target="commercial" id={c.ref} field="pct" original={c.pct} scale={100} width="w-20" label={`${c.ref} percentage`} display="" /><span className="text-xs">% {PCT_OF(c.ref, c.method)}</span></span>}
-      {amtMethod && <span className="inline-flex items-center gap-1"><span className="text-xs">$</span><EditNum target="commercial" id={c.ref} field="pc_sum" original={c.pc_sum} dp={2} width="w-28" label={`${c.ref} amount`} display="" /></span>}
+    <div>
+      <div className="grid grid-cols-[3.5rem_13.5rem_minmax(0,1fr)] items-center gap-x-3">
+        <label className="flex items-center gap-1.5 text-xs"><EditCheck target="commercial" id={c.ref} field="include" original={c.include} label={`${c.ref} included`} /> On</label>
+        {c.methods && c.methods.length > 1
+          ? <EditField target="commercial" id={c.ref} field="method" value={c.method} kind="select" width="w-full" label={`${c.ref} basis`} options={c.methods.map((m) => ({ value: m, label: METHOD_LABEL[m] ?? m }))} />
+          : <span className="text-xs text-muted-foreground">{c.method}</span>}
+        <div className="flex items-center gap-1.5">
+          {pctMethod && <><span className="w-3" aria-hidden="true" /><EditNum target="commercial" id={c.ref} field="pct" original={c.pct} scale={100} width="w-28" label={`${c.ref} percentage`} display="" /><span className="text-xs text-muted-foreground">% {PCT_OF(c.ref, c.method)}</span></>}
+          {amtMethod && <><span className="w-3 text-right text-xs text-muted-foreground">$</span><EditNum target="commercial" id={c.ref} field="pc_sum" original={c.pc_sum} dp={2} width="w-28" label={`${c.ref} amount`} display="" /></>}
+        </div>
+      </div>
+      {manualRisk && <p className="mt-1 text-xs text-red-fg">Risk Truth has {fmtMoney(c.engine_value ?? 0)} of approved provisions for this line that are not in the price while a manual basis is used.</p>}
     </div>
   );
 }

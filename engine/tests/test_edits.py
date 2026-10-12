@@ -108,9 +108,25 @@ def test_a_provision_can_be_switched_between_percentage_and_pc_sum(base):
 
 
 @needs_private
+def test_risk_lines_can_be_set_by_hand_and_back_and_the_screen_is_told_what_the_engine_would_have_added(base):
+    m, _ = apply_edits(base, [{"target": "commercial", "key": "CA01", "field": "method", "value": "PC Sum"},
+                              {"target": "commercial", "key": "CA01", "field": "pc_sum", "value": 5000}])
+    by = {c["ref"]: c for c in compute_estimate(m)["commercial"]}
+    assert by["CA01"]["method"] == "PC Sum" and by["CA01"]["amount"] == 5000 and by["CA01"]["engine_value"] == 0   # Rev34E has no approved provisions
+    back, _ = apply_edits(m, [{"target": "commercial", "key": "CA01", "field": "method", "value": "Risk Engine"}])
+    assert next(c for c in compute_estimate(back)["commercial"] if c["ref"] == "CA01")["method"] == "Risk Engine"
+    # with an approved provision on the risk register, a manual basis leaves it out of the price and says how much (engine_value)
+    withrisk, _ = apply_edits(base, [{"target": "exposure", "op": "add", "key": "X-test01", "value": {"ref": "RT99-001", "mode": "Fixed Allowance", "baseline": "0", "residual": "1000", "provision": "1000", "include": "Yes", "distinct": "Yes", "target": "CA01", "evidence": "GREEN", "integration": "Yes", "description": "test"}}])
+    e_engine = compute_estimate(withrisk)
+    manual, _ = apply_edits(withrisk, [{"target": "commercial", "key": "CA01", "field": "method", "value": "PC Sum"}])
+    e_manual = compute_estimate(manual)
+    ca = lambda e: next(c for c in e["commercial"] if c["ref"] == "CA01")
+    assert ca(e_engine)["amount"] == 1000 and ca(e_manual)["amount"] == 0 and ca(e_manual)["engine_value"] == 1000
+
+
+@needs_private
 @pytest.mark.parametrize("edit,msg", [
     ({"target": "commercial", "key": "CA10", "field": "method", "value": "PC Sum"}, "calculated by the platform"),     # weather engine line
-    ({"target": "commercial", "key": "CA01", "field": "method", "value": "%"}, "calculated by the platform"),          # risk engine line
     ({"target": "commercial", "key": "CA21", "field": "method", "value": "PC Sum"}, "calculated by the platform"),     # GST is a % only
     ({"target": "commercial", "key": "CA09", "field": "method", "value": "Markup %"}, "can be set to"),
     ({"target": "commercial", "key": "CA17", "field": "method", "value": "Margin %"}, "can be set to"),

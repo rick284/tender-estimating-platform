@@ -21,8 +21,9 @@ from .models import CommercialInput
 from .money import D, ZERO, ONE
 
 PRE_MARGIN_REFS = tuple(f"CA{n:02d}" for n in range(1, 17))
-# Which bases a commercial line may be switched between in the platform. Engine-fed lines (risk, weather, management reserve) and GST are not listed.
+# Which bases a commercial line may be switched between in the platform. Weather (CA10), management reserve (CA16) and GST are not listed: those are set on their own pages or are a % only.
 COMMERCIAL_METHODS = {**{f"CA{n:02d}": ["%", "PC Sum"] for n in (3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 19, 20)},
+                      "CA01": ["Risk Engine", "%", "PC Sum"], "CA02": ["Risk Engine", "%", "PC Sum"],     # a manual basis replaces what Risk Truth feeds; the screen warns when that leaves approved provisions out
                       "CA17": ["Markup %", "Fixed Amount"], "CA18": ["Margin %", "Markup %", "Fixed Amount"]}
 
 

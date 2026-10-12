@@ -15,7 +15,7 @@ export interface Estimate {
     base_direct: number; pre_margin_total: number; subtotal: number; overhead: number; profit: number;
     commercial_total: number; total_excl_gst: number; gst: number; total_incl_gst: number;
   };
-  commercial: { ref: string; name: string; method: string; include: boolean; pct: number; pc_sum: number; amount: number; stage: string; methods?: string[] }[];
+  commercial: { ref: string; name: string; method: string; include: boolean; pct: number; pc_sum: number; amount: number; stage: string; methods?: string[]; engine_value?: number | null }[];
   qs: QSLine[];
   sections: { section: string; amount: number; items: string[] }[];
   buildup: BuildUpLine[];
