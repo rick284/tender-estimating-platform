@@ -61,5 +61,7 @@ def make_workbook(project="Test Depot Civil Works", rev="Rev1", qty=100, rate=10
     rv = wb["Rate Verification"]
     rv["B4"] = 1; rv["B5"] = 0; rv["F4"] = 0; rv["C4"] = base; rv["C5"] = 0; rv["G4"] = 0
 
+    import datetime as _dt
+    wb.properties.created = wb.properties.modified = _dt.datetime(2026, 1, 1)      # fixed, so two builds of the same workbook are byte-identical (the duplicate check hashes the file)
     buf = io.BytesIO(); wb.save(buf)
     return buf.getvalue()

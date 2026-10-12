@@ -25,12 +25,18 @@ def band(err: float) -> str:
     return "outside 25%"
 
 
+# "reference" matches score against a number the estimate states in its notes rather than on a quantity line: {"qs": "PV05", "truth": 21, "unit": "ea", "label": "...", "proposals": [...]}
 def score(qs: list[dict], proposals: list[dict], matches: dict) -> dict:
     prop = {p["id"]: p for p in proposals}
     truth = {q["code"]: q for q in qs}
     scored, used = [], set()
-    for m in matches.get("matches", []):
-        q = truth[m["qs"]]
+    for m in matches.get("matches", []) + matches.get("reference", []):
+        codes = m["qs"] if isinstance(m["qs"], list) else [m["qs"]]
+        if "truth" in m:
+            q = {"code": m["qs"], "description": m["label"], "unit": m["unit"], "quantity": m["truth"]}
+        else:
+          q = {"code": "+".join(codes), "description": " + ".join(truth[c]["description"][:30] for c in codes) if len(codes) > 1 else truth[codes[0]]["description"],
+             "unit": truth[codes[0]]["unit"], "quantity": sum(float(truth[c]["quantity"]) for c in codes)}
         ps = [prop[i] for i in m["proposals"] if i in prop]
         used |= {p["id"] for p in ps}
         got = sum(float(p.get("computed") if p.get("computed") is not None else p.get("quantity") or 0) for p in ps) if m.get("combine", "sum") == "sum" else float(ps[0].get("computed") or ps[0].get("quantity") or 0)
@@ -40,7 +46,7 @@ def score(qs: list[dict], proposals: list[dict], matches: dict) -> dict:
                        "proposals": m["proposals"], "statuses": [p.get("status") for p in ps], "note": m.get("note", "")})
     out_scope = matches.get("out_of_scope", {})
     quantity_lines = [q for q in qs if q["unit"] != "LS" and float(q["quantity"] or 0) > 0]
-    matched = {s["qs"] for s in scored}
+    matched = {c for s in scored for c in s["qs"].split("+")}
     missed = [q for q in quantity_lines if q["code"] not in matched and q["code"] not in out_scope]
     extra = [p for p in proposals if p["id"] not in used]
     return {"scored": scored, "missed": missed, "extra": extra, "out_of_scope": {c: out_scope[c] for c in out_scope if c in truth}, "quantity_lines": len(quantity_lines)}
