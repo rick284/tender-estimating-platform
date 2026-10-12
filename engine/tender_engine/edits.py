@@ -30,6 +30,9 @@ An edit is {"target", "key", "field", "value"} (set a value) or {"target", "op":
   quote      add    key = new id ("S-xxxxxx")  value: package / supplier / amount / ... (see quotes.FIELDS)
              set    key = id   field: any of quotes.FIELDS
              delete key = id
+  exposure   add    key = new id ("X-xxxxxx")  value: risk_id / consequence / mode / ... (see risk_truth.FIELDS)   (Risk Truth exposure)
+             set    key = id   field: any of risk_truth.FIELDS
+             delete key = id
   programme  add    key = "setup"   value: start?, days_per_week?, hours_per_day?  (one task per QS item, no predecessors yet)
              delete key = "setup"
              set    key = "config"  field: start | days_per_week | hours_per_day
@@ -58,6 +61,7 @@ from . import weather_setup as wx
 from . import schedule as sch
 from . import register as reg
 from . import quotes as qt
+from . import risk_truth as rtm
 from . import programme as prg
 import json
 
@@ -157,6 +161,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     sched = copy.deepcopy(base.schedule)
     register = copy.deepcopy(base.register)
     quotes = copy.deepcopy(base.quotes)
+    exposures = copy.deepcopy(base.risk_truth)
     programme = copy.deepcopy(base.programme)
     sched_before = copy.deepcopy(base.schedule)
     setup_before = wx.clone(base.weather_setup)
@@ -470,6 +475,28 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
             except qt.QuoteError as ex:
                 raise EditError(str(ex))
 
+        elif target == "exposure":
+            try:
+                if op == "add":
+                    xid = str(key or "")
+                    if not rtm.ITEM_ID.match(xid) or any(x["id"] == xid for x in exposures):
+                        raise EditError("That new exposure's identity is invalid or already used.")
+                    if len(exposures) >= rtm.MAX_ITEMS:
+                        raise EditError(f"Risk Truth can hold at most {rtm.MAX_ITEMS} exposures.")
+                    exposures.append(rtm.build_item(xid, value if isinstance(value, dict) else {}, exposures))
+                else:
+                    item = next((x for x in exposures if x["id"] == str(key)), None)
+                    if item is None:
+                        raise EditError(f"Unknown exposure {key!r}.")
+                    if op == "delete":
+                        exposures.remove(item)
+                    else:
+                        rtm.set_field(item, str(field), value)
+                        if item["ref"] and sum(1 for x in exposures if x["ref"] == item["ref"]) > 1:
+                            raise EditError(f"{item['ref']} is already used.")
+            except rtm.RiskTruthError as ex:
+                raise EditError(str(ex))
+
         elif target == "programme":
             try:
                 if key == "setup":
@@ -556,6 +583,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
         for t in programme["tasks"]:
             t["predecessors"] = [c for c in t["predecessors"] if c not in gone]
     m.weather_links, m.weather_setup, m.schedule, m.register, m.quotes, m.programme = links, setup, sched, register, quotes, programme
+    m.risk_truth = exposures
     m.reference = None            # no longer the workbook as received
     return m, _net_changes(base, m, rows, qs, new_library)
 
@@ -622,6 +650,7 @@ def _net_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, rows: list[_R
     _schedule_changes(a, b, add)
     _register_changes(a, b, add)
     _quote_changes(a, b, add)
+    _exposure_changes(a, b, add)
     _programme_changes(a, b, add)
     add("setting", "weather", "recovery_allowance", "Weather recovery allowance", D(a.recovery), D(b.recovery))
     add("setting", "consolidated", "confirmed_overlap", "Confirmed Siteworks / Coast overlap", D(a.overlap), D(b.overlap))
@@ -706,6 +735,20 @@ def _quote_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> Non
     for qid, y in ib.items():
         if qid not in ia:
             add("quote", qid, "added", label(y), "", y["package"][:80] or y["supplier"][:80])
+
+
+def _exposure_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:
+    ia, ib = {x["id"]: x for x in a.risk_truth}, {x["id"]: x for x in b.risk_truth}
+    label = lambda x: f"Risk Truth {x['ref']} {x['consequence']}".strip()[:120]
+    for xid, x in ia.items():
+        if xid not in ib:
+            add("exposure", xid, "removed", label(x), x["consequence"][:80], "")
+        else:
+            for f in rtm.FIELDS:
+                add("exposure", xid, f, label(x), x[f], ib[xid][f])
+    for xid, y in ib.items():
+        if xid not in ia:
+            add("exposure", xid, "added", label(y), "", y["consequence"][:80])
 
 
 def _programme_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:

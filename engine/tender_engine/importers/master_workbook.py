@@ -50,6 +50,7 @@ class MasterWorkbookImport:
     schedule: dict | None = None                 # client price schedule format + mapping (tender_engine.schedule); None = automatic
     register: list = field(default_factory=list)  # tender register items (tender_engine.register)
     quotes: list = field(default_factory=list)    # supplier / subcontractor quote register (tender_engine.quotes)
+    risk_truth: list = field(default_factory=list)  # Risk Truth exposures (tender_engine.risk_truth)
     programme: dict | None = None                # programme tasks, predecessors and calendar (tender_engine.programme); None = not set up
     cached: Any = field(repr=False, default=None)
 
@@ -141,6 +142,56 @@ def _register_from_cover(ws) -> list[dict]:
     return items
 
 
+def _risks_and_exposures_from_risk_truth(ws) -> tuple[list[dict], list[dict]]:
+    """Risk Truth tab: risks (rows from 25: ID, description, class, likelihood, impact, rating, response, owner, RFI/action, baseline, status)
+    and exposures (header row 'Exposure ID' onwards). Tolerant of the one-column shift that some workbook rows carry from column G."""
+    from .. import risk_truth as rt
+    risks, exposures = [], []
+    top = None
+    for r in range(1, ws.max_row + 1):
+        if _s(ws.cell(r, 1).value) == "Risk ID":
+            top = r
+        if _s(ws.cell(r, 1).value) == "Exposure ID":
+            hdr = r
+            break
+    else:
+        return [], []
+    for r in range(top + 1 if top else hdr, hdr):
+        a = _s(ws.cell(r, 1).value)
+        if not re.fullmatch(r"[A-Z]{2}\d+", a):
+            continue
+        g = lambda c: _s(ws.cell(r, c).value)
+        status = g(11)
+        detail = g(7) + (f"\n\nTender baseline: {g(10)}" if g(10) else "") + (f"\n\nClass: {g(3)}" if g(3) else "")
+        risks.append({"id": f"R-{a}", "kind": "risk", "ref": a, "title": g(2)[:3000], "detail": detail[:3000], "action": g(9)[:3000], "status": status,
+                      "rag": status.upper() if status.upper() in ("RED", "AMBER", "GREEN") else "", "owner": g(8)[:3000], "likelihood": g(4), "impact": g(5), "rating": g(6)})
+    L = lambda n: n
+    for r in range(hdr + 1, ws.max_row + 1):
+        ref = _s(ws.cell(r, 1).value)
+        if not ref or not re.fullmatch(r"[A-Z]{2}\d+-\d+", ref):
+            continue
+        c = lambda col, off=0: _s(ws.cell(r, col + off).value)
+        off = 1 if (c(10) in rt.MODES and c(9) not in rt.MODES) else 0
+        n = lambda v: v if re.fullmatch(r"-?\d+(\.\d+)?", v or "") else ""
+        def rag(t):
+            u = t.upper()
+            return "RED" if re.search(r"\bRED\b", u) else "AMBER" if re.search(r"\bAMBER\b", u) else "GREEN" if re.search(r"\bGREEN\b", u) else ""
+        yn = lambda v: v if v in rt.YESNO else ""
+        treat = c(6) + (f" | {c(7)}" if off and c(7) else "")
+        item = {"id": "X-" + re.sub(r"[^A-Za-z0-9]", "", ref)[:12], **{f: "" for f in rt.FIELDS}}
+        item.update({
+            "ref": ref, "risk_id": c(2), "consequence": c(3), "driver": c(4), "cost_ref": c(5), "treatment": treat,
+            "baseline_amount": n(c(7, off)), "residual": c(8, off), "mode": c(9, off) if c(9, off) in rt.MODES else "", "qty": n(c(10, off)),
+            "unit": c(11, off), "unit_rate": n(c(12, off)), "probability": n(c(13, off)), "provision": n(c(15, off)),
+            "owner": c(16, off) if c(16, off) in rt.OWNERS else "", "distinct": yn(c(17, off)), "target": c(18, off), "include": yn(c(19, off)) or "No",
+            "overlap_group": c(21, off), "embedded": c(22, off), "evidence": rag(c(23, off)), "evidence_note": c(23, off),
+            "integration_complete": yn(c(25, off)), "basis": c(27, off), "action": c(28, off), "source": c(29, off)})
+        for f in rt.FIELDS:
+            item[f] = item[f][: rt.LIMITS[f]]
+        exposures.append(item)
+    return risks, exposures
+
+
 def _quotes_from_sheet(ws) -> list[dict]:
     """Supplier Quote Register: header row has 'Quote ID'; rows Q-01.. follow."""
     head = None
@@ -189,6 +240,16 @@ def _programme_from_sheet(ws, qs_codes: set[str], start: str, days_per_week: int
     if not tasks:
         return None
     return {"start": start, "days_per_week": days_per_week, "hours_per_day": 8, "tasks": tasks}
+
+
+def _register_with_risk_truth(v) -> list[dict]:
+    """Register from the Cover sheet; where the workbook has a Risk Truth tab its risk list (the controlling one) replaces the Cover's older key risks."""
+    reg = _register_from_cover(v["Cover & Instructions"])
+    if "Risk Truth" in v.sheetnames:
+        risks, _ = _risks_and_exposures_from_risk_truth(v["Risk Truth"])
+        if risks:
+            reg = [x for x in reg if x["kind"] != "risk"] + risks
+    return reg
 
 
 def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
@@ -326,7 +387,8 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
         meta=_cover_meta(v), library=lib, qs=qs, qs_extra=qs_extra, rows=rows, row_extra=extra,
         excel_rows=excel_rows, tool=tool, recovery=D(wr["B16"].value), commercial=commercial,
         risk_feed=risk_feed, overlays=overlays, overlap=D(cp["B13"].value), weather_meta=weather_meta, weather_links=weather_links,
-        controls=controls, register=_register_from_cover(v["Cover & Instructions"]),
+        controls=controls, register=_register_with_risk_truth(v),
+        risk_truth=_risks_and_exposures_from_risk_truth(v["Risk Truth"])[1] if "Risk Truth" in v.sheetnames else [],
         quotes=_quotes_from_sheet(v["Supplier Quote Register"]) if "Supplier Quote Register" in v.sheetnames else [],
         programme=_programme_from_sheet(v["Programme Export"] if "Programme Export" in v.sheetnames else None, {q.code for q in qs}, weather_meta.get("start", ""),
                                         int(weather_meta["wd_per_week"]) if str(weather_meta.get("wd_per_week", "")).isdigit() else 5), cached=v)

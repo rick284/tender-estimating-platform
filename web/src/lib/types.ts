@@ -26,6 +26,7 @@ export interface Estimate {
   register_summary: { rfis: number; open_rfis: number; open_red_rfis: number; red_risks: number };
   quotes: QuoteItem[];
   programme: ProgrammeData;
+  risk_truth: RiskTruth;
   reconciliation: { name: string; engine: number; workbook: number; difference: number; ok: boolean }[];
   qa_counts: Record<string, number>;
   reconciled: boolean | null;
@@ -109,4 +110,16 @@ export interface ProgrammeTask {
 export interface ProgrammeData {
   set_up: boolean; tasks: ProgrammeTask[]; duration: number; critical_path: string[]; problems: string[]; start: string; days_per_week: number; hours_per_day: number;
   finish: string | null; missing: { code: string; description: string; amount: number | null }[];
+}
+
+export type RiskMode = "Already in Base / No Add" | "Unit Rate Delta" | "Probability x Impact" | "Scenario Weighted" | "Fixed Allowance" | "Specialist Engine" | "By Others / Excluded" | "RFI Hold";
+export interface RiskExposure {
+  id: string; ref: string; risk_id: string; consequence: string; driver: string; cost_ref: string; treatment: string; baseline_amount: string; residual: string;
+  mode: RiskMode | ""; qty: string; unit: string; unit_rate: string; probability: string; provision: string; owner: string; distinct: string; target: string;
+  include: string; overlap_group: string; embedded: string; evidence: string; evidence_note: string; integration_complete: string; basis: string; action: string;
+  source: string; modelled: number | null; addition: number; duplication: string; status: "RED" | "AMBER" | "GREEN"; reasons: string[]; flows: boolean; provision_unused: boolean;
+}
+export interface RiskTruth {
+  exposures: RiskExposure[]; ca01: number; ca02: number; residual_total: number; red_risks: number; red_exposures: number; amber_exposures: number;
+  duplicate_gate: string; programme_gate: string; gate: string; issues: string[]; live: boolean;
 }

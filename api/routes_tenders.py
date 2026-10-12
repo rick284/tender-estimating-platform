@@ -169,10 +169,14 @@ async def add_revision(tender_id: str, file: UploadFile = File(...), label: str 
     data, est, inputs = await read_workbook(file)
     digest = sha256(data)
     dup = await db.revisions.find_one({"tender_id": t["_id"], "source_sha256": digest})
-    gaps = [k for k in ("register", "quotes", "programme") if dup and dup.get("inputs") and k not in dup["inputs"] and inputs.get(k)]
+    gaps = [k for k in ("register", "quotes", "programme", "risk_truth") if dup and dup.get("inputs") and k not in dup["inputs"] and inputs.get(k)]
     if dup and dup.get("parent_n") is None and gaps:
-        # Saved before the tender register / quote register existed: add what is read from the same workbook. Nothing else changes.
-        await db.revisions.update_one({"_id": dup["_id"]}, {"$set": {f"inputs.{k}": inputs[k] for k in gaps}})
+        # Saved before the tender register / quote register / Risk Truth existed: add what is read from the same workbook. Nothing else changes.
+        upd = {f"inputs.{k}": inputs[k] for k in gaps}
+        if "risk_truth" in gaps and "register" not in gaps:
+            # the workbook's Risk Truth tab is the controlling risk list: swap the register's risk items for it, keep everything else
+            upd["inputs.register"] = [x for x in dup["inputs"].get("register", []) if x.get("kind") != "risk"] + [x for x in inputs.get("register", []) if x.get("kind") == "risk"]
+        await db.revisions.update_one({"_id": dup["_id"]}, {"$set": upd})
         await audit(db, user, "revision.add_register", t["_id"], f"{dup['label']} (n={dup['n']})")
         return {**_rev_out({**dup, "inputs": dup["inputs"]}), "upgraded": True}
     if dup and not dup.get("inputs"):
@@ -205,7 +209,7 @@ async def _estimate(user: dict[str, Any], tender_id: str, n: int) -> dict[str, A
 async def _estimate_with_schedule(r: dict[str, Any]) -> dict[str, Any]:
     """Revisions saved before price schedules existed get one rebuilt from their saved inputs (the stored estimate is left untouched)."""
     est = r["estimate"]
-    missing = [k for k in ("schedule", "register", "register_summary", "quotes", "programme") if k not in est]
+    missing = [k for k in ("schedule", "register", "register_summary", "quotes", "programme", "risk_truth") if k not in est]
     if not missing or not r.get("inputs"):
         return est
     fresh = await run_in_threadpool(lambda: compute_estimate(from_json(r["inputs"])))

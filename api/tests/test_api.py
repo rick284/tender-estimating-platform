@@ -535,7 +535,7 @@ def test_register_is_read_from_the_workbook_and_added_to_an_older_revision(clien
     assert r.status_code == 200, r.text
     tid = r.json()["id"]
     est = client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]
-    assert est["register_summary"] == {"rfis": 18, "open_rfis": 15, "open_red_rfis": 4, "red_risks": 2} and len(est["register"]) == 50
+    assert est["register_summary"] == {"rfis": 18, "open_rfis": 15, "open_red_rfis": 4, "red_risks": 4} and len(est["register"]) == 54
 
     async def make_old():                       # a revision saved before registers existed
         d = dbmod.get_db()
@@ -547,7 +547,7 @@ def test_register_is_read_from_the_workbook_and_added_to_an_older_revision(clien
     assert client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]["register"] == []
     up_ = client.post(f"/api/tenders/{tid}/revisions", headers=auth, files={"file": ("Rev34E.xlsx", data)})
     assert up_.status_code == 200 and up_.json().get("upgraded") is True
-    assert len(client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]["register"]) == 50
+    assert len(client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]["register"]) == 54
     assert client.post(f"/api/tenders/{tid}/revisions", headers=auth, files={"file": ("Rev34E.xlsx", data)}).status_code == 409   # now truly a duplicate
 
 

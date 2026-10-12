@@ -57,6 +57,7 @@ def to_json(m: MasterWorkbookImport) -> dict[str, Any]:
         "schedule": m.schedule,
         "register": m.register,
         "quotes": m.quotes,
+        "risk_truth": m.risk_truth,
         "programme": m.programme,
     }
 
@@ -106,5 +107,6 @@ def _build(d, t):
         schedule=d.get("schedule"),
         register=d.get("register") or [],
         quotes=d.get("quotes") or [],
+        risk_truth=d.get("risk_truth") or [],
         programme=d.get("programme"),
     )

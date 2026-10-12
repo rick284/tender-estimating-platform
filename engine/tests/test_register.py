@@ -17,8 +17,8 @@ def m():
     return load_master_workbook(PRIVATE)
 
 
-def test_hobsonville_register_is_imported_from_the_cover_sheet(m):
-    assert Counter(x["kind"] for x in m.register) == {"rfi": 18, "risk": 11, "document": 9, "assumption": 9, "exclusion": 3}
+def test_hobsonville_register_is_imported_from_the_cover_and_risk_truth_sheets(m):
+    assert Counter(x["kind"] for x in m.register) == {"rfi": 18, "risk": 15, "document": 9, "assumption": 9, "exclusion": 3}
     rfi = {x["ref"]: x for x in m.register if x["kind"] == "rfi"}
     assert rfi["RFI-15"]["status"] == "OPEN" and rfi["RFI-15"]["rag"] == "RED" and "1,310m3" in rfi["RFI-15"]["detail"]
     assert rfi["RFI-17"]["status"] == "CLOSED" and rfi["RFI-14A"]["status"] == "CLOSED" and rfi["RFI-05"]["status"] == "CLOSED"
@@ -27,7 +27,7 @@ def test_hobsonville_register_is_imported_from_the_cover_sheet(m):
     ids = [x["id"] for x in m.register]
     assert len(ids) == len(set(ids))
     s = compute_estimate(m)["register_summary"]
-    assert s["open_red_rfis"] == 4 and s["red_risks"] == 2 and s["rfis"] == 18        # RFI-06, 14B, 15 and 16 are the open REDs
+    assert s["open_red_rfis"] == 4 and s["red_risks"] == 4 and s["rfis"] == 18        # RFI-06, 14B, 15 and 16 are the open REDs
 
 
 def test_register_edits_add_set_delete_and_net_changes(m):

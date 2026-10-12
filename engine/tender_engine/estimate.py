@@ -9,6 +9,7 @@ from typing import Any
 
 from .buildup import compute_buildup
 from .commercial import compute_tender
+from . import risk_truth as rtm
 from .consolidated import compute_consolidated
 from .importers.master_workbook import MasterWorkbookImport
 from .models import CommercialInput, WeatherInputs
@@ -78,9 +79,19 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
             "exposed_pool_activities": _f(tr.exposed_pool)}
     weather = compute_weather(rows, tool, wi)
 
+    risks = [x for x in m.register if x["kind"] == "risk"]
+    rtr = rtm.compute(m.risk_truth, risks)
+    # live Risk Truth feeds CA01 / CA02 once exposures exist (and always on a tender edited in the platform); a workbook that has no
+    # Risk Truth tab keeps its recorded feed
+    live_rt = bool(m.risk_truth) or m.reference is None
     commercial = []
     for c in m.commercial:
-        ev = weather.allowance if c["method"] == "Weather Engine" else m.risk_feed.get(c["ref"], D(0))
+        if c["method"] == "Weather Engine":
+            ev = weather.allowance
+        elif live_rt and c["ref"] in ("CA01", "CA02"):
+            ev = rtr["ca01"] if c["ref"] == "CA01" else rtr["ca02"]
+        else:
+            ev = m.risk_feed.get(c["ref"], D(0))
         commercial.append(CommercialInput(c["ref"], c["name"], c["method"], c["include"], c["pct"], c["pc_sum"], ev))
     tender = compute_tender(qs.total_direct, commercial)
     cmap = {c.ref: c for c in commercial}
@@ -204,10 +215,20 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
         "consolidated": consolidated_out, "tender": tender_out, "commercial": commercial_out,
         "qs": qs_out, "sections": sections, "buildup": buildup, "library": library, "weather": weather_out,
         "reconciliation": reconciliation, "qa_counts": flag_counts, "schedule": schedule_out,
-        "register": m.register, "register_summary": register_status_summary(m.register), "quotes": m.quotes, "programme": programme_out,
+        "risk_truth": _risk_truth_out(m, rtr), "register": m.register, "register_summary": register_status_summary(m.register), "quotes": m.quotes, "programme": programme_out,
         "reconciled": all(r["ok"] for r in reconciliation) if m.reference is not None else None,
         "edited": m.reference is None,
     }
+
+
+def _risk_truth_out(m, r) -> dict[str, Any]:
+    items = []
+    for it, o in zip(m.risk_truth, r["exposures"]):
+        items.append({**it, "modelled": None if o["modelled"] is None else _f(o["modelled"]), "addition": _f(o["addition"]), "duplication": o["duplication"],
+                      "status": o["status"], "reasons": o["reasons"], "flows": o["flows"], "provision_unused": o["provision_unused"]})
+    return {"exposures": items, "ca01": _f(r["ca01"]), "ca02": _f(r["ca02"]), "residual_total": _f(r["residual_total"]), "red_risks": r["red_risks"],
+            "red_exposures": r["red_exposures"], "amber_exposures": r["amber_exposures"], "duplicate_gate": r["duplicate_gate"],
+            "programme_gate": r["programme_gate"], "gate": r["gate"], "issues": r["issues"], "live": bool(m.risk_truth) or m.reference is None}
 
 
 def _schedule(m, qs, tender, cons, cmap) -> dict[str, Any]:

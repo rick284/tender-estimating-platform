@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { BarChart3, Calculator, CalendarRange, ClipboardList, CloudRain, FileText, Handshake, FolderOpen, GitCompare, Layers, LayoutDashboard, Library, ListTree, LogOut, Menu, Package, X } from "lucide-react";
+import { BarChart3, Calculator, CalendarRange, ClipboardList, CloudRain, FileText, Handshake, FolderOpen, GitCompare, Layers, LayoutDashboard, Library, ListTree, LogOut, Menu, Package, ShieldAlert, X } from "lucide-react";
 import { go, type Route } from "../lib/route";
 import type { User } from "../lib/types";
 
@@ -11,6 +11,7 @@ export const TENDER_NAV = [
   { id: "buildup", label: "Resource Build-Up", icon: Layers },
   { id: "programme", label: "Programme", icon: CalendarRange },
   { id: "weather", label: "Weather Risk", icon: CloudRain },
+  { id: "risk", label: "Risk Truth", icon: ShieldAlert },
   { id: "register", label: "Register", icon: ClipboardList },
   { id: "quotes", label: "Quotes", icon: Handshake },
   { id: "drive", label: "Drive Documents", icon: FolderOpen },

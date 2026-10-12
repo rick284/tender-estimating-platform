@@ -21,10 +21,10 @@ with sync_playwright() as p:
     expect(pg.locator("main")).to_contain_text("Open RED RFIs")
     expect(pg.locator("main")).to_contain_text("RFI-15")
     pg.screenshot(path=SHOTS + "rg_0_rfis.png", full_page=True)
-    for tab, n in [("Risks", 11), ("Assumptions", 9), ("Exclusions", 3), ("Inclusions", 0), ("Documents", 9)]:
+    for tab, n in [("Risks", 15), ("Assumptions", 9), ("Exclusions", 3), ("Inclusions", 0), ("Documents", 9)]:
         pg.get_by_role("tab", name=f"{tab} {n}").click(); pg.wait_for_timeout(200)
         assert pg.locator("main").inner_text().count("NaN") == 0
-    pg.get_by_role("tab", name="Risks 11").click(); pg.screenshot(path=SHOTS + "rg_1_risks.png", full_page=True)
+    pg.get_by_role("tab", name="Risks 15").click(); pg.screenshot(path=SHOTS + "rg_1_risks.png", full_page=True)
 
     # edit: close RFI-15, add an RFI, delete an assumption
     pg.get_by_role("button", name="Edit", exact=True).click()
