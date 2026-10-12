@@ -84,7 +84,12 @@ export interface AiProposal {
 }
 export interface DriveTextSummary { file_id: string; name: string; path: string; revision: string | null; status: string; pages: number; chars: number }
 
+export interface IntakePart { file_id: string; name: string; page_from: number; page_to: number }
+export interface IntakePlan { batches: { index: number; chars: number; parts: IntakePart[] }[]; skipped: { name: string; reason: string }[]; total_chars: number; files: number; max_batches: number }
+
 export const api = {
+  aiIntakePlan: (id: string) => request<IntakePlan>(`/api/ai/tenders/${id}/intake/plan`),
+  aiDraftParts: (id: string, parts: IntakePart[], run: string) => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ parts, run }) }),
   driveTexts: (id: string) => request<{ texts: DriveTextSummary[] }>(`/api/drive/tenders/${id}/texts`),
   aiStatus: () => request<AiStatus>("/api/ai/status"),
   aiSettings: (b: { provider?: string; model?: string; api_key?: string; clear_key?: boolean; enabled?: boolean; acknowledged?: boolean }) => request<AiStatus>("/api/ai/settings", { method: "PUT", body: JSON.stringify(b) }),

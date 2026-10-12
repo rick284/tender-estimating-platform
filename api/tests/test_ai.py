@@ -240,3 +240,39 @@ def test_the_real_client_path_handles_sdk_errors_without_a_network(monkeypatch):
     ai_client.CLIENT = Twice()
     assert ai_client.PROVIDERS["anthropic"].draft_json(KEY, "m", "s", "u", ai_draft.SCHEMA)["items"] == [] and calls == ["beta", "plain"]
     ai_client.CLIENT = None
+
+
+def test_plan_batches_splits_by_budget_and_cuts_big_files_at_page_boundaries():
+    big = {"file_id": "B", "name": "Big", "revision": None, "pages": [{"n": i, "text": "x" * 40} for i in range(1, 6)]}
+    small = {"file_id": "S", "name": "Small", "revision": None, "pages": [{"n": 1, "text": "y" * 30}]}
+    empty = {"file_id": "E", "name": "Empty", "revision": None, "pages": [{"n": 1, "text": ""}]}
+    bs = ai_draft.plan_batches([big, small, empty], budget=100, max_files=20)
+    assert all(sum(len(p["text"]) for d in b for p in d["pages"]) <= 100 for b in bs)
+    assert [(d["file_id"], d["pages"][0]["n"], d["pages"][-1]["n"]) for b in bs for d in b] == [("B", 1, 2), ("B", 3, 4), ("B", 5, 5), ("S", 1, 1)]
+    assert len(ai_draft.plan_batches([small] * 5, budget=10_000, max_files=2)) == 3                      # file-count limit too
+
+
+def test_intake_plan_skips_superseded_archive_and_scans_and_runs_in_parts_without_repeating(client, auth, ai):
+    async def flag():
+        d = dbmod.get_db()
+        t = await d.tenders.find_one({"_id": ai})
+        base = {"org_id": t["org_id"], "tender_id": ai, "revision": None, "pages": [{"n": 1, "text": "Old superseded drawing text, long enough to count."}], "page_count": 1, "chars": 1, "warnings": [], "status": "ok"}
+        await d.doc_texts.insert_one({**base, "_id": f"{ai}:F-old", "file_id": "F-old", "name": "Civil Rev B.pdf", "superseded_by": "Civil Rev C.pdf"})
+        await d.doc_texts.insert_one({**base, "_id": f"{ai}:F-arc", "file_id": "F-arc", "name": "Old.pdf", "in_archive": True})
+    asyncio.run(flag())
+    plan = client.get(f"/api/ai/tenders/{ai}/intake/plan", headers=auth).json()
+    sent = {p["name"] for b in plan["batches"] for p in b["parts"]}
+    assert sent == {"Civil Drawings Rev C.pdf", "Architectural Rev17.pdf"} and plan["files"] == 2
+    why = {s["name"]: s["reason"] for s in plan["skipped"]}
+    assert "Superseded" in why["Civil Rev B.pdf"] and "archive" in why["Old.pdf"] and "drawing reader" in why["Scan.pdf"]
+    on(client, auth)
+    # run the plan part by part: the second call must see the first call's proposal and mark a repeat as duplicate
+    ai_client.CLIENT = FakeClient([item()])
+    try:
+        parts = plan["batches"][0]["parts"]
+        r1 = client.post(f"/api/ai/tenders/{ai}/draft", headers=auth, json={"parts": parts, "run": "RUN1"})
+        r2 = client.post(f"/api/ai/tenders/{ai}/draft", headers=auth, json={"parts": parts, "run": "RUN1"})
+    finally:
+        ai_client.CLIENT = None
+    assert r1.status_code == 200 and r1.json()["batch"] == "RUN1" and r1.json()["proposals"][0]["status"] == "verified"
+    assert r2.json()["proposals"][0]["status"] == "duplicate"

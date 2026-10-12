@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type AiProposal, type AiStatus, type DriveTextSummary } from "../lib/api";
+import { api, type AiProposal, type AiStatus, type IntakePlan, type DriveTextSummary } from "../lib/api";
 import { Chip, Empty, PageHeader, Panel } from "../components/ui";
 import { fmtNum } from "../lib/format";
 import { useEdit } from "../lib/edit";
@@ -63,6 +63,8 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
   const [model, setModel] = useState("");
   const [key, setKey] = useState("");
   const [msg, setMsg] = useState("");
+  const [plan, setPlan] = useState<IntakePlan | null>(null);
+  const [prog, setProg] = useState<{ done: number; total: number; notes: string[]; made: number } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -80,6 +82,24 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
     setErr(""); setNote(""); setBusy(true);
     try { const r = await api.aiDraft(tenderId, [...sel]); setNote(r.coverage_notes); setProps((await api.aiProposals(tenderId)).proposals); }
     catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  const makePlan = async () => { setErr(""); setProg(null); try { setPlan(await api.aiIntakePlan(tenderId)); } catch (e) { setErr((e as Error).message); } };
+  const runIntake = async () => {
+    if (!plan) return;
+    setErr(""); setBusy(true);
+    const runId = "intake-" + Date.now().toString(36);
+    const notes: string[] = []; let made = 0;
+    setProg({ done: 0, total: plan.batches.length, notes, made });
+    try {
+      for (const b of plan.batches) {
+        const r = await api.aiDraftParts(tenderId, b.parts, runId);
+        made += r.proposals.filter((p) => p.status === "verified" || p.status === "gap").length;
+        if (r.coverage_notes) notes.push(`Part ${b.index + 1}: ${r.coverage_notes}`);
+        setProg({ done: b.index + 1, total: plan.batches.length, notes: [...notes], made });
+        setProps((await api.aiProposals(tenderId)).proposals);
+      }
+    } catch (e) { setErr(`${(e as Error).message} (Parts already finished are kept below.)`); }
     finally { setBusy(false); }
   };
   const accept = async (p: AiProposal) => {
@@ -141,7 +161,31 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
             <Chip tone="green">On</Chip><span>{status.providers.find((p) => p.id === status.provider)?.label} · model {status.model}</span>
             {status.can_change && <button className="underline underline-offset-4" onClick={() => setOn(false)}>Switch off</button>}
           </div>
-          <Panel title="1. Choose documents (already read from Drive)" className="mb-4">
+          <Panel title="Whole-folder intake" className="mb-4">
+            <p className="mb-3 text-sm">One run over every document already read from the Drive folder: latest revisions only, archive and superseded files left out. It is sent to the AI in several parts. Each part is told what the earlier parts found, so the same item is not proposed twice.</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <button className="btn btn-ghost" disabled={busy} onClick={makePlan}>Plan the run</button>
+              {plan && plan.batches.length > 0 && plan.batches.length <= plan.max_batches && <button className="btn btn-solid" disabled={busy} onClick={runIntake}>{busy ? "Running…" : `Run intake (${plan.batches.length} ${plan.batches.length === 1 ? "part" : "parts"})`}</button>}
+            </div>
+            {plan && (
+              <div className="mt-3 text-sm">
+                <p>{plan.files} documents, {fmtNum(plan.total_chars)} characters, {plan.batches.length} {plan.batches.length === 1 ? "part" : "parts"} to be sent to {status.providers.find((p) => p.id === status.provider)?.label}.</p>
+                {plan.batches.length > plan.max_batches && <p className="mt-1 text-red-fg">That is more than {plan.max_batches} parts. Read fewer files, or use the document picker below.</p>}
+                {plan.batches.length === 0 && <p className="mt-1 text-muted-foreground">No readable, current documents yet. Read them on Drive Documents first.</p>}
+                {plan.skipped.length > 0 && (
+                  <details className="mt-2"><summary className="cursor-pointer">Not sent, or only partly readable ({plan.skipped.length})</summary>
+                    <ul className="mt-1 list-inside list-disc text-muted-foreground">{plan.skipped.map((s, i) => <li key={i}>{s.name}: {s.reason}</li>)}</ul></details>
+                )}
+              </div>
+            )}
+            {prog && (
+              <div className="mt-3 text-sm" role="status">
+                <p>Part {prog.done} of {prog.total} done · {prog.made} new proposals so far{prog.done === prog.total && !busy ? ". Finished. Review them below." : ""}</p>
+                {prog.notes.length > 0 && <ul className="mt-1 list-inside list-disc text-muted-foreground">{prog.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
+              </div>
+            )}
+          </Panel>
+          <Panel title="Or choose documents yourself (already read from Drive)" className="mb-4">
             {texts.length === 0 ? <p className="text-sm text-muted-foreground">No documents have been read yet. On Drive Documents, tick files and press Read.</p> : (
               <ul className="max-h-72 divide-y overflow-auto border">
                 {texts.map((t) => (

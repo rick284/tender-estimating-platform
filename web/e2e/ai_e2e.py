@@ -24,6 +24,9 @@ def route(r):
             state["enabled"] = b["enabled"]
         return j(STATUS())
     if path.endswith("/texts") and path.startswith("drive/"): return j({"texts": [{"file_id": "F1", "name": "Civil Drawings Rev C.pdf", "path": "01 Client Issue Pack", "revision": "C", "status": "ok", "pages": 4, "chars": 12000}]})
+    if path.endswith("/intake/plan"):
+        part = lambda i: {"file_id": "F1", "name": "Civil Drawings Rev C.pdf", "page_from": 1, "page_to": 2}
+        return j({"batches": [{"index": 0, "chars": 9000, "parts": [part(0)]}, {"index": 1, "chars": 3000, "parts": [part(1)]}], "skipped": [{"name": "Site photo.jpg", "reason": "File type not supported yet."}], "total_chars": 12000, "files": 1, "max_batches": 10})
     if path.startswith("ai/tenders/") and path.endswith("/draft"):
         state["props"] = [P("p1", "Retaining height conflict", "verified", True), P("p2", "Rock excavation allowance", "unverified", False)]
         return j({"batch": "b1", "coverage_notes": "Read one document.", "proposals": [], "files_sent": ["Civil Drawings Rev C.pdf"]})
@@ -59,6 +62,15 @@ with sync_playwright() as p:
     pg.locator("input[type=checkbox]").first.check()
     pg.get_by_role("button", name="Switch on").click()
     expect(pg.get_by_text("Anthropic (Claude) · model claude-opus-5-5")).to_be_visible()
+    pg.get_by_role("button", name="Plan the run").click()
+    expect(pg.get_by_text("1 documents, 12,000 characters, 2 parts")).to_be_visible()
+    pg.get_by_text("Not sent, or only partly readable (1)").click()
+    expect(pg.get_by_text("Site photo.jpg: File type not supported yet.")).to_be_visible()
+    pg.get_by_role("button", name="Run intake (2 parts)").click()
+    expect(pg.get_by_text("Part 2 of 2 done")).to_be_visible(timeout=10000)
+    expect(pg.get_by_text("Finished. Review them below.")).to_be_visible()
+    expect(pg.get_by_text("Part 2: Read one document.")).to_be_visible()
+    pg.screenshot(path=SHOT + "ai_intake.png", full_page=True)
     pg.get_by_label("Select Civil Drawings Rev C.pdf").check()
     pg.get_by_role("button", name="Draft register items (1)").click()
     expect(pg.get_by_text("Retaining height conflict")).to_be_visible(timeout=10000)
