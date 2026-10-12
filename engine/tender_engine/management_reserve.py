@@ -101,7 +101,7 @@ def set_item_field(item: dict[str, Any], field: str, value: Any) -> None:
 
 def build_item(item_id: str, v: dict[str, Any], existing: list[dict[str, Any]]) -> dict[str, Any]:
     item = {"id": item_id, **{f: "" for f in ITEM_FIELDS}}
-    item["basis"], item["owner"], item["impact_status"], item["prob_status"] = "Sell", "Primary", "Quantified", "AMBER"
+    item["basis"], item["owner"], item["impact_status"], item["prob_status"] = "Cost", "Primary", "Quantified", "AMBER"
     for f in ITEM_FIELDS:
         if f in v and v[f] not in (None, ""):
             set_item_field(item, f, v[f])
@@ -158,6 +158,8 @@ def compute(block: dict[str, Any], factor: Decimal, risk_exposures: list[dict[st
             issues.append(f"{it['ref']}: already provided for in Risk Truth {it['exposure_ref']}, not counted again")
         w_lo = w_hi = None
         sensitivity = cost_impact
+        if it["basis"] == "Sell" and impact is not None and impact > 0:
+            reasons.append("Entered as a sell figure: it moves whenever overhead or margin change. Prefer the underlying cost")
         if cost_impact is None:
             reasons.append("Consequence not quantified: an unquantified tail")
             if counted:
@@ -180,10 +182,11 @@ def compute(block: dict[str, Any], factor: Decimal, risk_exposures: list[dict[st
                     "sensitivity": sensitivity if (not prob_known and cost_impact is not None) else None, "status": status, "reasons": reasons,
                     "weighted_low_sell": None if w_lo is None else w_lo * f, "weighted_high_sell": None if w_hi is None else w_hi * f})
     selected = _num(block.get("selected"))
-    position = None
+    position, gap = None, None
     weighted_any = any(o["weighted_low"] is not None and o["counted"] for o in out) and hi_c > 0
     if selected is not None and weighted_any:
         position = "below" if selected < lo_c else "above" if selected > hi_c else "within"
+        gap = lo_c - selected if position == "below" else selected - hi_c if position == "above" else ZERO
     notes = []
     if selected is not None and not block.get("selected_basis", "").strip():
         notes.append("No rationale recorded for the selected reserve")
@@ -193,6 +196,9 @@ def compute(block: dict[str, Any], factor: Decimal, risk_exposures: list[dict[st
         notes.append("No unresolved items recorded: nothing yet supports the selected reserve")
     if position == "below":
         notes.append("The selected reserve is below the lowest weighted exposure: record why")
+    sell_items = [it["ref"] for it in items if it["basis"] == "Sell" and (_num(it["impact"]) or ZERO) > 0]
+    if sell_items:
+        notes.append(f"{', '.join(sell_items)} entered as sell figures: these drift when overhead or margin change (prefer cost)")
     if unknown:
         notes.append(f"{unknown} item(s) with unknown probability carry no dollar value")
     if unquantified:
@@ -202,5 +208,5 @@ def compute(block: dict[str, Any], factor: Decimal, risk_exposures: list[dict[st
         status = "AMBER"
     return {"items": out, "weighted_low": lo_c, "weighted_high": hi_c, "weighted_mid": (lo_c + hi_c) / 2, "weighted_low_sell": lo_c * f, "weighted_high_sell": hi_c * f,
             "weighted_mid_sell": (lo_c + hi_c) / 2 * f, "selected": selected, "selected_sell": None if selected is None else selected * f,
-            "selected_pct": None if (selected is None or not subtotal) else selected / D(subtotal), "position": position, "factor": f,
+            "selected_pct": None if (selected is None or not subtotal) else selected / D(subtotal), "position": position, "gap": gap, "factor": f,
             "unknown_items": unknown, "unquantified_items": unquantified, "issues": issues, "notes": notes, "status": status}

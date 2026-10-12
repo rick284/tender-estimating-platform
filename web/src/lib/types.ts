@@ -135,5 +135,5 @@ export interface ReserveItem {
 export interface ManagementReserve {
   items: ReserveItem[]; selected: number | null; selected_sell: number | null; selected_pct: number | null; selected_basis: string; adjudicated_by: string; adjudicated_on: string;
   weighted_low: number; weighted_high: number; weighted_mid: number; weighted_low_sell: number; weighted_high_sell: number; weighted_mid_sell: number;
-  position: "below" | "within" | "above" | null; factor: number; unknown_items: number; unquantified_items: number; issues: string[]; notes: string[]; status: "RED" | "AMBER" | "GREEN";
+  position: "below" | "within" | "above" | null; gap: number | null; factor: number; unknown_items: number; unquantified_items: number; issues: string[]; notes: string[]; status: "RED" | "AMBER" | "GREEN";
 }

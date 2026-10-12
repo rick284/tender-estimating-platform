@@ -3,14 +3,11 @@ import sys
 sys.path.insert(0, "/home/user/tender-estimating-platform/engine")
 from playwright.sync_api import sync_playwright, expect
 from tender_engine.importers import load_master_workbook
-from tender_engine.edits import apply_edits
 from tender_engine.estimate import compute_estimate
 
 base = load_master_workbook("/home/user/tender-estimating-platform/private/Rev34E.xlsx")
 fmt = lambda v: "${:,.2f}".format(v)
-edits = [{"target": "reserve", "key": "block", "field": "selected", "value": "17000"}] + [{"target": "reserve_item", "key": i, "field": f, "value": v} for i, lo, hi in (("M-wb0001", "0.55", "0.65"), ("M-wb0002", "0.3", "0.4")) for f, v in (("probability_low", lo), ("probability_high", hi), ("prob_status", "AMBER"))]
 before = compute_estimate(base)["summary"]["all_in"]
-after = compute_estimate(apply_edits(base, edits)[0])["summary"]["all_in"]
 SHOT = "/tmp/claude-0/-home-user/d48f647b-2b13-5568-9c30-5dd27b3706a0/scratchpad/tp/e2e/"
 
 with sync_playwright() as p:
@@ -29,18 +26,19 @@ with sync_playwright() as p:
     expect(pg.get_by_text("$23,642.32").first).to_be_visible()                 # 18,269.06 pre-margin = $23,642.32 tender effect at 10% / 15%
     pg.screenshot(path=SHOT + "mr_1.png", full_page=True)
     pg.get_by_role("button", name="Edit", exact=True).click()
-    # supply the policy's AMBER management ranges (the workbook records none): earthworks 55-65%, ramp/stairs 30-40%
-    for ref, lo, hi in (("MR-01", "0.55", "0.65"), ("MR-02", "0.3", "0.4")):
+    # the agreed adjudication: the workbook's items entered on a COST basis, with the policy's AMBER management ranges
+    for ref, impact, lo, hi in (("MR-01", "23314.55", "0.55", "0.65"), ("MR-02", "7741", "0.3", "0.4")):
+        pg.get_by_label(f"{ref} extra cost").fill(impact)
         pg.get_by_label(f"{ref} probability low").fill(lo); pg.get_by_label(f"{ref} probability high").fill(hi)
         pg.get_by_label(f"{ref} probability evidence").select_option("AMBER")
-    pg.wait_for_timeout(1200)
-    expect(pg.get_by_text("$18,580.00 – $22,390.00")).to_be_visible()
-    expect(pg.get_by_text("Midpoint $20,485.00")).to_be_visible()
-    pg.get_by_label("selected reserve").fill("17000")
-    pg.get_by_label("rationale").fill("Upper end of the weighted range less the unquantified tails")
+        pg.locator("tbody tr", has_text=ref).first.click()
+        pg.get_by_label(f"{ref} basis").select_option("Cost")
+        pg.locator("tbody tr", has_text=ref).first.click()
     pg.wait_for_timeout(1500)
-    expect(pg.get_by_text("Within the weighted range")).to_be_visible()
+    expect(pg.get_by_text("cost basis $15,145.30 – $18,250.86")).to_be_visible()
+    expect(pg.get_by_text("Above the weighted range by $18.21")).to_be_visible()      # the approved reserve sits at the top of the range
+    # the approved reserve does not change, so the all-in price does not move: no edit changes the total
     bar = pg.locator("div.fixed.bottom-0").inner_text()
-    assert fmt(after) in bar and fmt(before) in bar, ("bar", bar)
+    assert fmt(before) in bar and "(+$0.00)" in bar, ("the price must not move", bar)
     pg.screenshot(path=SHOT + "mr_2.png", full_page=True)
-    print("OK management reserve | engine", fmt(before), "->", fmt(after), "| errors:", errs[:3]); b.close()
+    print("OK agreed adjudication | reserve unchanged, total", fmt(before), "| errors:", errs[:3]); b.close()

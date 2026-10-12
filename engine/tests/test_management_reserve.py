@@ -26,9 +26,9 @@ def block(*items, selected="", basis=""):
 def test_policy_worked_example_hobsonville_rev34():
     """Policy section 15 (example only): A $28.6k sell at 55-65%, B $9.5k sell at 30-40%, C no incremental consequence, D unquantified.
     Weighted sell exposure about $18.6k to $22.4k, midpoint about $20.5k."""
-    b = block(dict(title="Rev17 vs Yodha earthworks", impact="28600", probability_low="0.55", probability_high="0.65"),
-              dict(title="Ramp / entry / stairs ownership", impact="9500", probability_low="0.30", probability_high="0.40"),
-              dict(title="Retaining 1.5m vs 1.8m", impact="0", probability_low="0.8"),
+    b = block(dict(title="Rev17 vs Yodha earthworks", impact="28600", basis="Sell", probability_low="0.55", probability_high="0.65"),
+              dict(title="Ramp / entry / stairs ownership", impact="9500", basis="Sell", probability_low="0.30", probability_high="0.40"),
+              dict(title="Retaining 1.5m vs 1.8m", impact="0", basis="Sell", probability_low="0.8"),
               dict(title="PV01 productivity", impact_status="Unquantified", probability_low="0.5"), selected="18269.06")
     r = mr.compute(b, F)
     assert abs(r["weighted_low_sell"] - D("18580")) < D("0.01") and abs(r["weighted_high_sell"] - D("22390")) < D("0.01")
@@ -129,9 +129,9 @@ def test_selected_reserve_drives_ca16_once_and_commercial_edit_is_blocked():
 @needs_private
 def test_items_flow_through_edit_save_and_range_check():
     m = load_master_workbook(PRIVATE)
-    edits = [{"target": "reserve_item", "op": "add", "key": "M-it000001", "value": {"title": "Rev17 vs Yodha earthworks", "impact": "28600", "probability_low": "0.55",
+    edits = [{"target": "reserve_item", "op": "add", "key": "M-it000001", "value": {"title": "Rev17 vs Yodha earthworks", "impact": "28600", "basis": "Sell", "probability_low": "0.55",
                                                                                     "probability_high": "0.65", "exposure_ref": "RT01-001"}},
-             {"target": "reserve_item", "op": "add", "key": "M-it000002", "value": {"title": "Ramp ownership", "impact": "9500", "probability_low": "0.3", "probability_high": "0.4"}},
+             {"target": "reserve_item", "op": "add", "key": "M-it000002", "value": {"title": "Ramp ownership", "impact": "9500", "basis": "Sell", "probability_low": "0.3", "probability_high": "0.4"}},
              {"target": "reserve", "key": "block", "field": "selected", "value": "17000"}]
     m2, ch = apply_edits(m, edits)
     r = compute_estimate(m2)["management_reserve"]
@@ -161,3 +161,43 @@ def test_supplying_probabilities_to_the_workbook_items_gives_the_policy_range():
     r = compute_estimate(apply_edits(m, ed)[0])["management_reserve"]
     assert abs(r["weighted_low_sell"] - 18580) < 0.01 and abs(r["weighted_high_sell"] - 22390) < 0.01 and abs(r["weighted_mid_sell"] - 20485) < 0.01
     assert r["position"] == "above" and r["unknown_items"] == 0 and r["unquantified_items"] == 1
+
+
+def test_sell_entries_are_warned_and_cost_is_the_default():
+    assert mr.build_item("M-abcd1", dict(title="x"), [])["basis"] == "Cost"
+    r = mr.compute(block(dict(title="s", impact="1000", basis="Sell", probability_low="0.5"), dict(title="c", impact="1000", basis="Cost", probability_low="0.5"), selected="1", basis="x"), F)
+    assert any("sell figures" in n for n in r["notes"]) and any("moves whenever overhead or margin" in x for x in r["items"][0]["reasons"]) and not r["items"][1]["reasons"]
+
+
+# The adjudication Rick agreed (14 Oct 2026): the workbook's four red items entered on a COST basis, so nothing drifts when overhead or margin change.
+AGREED = [
+    {"target": "reserve_item", "key": "M-wb0001", "field": "basis", "value": "Cost"}, {"target": "reserve_item", "key": "M-wb0001", "field": "impact", "value": "23314.55"},
+    {"target": "reserve_item", "key": "M-wb0001", "field": "probability_low", "value": "0.55"}, {"target": "reserve_item", "key": "M-wb0001", "field": "probability_high", "value": "0.65"},
+    {"target": "reserve_item", "key": "M-wb0001", "field": "prob_status", "value": "AMBER"}, {"target": "reserve_item", "key": "M-wb0001", "field": "exposure_ref", "value": "RT01-001"},
+    {"target": "reserve_item", "key": "M-wb0002", "field": "basis", "value": "Cost"}, {"target": "reserve_item", "key": "M-wb0002", "field": "impact", "value": "7741"},
+    {"target": "reserve_item", "key": "M-wb0002", "field": "probability_low", "value": "0.3"}, {"target": "reserve_item", "key": "M-wb0002", "field": "probability_high", "value": "0.4"},
+    {"target": "reserve_item", "key": "M-wb0002", "field": "prob_status", "value": "AMBER"}, {"target": "reserve_item", "key": "M-wb0002", "field": "exposure_ref", "value": "RT14-001"},
+    {"target": "reserve_item", "key": "M-wb0003", "field": "exposure_ref", "value": "RT02-001"}, {"target": "reserve_item", "key": "M-wb0004", "field": "exposure_ref", "value": "RT13-001"},
+]
+
+
+@needs_private
+def test_agreed_adjudication_on_a_cost_basis_keeps_the_reserve_and_counts_nothing_twice():
+    m = load_master_workbook(PRIVATE)
+    base = compute_estimate(m)["summary"]["all_in"]
+    m2, _ = apply_edits(m, AGREED)
+    e = compute_estimate(m2)
+    r = e["management_reserve"]
+    # earthworks is the workbook's own direct-cost sensitivity (EW02 +5,503.07 + EW09 +17,811.48); ramp/stairs is the ~$9.5k sell proxy at the 8%/12% then in force
+    assert abs(r["weighted_low"] - 15145.30) < 0.05 and abs(r["weighted_high"] - 18250.86) < 0.05 and abs(r["weighted_mid"] - 16698.08) < 0.05
+    # the approved reserve is unchanged and sits at the very top of the range (about $18 over), so the tender price does not move
+    assert r["position"] == "above" and 18 < r["gap"] < 19 and abs(e["summary"]["all_in"] - base) < 0.005
+    assert r["unknown_items"] == 0 and r["unquantified_items"] == 1 and not r["issues"] and not any("sell figures" in n for n in r["notes"])
+    # nothing is counted twice: the items point at their Risk Truth exposures, and Risk Truth holds no provision for any of them
+    assert [i["exposure_ref"] for i in r["items"]] == ["RT01-001", "RT14-001", "RT02-001", "RT13-001"] and e["risk_truth"]["residual_total"] == 0
+    # if a Risk Truth provision were ever approved for the earthworks exposure, the reserve item would stop counting
+    prov = {"target": "exposure", "key": "X-RT01001", "field": "provision", "value": "5000"}
+    m3, _ = apply_edits(m2, [prov, {"target": "exposure", "key": "X-RT01001", "field": "mode", "value": "Fixed Allowance"},
+                              {"target": "exposure", "key": "X-RT01001", "field": "include", "value": "Yes"}, {"target": "exposure", "key": "X-RT01001", "field": "target", "value": "CA02"}])
+    r3 = compute_estimate(m3)["management_reserve"]
+    assert r3["items"][0]["counted"] is False and abs(r3["weighted_high"] - 3096.4) < 0.05 and any("RT01-001" in i for i in r3["issues"])

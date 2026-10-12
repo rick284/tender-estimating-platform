@@ -255,7 +255,7 @@ def _reserve_out(m, commercial, base_direct, tender, rtr) -> dict[str, Any] | No
     return {"items": items, "selected": g("selected"), "selected_sell": g("selected_sell"), "selected_pct": g("selected_pct"), "selected_basis": blk.get("selected_basis", ""),
             "adjudicated_by": blk.get("adjudicated_by", ""), "adjudicated_on": blk.get("adjudicated_on", ""),
             "weighted_low": g("weighted_low"), "weighted_high": g("weighted_high"), "weighted_mid": g("weighted_mid"), "weighted_low_sell": g("weighted_low_sell"),
-            "weighted_high_sell": g("weighted_high_sell"), "weighted_mid_sell": g("weighted_mid_sell"), "position": r["position"], "factor": g("factor"),
+            "weighted_high_sell": g("weighted_high_sell"), "weighted_mid_sell": g("weighted_mid_sell"), "position": r["position"], "gap": g("gap"), "factor": g("factor"),
             "unknown_items": r["unknown_items"], "unquantified_items": r["unquantified_items"], "issues": r["issues"], "notes": r["notes"], "status": r["status"]}
 
 

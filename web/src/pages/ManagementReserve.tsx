@@ -14,7 +14,7 @@ const money = (v: number | null | undefined) => (v === null || v === undefined ?
 const pct = (v: string) => (v === "" ? "—" : fmtPct(Number(v), 0));
 
 function AddDialog({ open, onClose, onAdd }: { open: boolean; onClose: () => void; onAdd: (p: Record<string, unknown>) => void }) {
-  const blank = { title: "", description: "", source_ref: "", impact: "", basis: "Sell", probability_low: "", probability_high: "", prob_status: "AMBER", prob_basis: "" };
+  const blank = { title: "", description: "", source_ref: "", impact: "", basis: "Cost", probability_low: "", probability_high: "", prob_status: "AMBER", prob_basis: "" };
   const [f, setF] = useState(blank);
   const [err, setErr] = useState("");
   const field = "mt-1 w-full border bg-background px-3 text-sm focus:border-primary";
@@ -32,12 +32,12 @@ function AddDialog({ open, onClose, onAdd }: { open: boolean; onClose: () => voi
   return (
     <Modal open={open} onClose={onClose} title="Add an unresolved item">
       <form onSubmit={submit} className="space-y-4" noValidate>
-        <p className="text-sm text-muted-foreground">Only items that <strong>cannot realistically be closed out</strong> before the price goes in belong here. Give the extra cost if it goes wrong (against the current price) and how likely that is. Leave the probability blank if it cannot be supported: no dollar value will be assumed.</p>
+        <p className="text-sm text-muted-foreground">Only items that <strong>cannot realistically be closed out</strong> before the price goes in belong here. Give the extra <strong>cost</strong> if it goes wrong (against the current price; cost, not sell, so the figure does not move when overhead or margin change) and how likely that is. Leave the probability blank if it cannot be supported: no dollar value will be assumed.</p>
         <label className="block"><span className="label">Unresolved item</span><input className={`${field} h-10`} value={f.title} onChange={set("title")} maxLength={300} autoFocus /></label>
         <label className="block"><span className="label">Where it comes from (RFI, risk, quote)</span><input className={`${field} h-10`} value={f.source_ref} onChange={set("source_ref")} maxLength={200} placeholder="e.g. RFI-15 / RT01" /></label>
         <div className="grid grid-cols-3 gap-3">
           <label className="block"><span className="label">Extra cost if adverse ($)</span><input className={`${field} h-10`} inputMode="decimal" value={f.impact} onChange={set("impact")} /></label>
-          <label className="block"><span className="label">Entered as</span><select className={`${field} h-10`} value={f.basis} onChange={set("basis")}><option>Sell</option><option>Cost</option></select></label>
+          <label className="block"><span className="label">Entered as</span><select className={`${field} h-10`} value={f.basis} onChange={set("basis")}><option>Cost</option><option>Sell</option></select></label>
           <label className="block"><span className="label">Probability evidence</span><select className={`${field} h-10`} value={f.prob_status} onChange={set("prob_status")}><option>GREEN</option><option>AMBER</option><option>UNKNOWN</option></select></label>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -84,9 +84,9 @@ export function ManagementReserve({ est }: { est: Estimate }) {
           )}
           <Panel className="mb-4">
             <div className="grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-4">
-              <Stat label="Weighted exposure (tender effect)" value={`${money(r.weighted_low_sell)} – ${money(r.weighted_high_sell)}`} sub={`Midpoint ${money(r.weighted_mid_sell)} · counted items only`} />
+              <Stat label="Weighted exposure (tender effect)" value={`${money(r.weighted_low_sell)} – ${money(r.weighted_high_sell)}`} sub={`Midpoint ${money(r.weighted_mid_sell)} · cost basis ${money(r.weighted_low)} – ${money(r.weighted_high)}`} />
               <Stat label="Selected reserve (before overhead and margin)" value={money(r.selected)} sub={r.selected_pct !== null ? `${fmtPct(r.selected_pct, 2)} of the pre-overhead subtotal` : "Not chosen yet"} strong />
-              <Stat label="Selected reserve (tender effect)" value={money(r.selected_sell)} sub={r.position ? <Chip tone={POS[r.position][0]}>{POS[r.position][1]}</Chip> : "—"} />
+              <Stat label="Selected reserve (tender effect)" value={money(r.selected_sell)} sub={r.position ? <Chip tone={POS[r.position][0]}>{POS[r.position][1]}{r.position !== "within" && r.gap !== null ? ` by ${money(r.gap)}` : ""}</Chip> : "—"} />
               <Stat label="Left unweighted" value={`${r.unknown_items + r.unquantified_items}`} sub={`${r.unknown_items} unknown probability · ${r.unquantified_items} unquantified`} />
             </div>
           </Panel>
