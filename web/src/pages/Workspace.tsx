@@ -190,6 +190,17 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
 
   // ---- editing: edits are typed values keyed by target; the server recalculates (preview) and saves (new revision)
   const [editing, setEditing] = useState(false);
+  // The tender bar is fixed at the top; page headers sit just below it, so publish its height.
+  const barRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+    const set = () => document.documentElement.style.setProperty("--tbar", `${el.getBoundingClientRect().height}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => { ro.disconnect(); document.documentElement.style.removeProperty("--tbar"); };
+  }, [detail !== null]);
   const [edits, setEdits] = useState<Record<string, DraftEdit>>({});
   const [draft, setDraft] = useState<Estimate | null>(null);
   const [changes, setChanges] = useState<Change[]>([]);
@@ -286,7 +297,7 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
   return (
     <Shell user={user} route={{ name: "tender", id, page: pg, rev }} tenderName={detail?.name} onLogout={onLogout}>
       {/* The bar is exactly as tall as the brand block in the side menu (4rem, border included) so the two lines run straight across; every control in it is 2.25rem tall */}
-      <div className="flex min-h-16 items-center border-b bg-background">
+      <div ref={barRef} className="z-30 flex min-h-16 items-center border-b bg-background lg:sticky lg:top-0">
         <div className="mx-auto flex w-full max-w-[88rem] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 sm:px-6">
           <div className="min-w-[14rem] flex-1">
             <div className="label">Tender</div>

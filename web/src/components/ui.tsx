@@ -61,13 +61,14 @@ export function Money({ v, dash0 }: { v: number | null | undefined; dash0?: bool
 
 export function PageHeader({ title, sub, actions }: { title: string; sub?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-      <div className="min-w-0">
-        <h1 className="text-2xl leading-none sm:text-3xl">{title}</h1>
-        {sub && <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{sub}</p>}
+    <>
+      {/* Title and actions stay in view while the page scrolls (below the tender bar, which is also fixed in place). */}
+      <div className="sticky top-14 z-20 -mx-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b bg-background px-4 py-3 sm:-mx-6 sm:px-6 lg:top-[var(--tbar,0px)] print:static">
+        <h1 className="min-w-0 text-2xl leading-none sm:text-3xl">{title}</h1>
+        {actions && <div className="no-print flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
-      {actions && <div className="no-print flex items-center gap-2">{actions}</div>}
-    </div>
+      <p className={`max-w-3xl text-sm text-muted-foreground ${sub ? "mb-5 mt-3" : "mb-2"}`}>{sub}</p>
+    </>
   );
 }
 
