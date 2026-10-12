@@ -23,9 +23,9 @@ SCHEMA: dict[str, Any] = {
             "description": {"type": "string"}, "section": {"type": "string", "enum": list(SECTIONS)}, "unit": {"type": "string", "enum": ["m2", "m3", "lm", "ea", "LS"]},
             "operation": {"type": "string", "enum": ["single", "sum", "product"]},
             "components": {"type": "array", "items": {"type": "object", "properties": {
-                "label": {"type": "string"}, "value": {"type": "number"}, "unit": {"type": "string"}, "sheet": {"type": "string"}, "page": {"type": "integer"},
+                "label": {"type": "string"}, "value": {"type": "number"}, "unit": {"type": "string"}, "doc": {"type": "string"}, "sheet": {"type": "string"}, "page": {"type": "integer"},
                 "source": {"type": "string", "enum": list(SOURCES)}, "quote": {"type": "string"}},
-                "required": ["label", "value", "unit", "sheet", "page", "source", "quote"], "additionalProperties": False}},
+                "required": ["label", "value", "unit", "doc", "sheet", "page", "source", "quote"], "additionalProperties": False}},
             "quantity": {"type": "number"}, "method": {"type": "string", "enum": ["READ", "COUNTED", "SCALED", "CALCULATED"]},
             "confidence": {"type": "string", "enum": ["high", "medium", "low"]}, "notes": {"type": "string"}},
             "required": ["description", "section", "unit", "operation", "components", "quantity", "method", "confidence", "notes"], "additionalProperties": False}},
@@ -81,11 +81,12 @@ def compute(operation: str, values: list[Decimal]) -> Decimal | None:
     return None
 
 
-def verify(items: list[dict[str, Any]], pages: dict[int, str]) -> list[dict[str, Any]]:
-    """pages: page number -> page text. Adds to each item: computed (the platform's own arithmetic), components[i].found, status, problems[].
+def verify(items: list[dict[str, Any]], pages: dict[Any, Any]) -> list[dict[str, Any]]:
+    """pages: page number -> page text for one document, or {document name: {page number: page text}} for several (a component then names its `doc`). Adds to each item: computed (the platform's own arithmetic), components[i].found, status, problems[].
     status: verified (every read number found on its page and the arithmetic agrees), check (scaled or counted components: the estimator must check them on the drawing),
     unverified (a quoted number is not on the page, or the arithmetic disagrees)."""
-    compact = {n: _compact(t) for n, t in pages.items()}
+    multi = bool(pages) and all(isinstance(v, dict) for v in pages.values())
+    docs = {k: {n: _compact(t) for n, t in v.items()} for k, v in pages.items()} if multi else {"": {n: _compact(t) for n, t in pages.items()}}
     out = []
     for raw in items:
         it = {k: raw.get(k, "") for k in ("description", "section", "unit", "operation", "method", "confidence", "notes")}
@@ -100,13 +101,14 @@ def verify(items: list[dict[str, Any]], pages: dict[int, str]) -> list[dict[str,
                 problems.append(f"Component “{c.get('label', '')}” has no number")
             else:
                 vals.append(v)
+            compact = docs.get(str(c.get("doc", "")) if multi else "", {})
             if src in CHECKED_SOURCES:
                 q = _compact(quote)
                 if len(q) < MIN_QUOTE:
                     problems.append(f"“{c.get('label', '')}”: a number read from the drawing needs a quote")
                     found = False
                 elif pg not in compact:
-                    problems.append(f"“{c.get('label', '')}”: page {pg} does not exist")
+                    problems.append(f"“{c.get('label', '')}”: page {pg} does not exist" + (f" in {c.get('doc')}" if multi else ""))
                     found = False
                 elif q not in compact[pg]:
                     problems.append(f"“{c.get('label', '')}”: the quote is not on page {pg}")
@@ -121,7 +123,7 @@ def verify(items: list[dict[str, Any]], pages: dict[int, str]) -> list[dict[str,
                 needs_check = True
             else:
                 problems.append(f"“{c.get('label', '')}”: unknown source")
-            comps.append({**{k: c.get(k) for k in ("label", "value", "unit", "sheet", "page", "source", "quote")}, "found": found})
+            comps.append({**{k: c.get(k) for k in ("label", "value", "unit", "doc", "sheet", "page", "source", "quote")}, "found": found})
         calc = compute(str(raw.get("operation")), vals) if not any(v is None for v in vals) else None
         it["computed"] = float(calc) if calc is not None else None
         claimed = _dec(raw.get("quantity"))

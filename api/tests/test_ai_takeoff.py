@@ -40,3 +40,10 @@ def test_counted_and_scaled_components_need_the_estimators_check_and_a_missing_q
     assert r["status"] == "check"
     r2 = t.verify([item([comp(2105, "")], q=2105)], PAGES)[0]
     assert r2["status"] == "unverified"
+
+
+def test_several_documents_each_component_is_checked_against_its_own_document():
+    docs = {"arch": {3: "Actual earthworks area 2,105m2"}, "epa": {1: "Keystone retaining wall max height 1.5m"}}
+    ok = t.verify([item([{**comp(2105, "Actual earthworks area 2,105m2"), "doc": "arch"}], q=2105)], docs)[0]
+    wrong_doc = t.verify([item([{**comp(2105, "Actual earthworks area 2,105m2"), "doc": "epa"}], q=2105)], docs)[0]
+    assert ok["status"] == "verified" and wrong_doc["status"] == "unverified"
