@@ -11,7 +11,8 @@ from typing import Any
 
 PROMPT_VERSION = "takeoff-v1"
 SECTIONS = ("earthworks", "pavements", "retaining", "kerbs_external", "drainage", "parking", "esc", "other")
-SOURCES = ("read_text", "schedule", "stated_area", "counted", "scaled")
+SOURCES = ("read_text", "schedule", "stated_area", "counted", "scaled", "constant")
+CONSTANTS = (Decimal("3.14159265"), Decimal("0.78539816"), Decimal("0.7854"), Decimal("3.1416"), Decimal("3.14159"), Decimal("0.785398"))   # pi, pi/4: the only constants a component may be without a quote
 CHECKED_SOURCES = ("read_text", "schedule", "stated_area")          # these must quote text that is on the page
 TOL = Decimal("0.005")                                              # claimed quantity may differ from the recomputed one by 0.5%
 MIN_QUOTE = 4
@@ -121,6 +122,9 @@ def verify(items: list[dict[str, Any]], pages: dict[Any, Any]) -> list[dict[str,
                         problems.append(f"“{c.get('label', '')}”: the number {v.normalize():f} is not in the quote")
             elif src in ("counted", "scaled"):
                 needs_check = True
+            elif src == "constant":
+                if v is None or not any(abs(v - k) <= Decimal("0.0001") for k in CONSTANTS):
+                    problems.append(f"“{c.get('label', '')}”: only pi or pi/4 may be used as a constant")
             else:
                 problems.append(f"“{c.get('label', '')}”: unknown source")
             comps.append({**{k: c.get(k) for k in ("label", "value", "unit", "doc", "sheet", "page", "source", "quote")}, "found": found})

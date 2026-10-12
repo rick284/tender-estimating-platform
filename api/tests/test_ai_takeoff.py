@@ -47,3 +47,12 @@ def test_several_documents_each_component_is_checked_against_its_own_document():
     ok = t.verify([item([{**comp(2105, "Actual earthworks area 2,105m2"), "doc": "arch"}], q=2105)], docs)[0]
     wrong_doc = t.verify([item([{**comp(2105, "Actual earthworks area 2,105m2"), "doc": "epa"}], q=2105)], docs)[0]
     assert ok["status"] == "verified" and wrong_doc["status"] == "unverified"
+
+
+def test_pi_may_be_a_constant_but_no_other_number_can_hide_as_one():
+    pi4 = {"label": "pi/4", "value": 0.7853982, "unit": "", "sheet": "", "page": 0, "source": "constant", "quote": ""}
+    d = {"label": "dia", "value": 0.5, "unit": "m", "sheet": "S101", "page": 4, "source": "counted", "quote": ""}
+    ok = t.verify([item([pi4, d, d, {**d, "value": 1.2}], op="product", q=0.2356194)], {4: ""})[0]
+    assert ok["problems"] == [] and ok["status"] == "check"
+    sneaky = t.verify([item([{**pi4, "value": 1.3}, {**d, "value": 1.0}], op="product", q=1.3)], {4: ""})[0]
+    assert sneaky["status"] == "unverified" and "only pi" in sneaky["problems"][0]
