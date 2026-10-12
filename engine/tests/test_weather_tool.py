@@ -92,3 +92,20 @@ def test_non_auckland_wind_sensitive_task_is_flagged_red():
     day = dt.date(2026, 10, 1)
     r = run_tool(ToolSettings("Christchurch"), [Activity("Roofing", day, day + dt.timedelta(days=30), True, D(1000), D(0))])
     assert r.activities[0].status == "RED - wind input" and r.red_flags
+
+
+def test_hobsonville_drainage_rev3_run_01oct2026():
+    """A second REAL run from Rick's workbooks (329 Hobsonville Road Drainage Rev3, weather run 01-Oct-2026, Auckland, 5-day week, wind excluded):
+    two Drainage trenching activities (SW01 $28,002.59 labour+plant, SW08 $42,204.30), both on the critical path. The recorded direct allowance
+    ($14,761.167) and wind sensitivity ($797.84) and the 2 additional billed weeks are reproduced exactly. The recorded critical-path delay is 7.768 WD
+    against 7.589 here: the 0.1797 WD gap is what one further 1-day critical activity would add (not visible in the workbook), so it is not asserted."""
+    import datetime as dt
+    s = ToolSettings("Auckland", 5, D(1), None, D(0), D(0), D(0))
+    d = dt.date.fromisoformat
+    acts = [Activity("Drainage trenching", d("2026-10-01"), d("2026-10-21"), True, D("28002.59"), D(0), {}),
+            Activity("Drainage trenching", d("2026-10-27"), d("2026-11-24"), True, D("42204.30"), D(0), {})]
+    r = run_tool(s, acts, include_wind=False)
+    assert abs(float(r.direct_allowance) - 14761.16708) < 0.001
+    assert abs(float(r.wind_sensitivity) - 797.8448) < 0.01
+    assert r.additional_billed_weeks == 2
+    assert abs(float(r.critical_path_delay_wd) - 7.5885) < 0.001
