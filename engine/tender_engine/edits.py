@@ -10,7 +10,7 @@ An edit is {"target", "key", "field", "value"} (set a value) or {"target", "op":
              add    key = new code       value: section, description, unit, quantity, basis, source?, notes?
              delete key = QS code        (also removes its build-up rows)
   library    add    key = new code       value: description, unit, base_rate, category, source?
-  commercial set    key = CA ref         fields: include, pct, pc_sum
+  commercial set    key = CA ref         fields: include, pct, pc_sum, method (only between the bases in COMMERCIAL_METHODS)
   overlay    set    key = package name   field : amount
              add    key = new package name   value: amount, kind? (default QUOTED)
              delete key = package name
@@ -59,6 +59,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from .commercial import COMMERCIAL_METHODS
 from .ids import display_ids
 from .importers.master_workbook import MasterWorkbookImport
 from .models import BuildUpRow, LibraryRate, Overlay, QSItem, MODES
@@ -315,6 +316,16 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
                 c["pct"] = _num(value, f"{key} percentage", hi=hi)
             elif field == "pc_sum":
                 c["pc_sum"] = _num(value, f"{key} amount")
+            elif field == "method":
+                allowed = COMMERCIAL_METHODS.get(key)
+                if not allowed or c["method"] not in allowed:
+                    raise EditError(f"{key} is calculated by the platform (its basis can't be changed here).")
+                new = str(value or "").strip()
+                if new not in allowed:
+                    raise EditError(f"{key} can be set to: {', '.join(allowed)}.")
+                if new == "Margin %" and Decimal(str(c["pct"])) >= 1:
+                    raise EditError("Set the margin below 100% before choosing Margin %.")
+                c["method"] = new
             else:
                 raise EditError(f"{field!r} can't be edited on a commercial line.")
 
@@ -697,7 +708,7 @@ def _net_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, rows: list[_R
                 add("row", r.uid, f, f"{base_ids[r.uid]} {old.task}", getattr(old, f), getattr(r.row, f))
 
     for x, y in zip(a.commercial, b.commercial):
-        for f in ("include", "pct", "pc_sum"):
+        for f in ("include", "method", "pct", "pc_sum"):
             add("commercial", x["ref"], f, f"{x['ref']} {x['name']}", x[f], y[f])
     a_ov, b_ov = {o.name: o for o in a.overlays}, {o.name: o for o in b.overlays}
     for name, x in a_ov.items():

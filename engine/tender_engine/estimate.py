@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 from .buildup import compute_buildup
-from .commercial import compute_tender
+from .commercial import COMMERCIAL_METHODS, compute_tender
 from . import risk_truth as rtm
 from . import management_reserve as mrm
 from .consolidated import compute_consolidated
@@ -153,7 +153,7 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
             amt = {"CA17": tender.overhead, "CA18": tender.profit, "CA19": tender.bonds, "CA20": tender.retention_finance,
                    "CA21": tender.gst, "CA22": tender.retention_withheld}.get(c.ref, D(0))
         commercial_out.append({"ref": c.ref, "name": c.name, "method": c.method, "include": c.include == "Yes",
-                               "pct": _f(c.pct), "pc_sum": _f(c.pc_sum), "amount": _f(amt)})
+                               "pct": _f(c.pct), "pc_sum": _f(c.pc_sum), "amount": _f(amt), "methods": COMMERCIAL_METHODS.get(c.ref, [])})
     stage = lambda r: ("pre" if r <= 16 else "commercial" if r <= 21 else "cashflow")
     for c in commercial_out:
         c["stage"] = stage(int(c["ref"][2:]))

@@ -21,6 +21,9 @@ from .models import CommercialInput
 from .money import D, ZERO, ONE
 
 PRE_MARGIN_REFS = tuple(f"CA{n:02d}" for n in range(1, 17))
+# Which bases a commercial line may be switched between in the platform. Engine-fed lines (risk, weather, management reserve) and GST are not listed.
+COMMERCIAL_METHODS = {**{f"CA{n:02d}": ["%", "PC Sum"] for n in (3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 19, 20)},
+                      "CA17": ["Markup %", "Fixed Amount"], "CA18": ["Margin %", "Markup %", "Fixed Amount"]}
 
 
 @dataclass(frozen=True)

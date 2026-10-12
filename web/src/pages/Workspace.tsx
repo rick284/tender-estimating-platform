@@ -69,7 +69,7 @@ function UploadRevision({ open, onClose, tenderId, onDone }: { open: boolean; on
 const FIELD_NAME: Record<string, string> = {
   quantity: "Quantity", job_rate_override: "Job rate", productivity_rate: "Productivity", duration_override_hrs: "Hours override",
   count: "Count / factor", manual_qty: "Quantity", utilisation: "Utilisation", waste: "Waste", verified: "Verified",
-  weather_exposed: "Weather exposed", include: "Included", pct: "Percentage", pc_sum: "Amount", amount: "Amount",
+  weather_exposed: "Weather exposed", include: "Included", method: "Basis", pct: "Percentage", pc_sum: "Amount", amount: "Amount",
   recovery_allowance: "Allowance", confirmed_overlap: "Amount", added: "Added", removed: "Removed",
 };
 const PCT_FIELDS = new Set(["pct", "utilisation", "waste"]);

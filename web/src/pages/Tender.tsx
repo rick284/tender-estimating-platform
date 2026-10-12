@@ -1,8 +1,12 @@
 import type { Estimate } from "../lib/types";
 import { fmtPct } from "../lib/format";
-import { EditCheck, EditNum } from "../components/EditCells";
+import { EditCheck, EditField, EditNum } from "../components/EditCells";
 import { useEdit } from "../lib/edit";
 import { Chip, Money, PageHeader, Panel } from "../components/ui";
+
+const METHOD_LABEL: Record<string, string> = { "%": "Percentage", "PC Sum": "PC sum ($)", "Markup %": "Markup %", "Margin %": "Margin % (true margin)", "Fixed Amount": "Fixed amount ($)" };
+// What a percentage is taken of, so the estimator knows what typing 2 means
+const PCT_OF = (ref: string, method: string) => (method === "Margin %" ? "true margin on cost" : method === "Markup %" ? (ref === "CA18" ? "of cost" : "of subtotal") : ref === "CA19" || ref === "CA20" ? "of subtotal" : ref === "CA21" ? "of tender" : "of base direct");
 
 function Basis({ c }: { c: Estimate["commercial"][number] }) {
   const { editing } = useEdit();
@@ -13,8 +17,10 @@ function Basis({ c }: { c: Estimate["commercial"][number] }) {
   return (
     <div className="flex flex-wrap items-center gap-3">
       <label className="flex items-center gap-1.5 text-xs"><EditCheck target="commercial" id={c.ref} field="include" original={c.include} label={`${c.ref} included`} /> On</label>
-      <span className="text-xs text-muted-foreground">{c.method}</span>
-      {pctMethod && <span className="inline-flex items-center gap-1"><EditNum target="commercial" id={c.ref} field="pct" original={c.pct} scale={100} width="w-20" label={`${c.ref} percentage`} display="" /><span className="text-xs">%</span></span>}
+      {c.methods && c.methods.length > 1
+        ? <EditField target="commercial" id={c.ref} field="method" value={c.method} kind="select" width="w-44" label={`${c.ref} basis`} options={c.methods.map((m) => ({ value: m, label: METHOD_LABEL[m] ?? m }))} />
+        : <span className="text-xs text-muted-foreground">{c.method}</span>}
+      {pctMethod && <span className="inline-flex items-center gap-1"><EditNum target="commercial" id={c.ref} field="pct" original={c.pct} scale={100} width="w-20" label={`${c.ref} percentage`} display="" /><span className="text-xs">% {PCT_OF(c.ref, c.method)}</span></span>}
       {amtMethod && <span className="inline-flex items-center gap-1"><span className="text-xs">$</span><EditNum target="commercial" id={c.ref} field="pc_sum" original={c.pc_sum} dp={2} width="w-28" label={`${c.ref} amount`} display="" /></span>}
     </div>
   );

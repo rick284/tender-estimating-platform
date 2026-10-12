@@ -89,6 +89,38 @@ def test_switching_a_provision_on_and_overlay_edit(base):
 
 
 @needs_private
+def test_a_provision_can_be_switched_between_percentage_and_pc_sum(base):
+    """CA09 comes from the workbook as a PC Sum. Switching it to a % of base direct, and CA03 (a %) to a PC Sum, both price correctly."""
+    m, ch = apply_edits(base, [{"target": "commercial", "key": "CA09", "field": "method", "value": "%"},
+                               {"target": "commercial", "key": "CA09", "field": "pct", "value": "0.01"},
+                               {"target": "commercial", "key": "CA03", "field": "method", "value": "PC Sum"},
+                               {"target": "commercial", "key": "CA03", "field": "include", "value": "Yes"},
+                               {"target": "commercial", "key": "CA03", "field": "pc_sum", "value": 4000}])
+    e0, e1 = compute_estimate(base), compute_estimate(m)
+    by = {c["ref"]: c for c in e1["commercial"]}
+    assert by["CA09"]["method"] == "%" and round(by["CA09"]["amount"], 2) == round(e0["tender"]["base_direct"] * 0.01, 2)
+    assert by["CA03"]["method"] == "PC Sum" and by["CA03"]["amount"] == 4000
+    assert any(c["field"] == "method" and c["key"] == "CA09" for c in ch)            # the change list says the basis changed
+    # saved inputs keep the new basis
+    from tender_engine import inputs
+    again = inputs.from_json(inputs.to_json(m))
+    assert next(c for c in again.commercial if c["ref"] == "CA09")["method"] == "%"
+
+
+@needs_private
+@pytest.mark.parametrize("edit,msg", [
+    ({"target": "commercial", "key": "CA10", "field": "method", "value": "PC Sum"}, "calculated by the platform"),     # weather engine line
+    ({"target": "commercial", "key": "CA01", "field": "method", "value": "%"}, "calculated by the platform"),          # risk engine line
+    ({"target": "commercial", "key": "CA21", "field": "method", "value": "PC Sum"}, "calculated by the platform"),     # GST is a % only
+    ({"target": "commercial", "key": "CA09", "field": "method", "value": "Markup %"}, "can be set to"),
+    ({"target": "commercial", "key": "CA17", "field": "method", "value": "Margin %"}, "can be set to"),
+])
+def test_only_sensible_basis_changes_are_accepted(base, edit, msg):
+    with pytest.raises(EditError, match=msg):
+        apply_edits(base, [edit])
+
+
+@needs_private
 @pytest.mark.parametrize("edit,msg", [
     ({"target": "qs", "key": "NOPE", "field": "quantity", "value": 1}, "Unknown QS item"),
     ({"target": "qs", "key": "EW01", "field": "quantity", "value": -5}, "less than"),
