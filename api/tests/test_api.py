@@ -590,3 +590,57 @@ def test_programme_setup_edits_and_export(client, auth):
     assert client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": edits, "note": "Programme set up"}).status_code == 200
     x = client.get(f"/api/tenders/{tid}/revisions/2/outputs/programme.xlsx", headers=auth)
     assert x.status_code == 200 and x.content.startswith(b"PK")
+
+
+@pytest.mark.skipif(not (PRIVATE / "Rev34E.xlsx").exists(), reason="private workbook not present")
+def test_live_path_old_revision_upgrade_then_agreed_reserve_adjudication(client, auth):
+    """Rick's live path: a Rev34E revision stored BEFORE Risk Truth / Management Reserve existed -> re-upload the same file (upgrade, no new revision)
+    -> apply the agreed cost-basis adjudication -> price unchanged -> save as a new revision -> reload."""
+    import asyncio, db as dbmod
+    data = (PRIVATE / "Rev34E.xlsx").read_bytes()
+    r = client.post("/api/tenders", headers=auth, files={"file": ("Rev34E.xlsx", data)})
+    assert r.status_code == 200, r.text
+    tid = r.json()["id"]
+    price = client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]["summary"]["all_in"]
+
+    async def make_old():
+        d = dbmod.get_db()
+        doc = await d.revisions.find_one({"tender_id": tid})
+        inp, est_ = doc["inputs"], doc["estimate"]
+        inp.pop("risk_truth", None); inp.pop("management_reserve", None)
+        inp["register"] = [x for x in inp["register"] if x["kind"] != "risk"][:]          # the older register without the Risk Truth risk list
+        for k in ("risk_truth", "management_reserve"):
+            est_.pop(k, None)
+        await d.revisions.update_one({"_id": doc["_id"]}, {"$set": {"inputs": inp, "estimate": est_}})
+    asyncio.run(make_old())
+    old = client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]
+    assert old["risk_truth"]["exposures"] == [] and old["management_reserve"] is None          # old revision still opens, with empty new sections
+
+    up = client.post(f"/api/tenders/{tid}/revisions", headers=auth, files={"file": ("Rev34E.xlsx", data)})
+    assert up.status_code == 200 and up.json().get("upgraded") is True and up.json()["n"] == 1
+    est = client.get(f"/api/tenders/{tid}/revisions/1", headers=auth).json()["estimate"]
+    assert len(est["risk_truth"]["exposures"]) == 15 and est["risk_truth"]["red_risks"] == 4 and est["risk_truth"]["red_exposures"] == 4
+    assert [i["ref"] for i in est["management_reserve"]["items"]] == ["MR-01", "MR-02", "MR-03", "MR-04"]
+    assert est["register_summary"]["red_risks"] == 4 and abs(est["summary"]["all_in"] - price) < 0.005
+
+    def e(key, field, value):
+        return {"target": "reserve_item", "key": key, "field": field, "value": value}
+    agreed = [e("M-wb0001", "basis", "Cost"), e("M-wb0001", "impact", "23314.55"), e("M-wb0001", "probability_low", "0.55"), e("M-wb0001", "probability_high", "0.65"),
+              e("M-wb0001", "prob_status", "AMBER"), e("M-wb0001", "exposure_ref", "RT01-001"),
+              e("M-wb0002", "basis", "Cost"), e("M-wb0002", "impact", "7741"), e("M-wb0002", "probability_low", "0.3"), e("M-wb0002", "probability_high", "0.4"),
+              e("M-wb0002", "prob_status", "AMBER"), e("M-wb0002", "exposure_ref", "RT14-001"),
+              e("M-wb0003", "exposure_ref", "RT02-001"), e("M-wb0004", "exposure_ref", "RT13-001")]
+    pv = client.post(f"/api/tenders/{tid}/revisions/1/preview", headers=auth, json={"edits": agreed})
+    assert pv.status_code == 200, pv.text
+    mr = pv.json()["estimate"]["management_reserve"]
+    assert abs(mr["weighted_low"] - 15145.30) < 0.05 and abs(mr["weighted_high"] - 18250.86) < 0.05 and 18 < mr["gap"] < 19 and mr["issues"] == []
+    assert abs(pv.json()["estimate"]["summary"]["all_in"] - price) < 0.005 and abs(pv.json()["base"]["all_in"] - price) < 0.005
+    sv = client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": agreed, "label": "Rev34E-res", "note": "Management Reserve adjudicated on a cost basis"})
+    assert sv.status_code == 200, sv.text
+    n = sv.json()["n"]
+    got = client.get(f"/api/tenders/{tid}/revisions/{n}", headers=auth).json()
+    assert got["estimate"]["management_reserve"]["position"] == "above" and abs(got["estimate"]["summary"]["all_in"] - price) < 0.005
+    assert len(got["revision"]["changes"]) > 0 and all(c["target"] in ("reserve_item",) for c in got["revision"]["changes"])
+    # editing again from the saved revision still works, and the commercial line cannot be edited behind the reserve's back
+    again = client.post(f"/api/tenders/{tid}/revisions/{n}/preview", headers=auth, json={"edits": [{"target": "commercial", "key": "CA16", "field": "pc_sum", "value": "1"}]})
+    assert again.status_code == 422 and "Management Reserve page" in again.json()["detail"]
