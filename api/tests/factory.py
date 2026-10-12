@@ -64,4 +64,14 @@ def make_workbook(project="Test Depot Civil Works", rev="Rev1", qty=100, rate=10
     import datetime as _dt
     wb.properties.created = wb.properties.modified = _dt.datetime(2026, 1, 1)      # fixed, so two builds of the same workbook are byte-identical (the duplicate check hashes the file)
     buf = io.BytesIO(); wb.save(buf)
-    return buf.getvalue()
+    import zipfile                                                                  # zip entries carry a timestamp too: rewrite them with a fixed one
+    out = io.BytesIO()
+    with zipfile.ZipFile(buf) as zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+        for info in zin.infolist():
+            zi = zipfile.ZipInfo(info.filename, date_time=(2026, 1, 1, 0, 0, 0)); zi.compress_type = zipfile.ZIP_DEFLATED
+            data = zin.read(info.filename)
+            if info.filename == "docProps/core.xml":                                # openpyxl stamps "modified" with the save time
+                import re
+                data = re.sub(rb"(<dcterms:modified[^>]*>)[^<]*", rb"\g<1>2026-01-01T00:00:00Z", data)
+            zout.writestr(zi, data)
+    return out.getvalue()
