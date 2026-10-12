@@ -221,6 +221,8 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
     return () => window.removeEventListener("beforeunload", f);
   }, [editing, editList.length]);
 
+  const cur = rev ?? detail?.latest_rev ?? 1;
+  const curInfo = detail?.revisions.find((r) => r.n === cur);
   const ctx = useMemo<EditCtx>(() => {
     const dropPrefix = (m: Record<string, DraftEdit>, prefix: string) => {
       for (const k of Object.keys(m)) if (k.startsWith(prefix)) delete m[k];
@@ -228,6 +230,9 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
     const baseRows = est?.buildup ?? [];
     return {
       editing, edits,
+      canEdit: !!est && !!curInfo?.has_inputs,
+      editHint: curInfo && !curInfo.has_inputs ? "This revision was saved before editing was available. Open New revision at the top and upload the same workbook again; it switches this revision on for editing." : "",
+      startEdit: () => setEditing(true),
       set: (e) => setEdits((p) => ({ ...p, [editKey(e.target, e.key, e.field)]: e })),
       reset: (t, k, f) => setEdits((p) => { const n = { ...p }; delete n[editKey(t, k, f)]; return n; }),
       add: (target, key, payload) => setEdits((p) => {
@@ -270,13 +275,11 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
         return n;
       }),
     };
-  }, [editing, edits, est]);
+  }, [editing, edits, est, curInfo?.has_inputs]);
   const shown = editing && draft ? draft : est;
 
-  const cur = rev ?? detail?.latest_rev ?? 1;
   const view = (p: TenderPage) => go({ name: "tender", id, page: p, rev });
   const pg: TenderPage = isTenderPage(page) ? page : "overview";
-  const curInfo = detail?.revisions.find((r) => r.n === cur);
   const label = curInfo?.label ?? "";
   const stale = detail && cur !== detail.latest_rev;
 

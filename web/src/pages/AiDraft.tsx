@@ -10,7 +10,7 @@ const STATUS: Record<AiProposal["status"], { tone: "green" | "amber" | "red" | "
   unverified: { tone: "red", text: "Can't accept: quote not found" }, duplicate: { tone: "neutral", text: "Already in the register" },
 };
 
-function Card({ p, onAccept, onReject }: { p: AiProposal; onAccept: (p: AiProposal) => void; onReject: (p: AiProposal, reason: string) => void }) {
+function Card({ p, note, onAccept, onReject }: { p: AiProposal; note?: string; onAccept: (p: AiProposal) => void; onReject: (p: AiProposal, reason: string) => void }) {
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const can = p.status === "verified" || p.status === "gap";
@@ -36,6 +36,7 @@ function Card({ p, onAccept, onReject }: { p: AiProposal; onAccept: (p: AiPropos
       {p.problems.length > 0 && <ul className="mt-2 list-inside list-disc text-sm text-red-fg">{p.problems.map((x) => <li key={x}>{x}</li>)}</ul>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {can && <button className="btn btn-solid !py-1.5" onClick={() => onAccept(p)}>Accept into my draft</button>}
+        {note && <span role="alert" className="basis-full border border-red-line bg-red-bg px-3 py-2 text-sm text-red-fg">{note}</span>}
         {!rejecting && <button className="btn btn-ghost !py-1.5" onClick={() => setRejecting(true)}>Reject</button>}
         {rejecting && (
           <>
@@ -50,11 +51,12 @@ function Card({ p, onAccept, onReject }: { p: AiProposal; onAccept: (p: AiPropos
 }
 
 export function AiDraft({ tenderId }: { tenderId: string }) {
-  const { editing, add } = useEdit();
+  const { editing, add, canEdit, editHint, startEdit } = useEdit();
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [texts, setTexts] = useState<DriveTextSummary[]>([]);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [props, setProps] = useState<AiProposal[]>([]);
+  const [cardNote, setCardNote] = useState<{ id: string; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
@@ -103,8 +105,11 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
     finally { setBusy(false); }
   };
   const accept = async (p: AiProposal) => {
-    setErr("");
-    if (!editing) return setErr("Press Edit (top right) first. Accepted items go into your draft, and nothing is in the estimate until you review and save a revision.");
+    setErr(""); setCardNote(null);
+    if (!editing) {
+      if (!canEdit) return setCardNote({ id: p.id, text: editHint || "This revision can't be edited, so nothing can be added to a draft. Open the latest revision and try again." });
+      startEdit();                       // accepting needs edit mode: switch it on from here
+    }
     try { const r = await api.aiAccept(p.id); add("register", r.edit.key, r.edit.value); setProps((await api.aiProposals(tenderId)).proposals); }
     catch (e) { setErr((e as Error).message); }
   };
@@ -205,7 +210,7 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
           </Panel>
           <h2 className="mb-2 text-sm tracking-wider">2. Review the proposals ({open.length})</h2>
           {open.length === 0 ? <Empty title="Nothing waiting for review" body="Choose documents and press Draft. Proposals appear here for you to accept or reject." /> : (
-            <div className="space-y-3">{open.map((p) => <Card key={p.id} p={p} onAccept={accept} onReject={reject} />)}</div>
+            <div className="space-y-3">{open.map((p) => <Card key={p.id} p={p} note={cardNote?.id === p.id ? cardNote.text : undefined} onAccept={accept} onReject={reject} />)}</div>
           )}
           {decided.length > 0 && (
             <details className="mt-6">

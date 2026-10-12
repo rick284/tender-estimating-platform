@@ -77,11 +77,9 @@ with sync_playwright() as p:
     expect(pg.get_by_text("Can't accept: quote not found")).to_be_visible()
     cards = pg.locator("div.border.bg-background.p-4")
     assert cards.nth(1).get_by_role("button", name="Accept into my draft").count() == 0       # an unverified proposal can't be accepted
-    cards.nth(0).get_by_role("button", name="Accept into my draft").click()
-    expect(pg.get_by_role("alert")).to_contain_text("Press Edit")                               # not in edit mode: it explains
     pg.screenshot(path=SHOT + "ai_1.png", full_page=True)
-    pg.get_by_role("button", name="Edit", exact=True).click()
-    cards.nth(0).get_by_role("button", name="Accept into my draft").click()
+    expect(pg.get_by_role("button", name="Edit", exact=True)).to_be_visible()                  # not in edit mode yet
+    cards.nth(0).get_by_role("button", name="Accept into my draft").click()                     # accepting switches edit mode on itself
     pg.wait_for_timeout(1500)
     expect(pg.locator("div.fixed.bottom-0")).to_contain_text("1 change")
     # the second proposal is rejected with a reason

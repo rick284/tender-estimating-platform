@@ -15,9 +15,13 @@ export interface EditCtx {
   add: (target: string, key: string, payload: Record<string, unknown>) => void;
   remove: (target: string, key: string) => void;
   undoKey: (k: string) => void;
+  /** Whether this revision can be edited at all, why not, and a way to switch edit mode on from a button elsewhere in the page. */
+  canEdit: boolean;
+  editHint: string;
+  startEdit: () => void;
 }
 const noop = () => {};
-const Ctx = createContext<EditCtx>({ editing: false, edits: {}, set: noop, reset: noop, add: noop, remove: noop, undoKey: noop });
+const Ctx = createContext<EditCtx>({ editing: false, edits: {}, set: noop, reset: noop, add: noop, remove: noop, undoKey: noop, canEdit: false, editHint: "", startEdit: noop });
 export const EditProvider = Ctx.Provider;
 export const useEdit = () => useContext(Ctx);
 export const editKey = (t: string, k: string, f: string) => `${t}|${k}|${f}`;

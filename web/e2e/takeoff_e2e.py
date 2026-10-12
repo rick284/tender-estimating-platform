@@ -90,10 +90,9 @@ with sync_playwright() as p:
     assert dlg.get_by_test_id("source-highlight").count() == 0                                      # the outline only shows on the cited page
     pg.keyboard.press("Escape")
     expect(pg.get_by_role("dialog")).to_have_count(0)
-    cards.nth(0).get_by_role("button", name="Add to my QS draft").click()
-    expect(pg.get_by_role("alert")).to_contain_text("Press Edit")                                # not in edit mode: it explains
-    pg.get_by_role("button", name="Edit", exact=True).click()
-    cards.nth(0).get_by_role("button", name="Add to my QS draft").click()
+    expect(pg.get_by_role("button", name="Edit", exact=True)).to_be_visible()                      # not in edit mode yet
+    cards.nth(0).get_by_role("button", name="Add to my QS draft").click()                           # the button switches edit mode on itself
+    expect(pg.get_by_text("Editing", exact=True).first).to_be_visible()
     expect(pg.get_by_role("dialog").get_by_label("Description")).to_have_value("Earthworks area")   # the real Add QS item dialog, pre-filled
     expect(pg.get_by_role("dialog").get_by_label("Quantity", exact=True)).to_have_value("2105")
     assert pg.get_by_role("dialog").locator("select").first.input_value() == "Earthworks"         # section guessed from the estimate's own sections
@@ -112,4 +111,19 @@ with sync_playwright() as p:
     pg.locator("aside").get_by_role("button", name="QS Takeoff").click()
     expect(pg.get_by_text("AI takeoff: Architectural Rev17.pdf").first).to_be_visible(timeout=10000) if False else None
     pg.screenshot(path=SHOT + "takeoff_3.png", full_page=True)
+    # a revision saved before editing existed can't be edited: the button says why, right next to itself (not at the top of the page)
+    def no_inputs(route):
+        r = route.fetch(); body = r.json()
+        for rv in body.get("revisions", []): rv["has_inputs"] = False
+        route.fulfill(response=r, json=body)
+    pg.reload(); pg.route("**/api/tenders/*", no_inputs); pg.reload()
+    expect(pg.get_by_role("button", name="Edit", exact=True)).to_be_disabled(timeout=20000)          # the patched revision cannot be edited
+    pg.locator("aside").get_by_role("button", name="AI Takeoff").click()
+    state["decided"].clear()                                                                       # fresh set of open lines for this check
+    pg.get_by_label("Select Architectural Rev17.pdf").check()
+    pg.get_by_role("button", name="Take off (1 document)").click()
+    expect(pg.get_by_text("3 lines proposed")).to_be_visible(timeout=10000)
+    card = pg.locator("div.border.bg-background.p-4").first
+    card.get_by_role("button", name="Add to my QS draft").click()
+    expect(card.get_by_role("alert")).to_contain_text("saved before editing was available")
     print("OK ai takeoff | errors:", errs[:3]); b.close()

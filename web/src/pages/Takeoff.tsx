@@ -18,7 +18,7 @@ const SECTION_HINT: Record<string, RegExp> = {
   earthworks: /earth/i, pavements: /pavement|concrete/i, retaining: /retain/i, kerbs_external: /kerb|external/i, drainage: /drain|storm/i, parking: /pavement|marking/i, esc: /erosion|sediment/i,
 };
 
-function Line({ l, onAccept, onReject, onView }: { l: TakeoffLine; onAccept: (l: TakeoffLine) => void; onReject: (l: TakeoffLine, reason: string) => void; onView: (l: TakeoffLine, i: number) => void }) {
+function Line({ l, note, onAccept, onReject, onView }: { l: TakeoffLine; note?: string; onAccept: (l: TakeoffLine) => void; onReject: (l: TakeoffLine, reason: string) => void; onView: (l: TakeoffLine, i: number) => void }) {
   const [open, setOpen] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
@@ -54,6 +54,7 @@ function Line({ l, onAccept, onReject, onView }: { l: TakeoffLine; onAccept: (l:
       {l.problems.length > 0 && <ul className="mt-2 list-inside list-disc text-sm text-red-fg">{l.problems.map((x) => <li key={x}>{x}</li>)}</ul>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {can && <button className="btn btn-solid !py-1.5" onClick={() => onAccept(l)}>Add to my QS draft</button>}
+        {note && <span role="alert" className="basis-full border border-red-line bg-red-bg px-3 py-2 text-sm text-red-fg">{note}</span>}
         {!rejecting && <button className="btn btn-ghost !py-1.5" onClick={() => setRejecting(true)}>Reject</button>}
         {rejecting && (
           <>
@@ -68,7 +69,7 @@ function Line({ l, onAccept, onReject, onView }: { l: TakeoffLine; onAccept: (l:
 }
 
 export function Takeoff({ est, tenderId, goQs }: { est: Estimate; tenderId: string; goQs: () => void }) {
-  const { editing, add, set } = useEdit();
+  const { editing, add, set, canEdit, editHint, startEdit } = useEdit();
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [texts, setTexts] = useState<DriveTextSummary[]>([]);
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -79,6 +80,7 @@ export function Takeoff({ est, tenderId, goQs }: { est: Estimate; tenderId: stri
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [adding, setAdding] = useState<{ id: string; qs: TakeoffQs } | null>(null);
+  const [note, setNote] = useState<{ id: string; text: string } | null>(null);
   const [viewing, setViewing] = useState<{ l: TakeoffLine; i: number } | null>(null);
   const [sheets, setSheets] = useState<Record<string, SheetInfo[] | "loading">>({});
 
@@ -110,8 +112,12 @@ export function Takeoff({ est, tenderId, goQs }: { est: Estimate; tenderId: stri
     finally { setBusy(false); }
   };
   const accept = async (l: TakeoffLine) => {
-    setErr(""); setMsg("");
-    if (!editing) return setErr("Press Edit (top right) first. Accepted lines go into your draft, and nothing is in the estimate until you review and save a revision.");
+    setErr(""); setMsg(""); setNote(null);
+    if (!editing) {
+      // Adding to the draft needs edit mode: switch it on from here, unless this revision can't be edited at all (then say why, next to the button)
+      if (!canEdit) return setNote({ id: l.id, text: editHint || "This revision can't be edited, so nothing can be added to a draft. Open the latest revision and try again." });
+      startEdit();
+    }
     try { const r = await api.takeoffAccept(l.id, false); setAdding({ id: l.id, qs: r.qs }); } catch (e) { setErr((e as Error).message); }
   };
   const reject = async (l: TakeoffLine, reason: string) => {
@@ -177,7 +183,7 @@ export function Takeoff({ est, tenderId, goQs }: { est: Estimate; tenderId: stri
           )}
           <h2 className="mb-2 text-sm tracking-wider">2. Review the proposed lines ({open.length})</h2>
           {open.length === 0 ? <Empty title="Nothing waiting for review" body="Choose documents and press Take off. Proposed lines appear here for you to add to your draft or reject." /> : (
-            <div className="space-y-3">{open.map((l) => <Line key={l.id} l={l} onAccept={accept} onReject={reject} onView={(ln, i) => setViewing({ l: ln, i })} />)}</div>
+            <div className="space-y-3">{open.map((l) => <Line key={l.id} l={l} note={note?.id === l.id ? note.text : undefined} onAccept={accept} onReject={reject} onView={(ln, i) => setViewing({ l: ln, i })} />)}</div>
           )}
           {decided.length > 0 && (
             <details className="mt-6">
