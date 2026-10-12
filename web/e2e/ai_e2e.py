@@ -3,7 +3,10 @@ import json
 from playwright.sync_api import sync_playwright, expect
 
 SHOT = "/tmp/claude-0/-home-user/d48f647b-2b13-5568-9c30-5dd27b3706a0/scratchpad/tp/e2e/"
-state = {"enabled": False, "props": [], "decided": {}}
+state = {"enabled": False, "key": "", "ack": None, "props": [], "decided": {}}
+STATUS = lambda: {"configured": bool(state["key"]), "enabled": state["enabled"] and bool(state["key"]), "provider": "anthropic", "model": "claude-opus-5-5", "key_source": "own" if state["key"] else None,
+                  "key_last4": state["key"][-4:], "providers": [{"id": "anthropic", "label": "Anthropic (Claude)", "available": True, "default_model": "claude-opus-5-5", "key_hint": "Keys start with sk-ant-."}, {"id": "openai", "label": "OpenAI (GPT)", "available": False, "default_model": "", "key_hint": "Planned"}],
+                  "can_change": True, "acknowledged_at": state["ack"], "max_files": 12}
 EV = lambda ok: {"file_id": "F1", "file": "Civil Drawings Rev C.pdf", "page": 2, "quote": "Retaining walls maximum height 1.5m (Civil DWG301)" if ok else "All rock excavation is included", "verified": ok}
 P = lambda i, title, status, ok: {"id": i, "batch": "b1", "kind": "rfi", "title": title, "detail": "Civil and architectural drawings disagree.", "impact": "Allowance or exclusion needed until resolved.", "rag": "RED",
                                   "basis": "quoted", "evidence": [EV(ok)], "status": status, "problems": [] if ok else ["The quote is not on page 2 of Civil Drawings Rev C.pdf"], "decision": state["decided"].get(i), "created_at": "2026-10-14T01:00:00"}
@@ -11,8 +14,15 @@ P = lambda i, title, status, ok: {"id": i, "batch": "b1", "kind": "rfi", "title"
 def route(r):
     path = r.request.url.split("/api/")[1].split("?")[0]; m = r.request.method
     j = lambda b, s=200: r.fulfill(status=s, content_type="application/json", body=json.dumps(b))
-    if path == "ai/status": return j({"configured": True, "enabled": state["enabled"], "model": "claude-opus-5-5", "can_change": True, "acknowledged_at": None, "max_files": 12})
-    if path == "ai/settings": state["enabled"] = json.loads(r.request.post_data)["enabled"]; return j({"enabled": state["enabled"]})
+    if path == "ai/status": return j(STATUS())
+    if path == "ai/test": return j({"ok": True, "model": "Claude Opus 5.5"})
+    if path == "ai/settings":
+        b = json.loads(r.request.post_data)
+        if b.get("api_key"): state["key"] = b["api_key"]
+        if "enabled" in b:
+            if b["enabled"] and b.get("acknowledged"): state["ack"] = "2026-10-14T01:00:00"
+            state["enabled"] = b["enabled"]
+        return j(STATUS())
     if path.endswith("/texts") and path.startswith("drive/"): return j({"texts": [{"file_id": "F1", "name": "Civil Drawings Rev C.pdf", "path": "01 Client Issue Pack", "revision": "C", "status": "ok", "pages": 4, "chars": 12000}]})
     if path.startswith("ai/tenders/") and path.endswith("/draft"):
         state["props"] = [P("p1", "Retaining height conflict", "verified", True), P("p2", "Rock excavation allowance", "unverified", False)]
@@ -37,10 +47,18 @@ with sync_playwright() as p:
     pg.get_by_role("link", name="329 Hobsonville Road Childcare Centre").first.click()
     expect(pg.get_by_text("Tender overview")).to_be_visible(timeout=20000)
     pg.locator("aside").get_by_role("button", name="AI Drafting").click()
+    expect(pg.get_by_text("AI provider for this company")).to_be_visible()                      # each company brings its own provider and key
+    assert pg.eval_on_selector_all("select option", "els => els.filter(e => e.textContent.includes('(coming)')).every(e => e.disabled)")   # planned providers can't be picked
+    expect(pg.get_by_role("button", name="Test connection")).to_be_disabled()                  # no key yet
+    pg.locator("input[type=password]").fill("sk-ant-test1234abcdefgh")
+    pg.get_by_role("button", name="Save", exact=True).click()
+    expect(pg.get_by_text("saved, ends efgh")).to_be_visible()
+    pg.get_by_role("button", name="Test connection").click()
+    expect(pg.get_by_text("Connected. Model found: Claude Opus 5.5.")).to_be_visible()
     expect(pg.get_by_role("button", name="Switch on")).to_be_disabled()                       # needs the acknowledgement first
-    pg.get_by_label("I understand that the text").check() if False else pg.locator("input[type=checkbox]").first.check()
+    pg.locator("input[type=checkbox]").first.check()
     pg.get_by_role("button", name="Switch on").click()
-    expect(pg.get_by_text("Model claude-opus-5-5")).to_be_visible()
+    expect(pg.get_by_text("Anthropic (Claude) · model claude-opus-5-5")).to_be_visible()
     pg.get_by_label("Select Civil Drawings Rev C.pdf").check()
     pg.get_by_role("button", name="Draft register items (1)").click()
     expect(pg.get_by_text("Retaining height conflict")).to_be_visible(timeout=10000)

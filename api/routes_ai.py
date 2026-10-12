@@ -9,6 +9,7 @@ from fastapi.concurrency import run_in_threadpool
 import ai_client
 import ai_draft
 import config
+import drive_client
 from db import get_db
 from security import current_user
 from services import audit, new_id, now
@@ -21,30 +22,106 @@ async def _org(user: dict[str, Any]) -> dict[str, Any]:
     return await get_db().orgs.find_one({"_id": user["org_id"]}) or {}
 
 
+def _resolve(org: dict[str, Any]) -> tuple[Any, str, str, str] | None:
+    """(provider, key, model, source) for this company, or None when no usable key exists. The company's own key always wins."""
+    pid = org.get("ai_provider") or "anthropic"
+    prov = ai_client.PROVIDERS.get(pid)
+    if prov is None or not prov.available:
+        return None
+    model = (org.get("ai_model") or "").strip() or prov.default_model
+    if org.get("ai_key_enc"):
+        try:
+            return prov, drive_client.decrypt(org["ai_key_enc"]), model, "own"
+        except drive_client.DriveError:
+            return None
+    key = ai_client.platform_key(pid)
+    return (prov, key, model, "platform") if key else None
+
+
 @router.get("/status")
 async def status(user: dict[str, Any] = Depends(current_user)):
     org = await _org(user)
-    return {"configured": ai_client.configured(), "enabled": bool(org.get("ai_enabled")), "model": config.AI_MODEL, "can_change": user.get("role") == "owner",
+    res = _resolve(org)
+    pid = org.get("ai_provider") or "anthropic"
+    prov = ai_client.PROVIDERS.get(pid) or ai_client.PROVIDERS["anthropic"]
+    return {"configured": res is not None, "enabled": bool(org.get("ai_enabled")) and res is not None, "provider": prov.id, "model": (res[2] if res else (org.get("ai_model") or prov.default_model)),
+            "key_source": res[3] if res else None, "key_last4": org.get("ai_key_last4", ""), "providers": ai_client.catalogue(), "can_change": user.get("role") == "owner",
             "acknowledged_at": org["ai_ack_at"].isoformat() if org.get("ai_ack_at") else None, "max_files": MAX_FILES}
 
 
 @router.put("/settings")
 async def settings(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)):
-    """Switch AI drafting on or off for the company. Only an owner can; switching on records that the tender text is sent to Anthropic's API."""
+    """Company AI settings (owner only): provider, model, the company's own API key (write-only, stored encrypted), and the on/off switch.
+    Switching on records that the text of the documents you select is sent to the chosen provider."""
     if user.get("role") != "owner":
-        raise HTTPException(403, "Only the company owner can switch AI drafting on or off.")
-    enable = bool(body.get("enabled"))
+        raise HTTPException(403, "Only the company owner can change the AI settings.")
     db = get_db()
-    if enable:
-        if not ai_client.configured():
-            raise HTTPException(503, "AI drafting is not set up on this server yet (no Anthropic key has been added).")
-        if body.get("acknowledged") is not True:
-            raise HTTPException(422, "Please confirm that the text of the documents you select will be sent to Anthropic's API for drafting.")
-        await db.orgs.update_one({"_id": user["org_id"]}, {"$set": {"ai_enabled": True, "ai_ack_at": now(), "ai_ack_by": user["_id"]}})
-    else:
-        await db.orgs.update_one({"_id": user["org_id"]}, {"$set": {"ai_enabled": False}})
-    await audit(db, user, "ai.enable" if enable else "ai.disable", user["org_id"])
-    return {"enabled": enable}
+    org = await _org(user)
+    upd: dict[str, Any] = {}
+    unset: dict[str, str] = {}
+    pid = str(body.get("provider") or org.get("ai_provider") or "anthropic")
+    try:
+        prov = ai_client.get(pid)
+    except ai_client.AIError as e:
+        raise HTTPException(422, str(e))
+    if pid != (org.get("ai_provider") or "anthropic"):
+        upd["ai_provider"] = pid
+        unset.update({"ai_key_enc": "", "ai_key_last4": ""})       # a key belongs to one provider: changing provider drops it and switches AI off
+        upd["ai_enabled"] = False
+    if "model" in body:
+        m = str(body.get("model") or "").strip()
+        if len(m) > 80 or any(c.isspace() for c in m):
+            raise HTTPException(422, "That model name doesn't look right.")
+        upd["ai_model"] = m
+    if body.get("clear_key"):
+        unset.update({"ai_key_enc": "", "ai_key_last4": ""}); upd["ai_enabled"] = False
+    if body.get("api_key"):
+        key = str(body["api_key"]).strip()
+        try:
+            prov.check_key(key)
+        except ai_client.AIError as e:
+            raise HTTPException(422, str(e))
+        upd["ai_key_enc"] = drive_client.encrypt(key); upd["ai_key_last4"] = key[-4:]
+        unset.pop("ai_key_enc", None); unset.pop("ai_key_last4", None)
+    if "enabled" in body:
+        if body["enabled"]:
+            after = {**org, **upd}
+            for k in unset:
+                after.pop(k, None)
+            if _resolve(after) is None:
+                raise HTTPException(409, "Add this company's API key for the chosen provider first.")
+            if body.get("acknowledged") is not True and not org.get("ai_ack_at"):
+                raise HTTPException(422, f"Please confirm that the text of the documents you select will be sent to {prov.label} for drafting.")
+            upd["ai_enabled"] = True
+            if body.get("acknowledged") is True:
+                upd.update({"ai_ack_at": now(), "ai_ack_by": user["_id"], "ai_ack_provider": pid})
+        else:
+            upd["ai_enabled"] = False
+    op: dict[str, Any] = {}
+    if upd:
+        op["$set"] = upd
+    if unset:
+        op["$unset"] = unset
+    if op:
+        await db.orgs.update_one({"_id": user["org_id"]}, op)
+    await audit(db, user, "ai.settings", user["org_id"], ", ".join(sorted(k.replace("ai_", "") for k in {**upd, **unset} if k not in ("ai_key_enc",))) + (" key changed" if "ai_key_enc" in upd else ""))
+    return await status(user)
+
+
+@router.post("/test")
+async def test_connection(user: dict[str, Any] = Depends(current_user)):
+    """Free check (no tokens used) that the company's key works and the chosen model exists."""
+    if user.get("role") != "owner":
+        raise HTTPException(403, "Only the company owner can test the AI connection.")
+    res = _resolve(await _org(user))
+    if res is None:
+        raise HTTPException(409, "Add this company's API key for the chosen provider first.")
+    prov, key, model, _ = res
+    try:
+        name = await run_in_threadpool(prov.test, key, model)
+    except ai_client.AIError as e:
+        raise HTTPException(502, str(e))
+    return {"ok": True, "model": name}
 
 
 async def _tender(user, tender_id):
@@ -62,10 +139,13 @@ def _public(p: dict[str, Any]) -> dict[str, Any]:
 @router.post("/tenders/{tender_id}/draft")
 async def draft(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)):
     t = await _tender(user, tender_id)
-    if not ai_client.configured():
-        raise HTTPException(503, "AI drafting is not set up on this server yet (no Anthropic key has been added).")
-    if not (await _org(user)).get("ai_enabled"):
+    org = await _org(user)
+    res = _resolve(org)
+    if res is None:
+        raise HTTPException(503, "AI drafting is not set up for your company yet (no API key). The owner can add one in AI Drafting.")
+    if not org.get("ai_enabled"):
         raise HTTPException(403, "AI drafting is switched off for your company. The owner can switch it on in AI Drafting.")
+    prov, key, model, _src = res
     ids = [str(i) for i in body.get("file_ids", [])][:MAX_FILES]
     if not ids:
         raise HTTPException(422, f"Choose at least one document that has been read (up to {MAX_FILES}).")
@@ -86,7 +166,7 @@ async def draft(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Dep
     existing = (est.get("register") or [])
     user_msg = ai_draft.build_user_message(meta, docs, existing)
     try:
-        data = await run_in_threadpool(ai_client.draft_json, ai_draft.SYSTEM, user_msg, ai_draft.SCHEMA)
+        data = await run_in_threadpool(prov.draft_json, key, model, ai_draft.SYSTEM, user_msg, ai_draft.SCHEMA)
     except ai_client.AIError as e:
         await audit(db, user, "ai.draft_failed", t["_id"], str(e)[:200])
         raise HTTPException(502, str(e))
@@ -95,13 +175,13 @@ async def draft(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Dep
     stamp = now()
     docs_out = []
     for it in items:
-        doc = {"_id": new_id(), "org_id": user["org_id"], "tender_id": t["_id"], "batch": batch, "created_at": stamp, "created_by": user["_id"], "model": config.AI_MODEL,
+        doc = {"_id": new_id(), "org_id": user["org_id"], "tender_id": t["_id"], "batch": batch, "created_at": stamp, "created_by": user["_id"], "model": model, "provider": prov.id,
                "prompt_version": ai_draft.PROMPT_VERSION, "file_ids": [d["file_id"] for d in docs], **{k: it[k] for k in ("kind", "title", "detail", "impact", "rag", "basis", "evidence", "status", "problems")},
                "decision": None}
         docs_out.append(doc)
     if docs_out:
         await db.ai_proposals.insert_many(docs_out)
-    await db.ai_batches.insert_one({"_id": batch, "org_id": user["org_id"], "tender_id": t["_id"], "created_at": stamp, "created_by": user["_id"], "model": config.AI_MODEL,
+    await db.ai_batches.insert_one({"_id": batch, "org_id": user["org_id"], "tender_id": t["_id"], "created_at": stamp, "created_by": user["_id"], "model": model, "provider": prov.id,
                                     "prompt_version": ai_draft.PROMPT_VERSION, "file_ids": [d["file_id"] for d in docs], "chars": chars,
                                     "coverage_notes": str(data.get("coverage_notes", ""))[:2000], "counts": {s: sum(1 for i in items if i["status"] == s) for s in ("verified", "gap", "unverified", "duplicate")}})
     await audit(db, user, "ai.draft", t["_id"], f"{len(docs)} files, {chars} chars, {len(items)} proposals")

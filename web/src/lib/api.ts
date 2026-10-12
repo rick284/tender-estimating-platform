@@ -74,7 +74,8 @@ export interface DriveListing {
   counts: { files: number; latest_revisions: number; superseded: number; ambiguous_groups: number; loose_in_root: number };
 }
 
-export interface AiStatus { configured: boolean; enabled: boolean; model: string; can_change: boolean; acknowledged_at: string | null; max_files: number }
+export interface AiProviderInfo { id: string; label: string; available: boolean; default_model: string; key_hint: string }
+export interface AiStatus { configured: boolean; enabled: boolean; provider: string; model: string; key_source: "own" | "platform" | null; key_last4: string; providers: AiProviderInfo[]; can_change: boolean; acknowledged_at: string | null; max_files: number }
 export interface AiEvidence { file_id: string; file: string; page: number; quote: string; verified: boolean }
 export interface AiProposal {
   id: string; batch: string; kind: "document" | "rfi" | "assumption" | "exclusion" | "inclusion" | "risk"; title: string; detail: string; impact: string; rag: "RED" | "AMBER";
@@ -86,7 +87,8 @@ export interface DriveTextSummary { file_id: string; name: string; path: string;
 export const api = {
   driveTexts: (id: string) => request<{ texts: DriveTextSummary[] }>(`/api/drive/tenders/${id}/texts`),
   aiStatus: () => request<AiStatus>("/api/ai/status"),
-  aiSettings: (enabled: boolean, acknowledged: boolean) => request<{ enabled: boolean }>("/api/ai/settings", { method: "PUT", body: JSON.stringify({ enabled, acknowledged }) }),
+  aiSettings: (b: { provider?: string; model?: string; api_key?: string; clear_key?: boolean; enabled?: boolean; acknowledged?: boolean }) => request<AiStatus>("/api/ai/settings", { method: "PUT", body: JSON.stringify(b) }),
+  aiTest: () => request<{ ok: boolean; model: string }>("/api/ai/test", { method: "POST" }),
   aiDraft: (id: string, fileIds: string[]) => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ file_ids: fileIds }) }),
   aiProposals: (id: string) => request<{ proposals: AiProposal[] }>(`/api/ai/tenders/${id}/proposals`),
   aiAccept: (pid: string) => request<{ decision: "accepted"; edit: { target: string; op: "add"; key: string; value: Record<string, unknown> } }>(`/api/ai/proposals/${pid}/decision`, { method: "POST", body: JSON.stringify({ decision: "accepted" }) }),

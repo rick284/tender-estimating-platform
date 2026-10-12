@@ -59,10 +59,14 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
   const [ack, setAck] = useState(false);
+  const [provider, setProvider] = useState("anthropic");
+  const [model, setModel] = useState("");
+  const [key, setKey] = useState("");
+  const [msg, setMsg] = useState("");
 
   const load = useCallback(async () => {
     try {
-      setStatus(await api.aiStatus());
+      const st = await api.aiStatus(); setStatus(st); setProvider(st.provider); setModel(st.model);
       setTexts((await api.driveTexts(tenderId)).texts.filter((t) => t.status === "ok" || t.status === "partial"));
       setProps((await api.aiProposals(tenderId)).proposals);
     } catch (e) { setErr((e as Error).message); }
@@ -88,10 +92,10 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
     setErr("");
     try { await api.aiReject(p.id, reason); setProps((await api.aiProposals(tenderId)).proposals); } catch (e) { setErr((e as Error).message); }
   };
-  const setOn = async (on: boolean) => {
-    setErr("");
-    try { await api.aiSettings(on, on ? ack : false); setStatus(await api.aiStatus()); } catch (e) { setErr((e as Error).message); }
-  };
+  const call = async (fn: () => Promise<AiStatus>) => { setErr(""); setMsg(""); try { const st = await fn(); setStatus(st); setProvider(st.provider); setModel(st.model); setKey(""); } catch (e) { setErr((e as Error).message); } };
+  const setOn = (on: boolean) => call(() => api.aiSettings({ enabled: on, acknowledged: on ? ack || !!status?.acknowledged_at : false }));
+  const save = () => call(() => api.aiSettings({ provider, model: model.trim(), ...(key.trim() ? { api_key: key.trim() } : {}) }));
+  const test = async () => { setErr(""); setMsg(""); try { const r = await api.aiTest(); setMsg(`Connected. Model found: ${r.model}.`); } catch (e) { setErr((e as Error).message); } };
   const open = props.filter((p) => !p.decision);
   const decided = props.filter((p) => p.decision);
 
@@ -99,14 +103,34 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
     <div>
       <PageHeader title="AI Drafting" sub="The AI reads the documents you choose and proposes register items: documents, RFIs, assumptions, exclusions, inclusions and risks. It drafts only. Every proposal must quote the document, and the platform checks each quote. Nothing enters the estimate until you accept it into your draft and save a revision." />
       {err && <div role="alert" className="mb-4 border border-red-line bg-red-bg px-4 py-3 text-sm text-red-fg">{err}</div>}
-      {status && !status.configured && <Empty title="AI drafting is not switched on yet" body="No Anthropic key has been added to the server. Once it is, you will be able to switch AI drafting on here." />}
-      {status?.configured && !status.enabled && (
-        <Panel title="Switch on AI drafting">
-          <p className="mb-3 text-sm">When you run a draft, the <strong>text of the documents you select</strong> is sent to Anthropic's API (model {status.model}) to be read. Nothing is sent until you press Draft, and only the documents you tick. Nothing it proposes changes the estimate without your approval.</p>
+      {status && status.can_change && (
+        <Panel title="AI provider for this company" className="mb-4">
+          <div className="grid gap-4 text-sm sm:grid-cols-3">
+            <label className="block"><span className="label">Provider</span>
+              <select className="mt-1 h-10 w-full border bg-background px-3 focus:border-primary" value={provider} onChange={(e) => { setProvider(e.target.value); const p = status.providers.find((x) => x.id === e.target.value); setModel(p?.default_model ?? ""); }}>
+                {status.providers.map((p) => <option key={p.id} value={p.id} disabled={!p.available}>{p.label}{p.available ? "" : " (coming)"}</option>)}
+              </select></label>
+            <label className="block"><span className="label">Model</span><input className="mt-1 h-10 w-full border bg-background px-3 focus:border-primary" value={model} onChange={(e) => setModel(e.target.value)} maxLength={80} /></label>
+            <label className="block"><span className="label">{status.key_last4 ? `API key (saved, ends ${status.key_last4}; paste to replace)` : "API key"}</span>
+              <input type="password" autoComplete="off" className="mt-1 h-10 w-full border bg-background px-3 focus:border-primary" value={key} onChange={(e) => setKey(e.target.value)} placeholder={status.key_last4 ? "••••••••••••" : "sk-ant-…"} /></label>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">{status.providers.find((p) => p.id === provider)?.key_hint} The key is stored encrypted, is never shown again, and is used only for this company.{status.key_source === "platform" && " This company is currently using the platform's key."}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button className="btn btn-solid" onClick={save} disabled={!key.trim() && provider === status.provider && model === status.model}>Save</button>
+            <button className="btn btn-ghost" onClick={test} disabled={!status.configured}>Test connection</button>
+            {status.key_source === "own" && <button className="underline underline-offset-4 text-sm" onClick={() => call(() => api.aiSettings({ clear_key: true }))}>Remove key</button>}
+            {msg && <span className="text-sm text-green-fg">{msg}</span>}
+          </div>
+        </Panel>
+      )}
+      {status && !status.configured && !status.can_change && <Empty title="AI drafting is not set up for your company" body="The company owner needs to add an AI provider key." />}
+      {status && status.configured && !status.enabled && (
+        <Panel title="Switch on AI drafting" className="mb-4">
+          <p className="mb-3 text-sm">When you run a draft, the <strong>text of the documents you select</strong> is sent to {status.providers.find((p) => p.id === status.provider)?.label} (model {status.model}) to be read. Nothing is sent until you press Draft, and only the documents you tick. Nothing it proposes changes the estimate without your approval.</p>
           {status.can_change ? (
             <>
-              <label className="mb-3 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={ack} onChange={(e) => setAck(e.target.checked)} /> I understand that the text of the documents I select will be sent to Anthropic's API for drafting.</label>
-              <button className="btn btn-solid" disabled={!ack} onClick={() => setOn(true)}>Switch on</button>
+              {!status.acknowledged_at && <label className="mb-3 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={ack} onChange={(e) => setAck(e.target.checked)} /> I understand that the text of the documents I select will be sent to this provider for drafting.</label>}
+              <button className="btn btn-solid" disabled={!ack && !status.acknowledged_at} onClick={() => setOn(true)}>Switch on</button>
             </>
           ) : <p className="text-sm text-muted-foreground">Only the company owner can switch this on.</p>}
         </Panel>
@@ -114,7 +138,7 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
       {status?.configured && status.enabled && (
         <>
           <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
-            <Chip tone="green">On</Chip><span>Model {status.model}</span>
+            <Chip tone="green">On</Chip><span>{status.providers.find((p) => p.id === status.provider)?.label} · model {status.model}</span>
             {status.can_change && <button className="underline underline-offset-4" onClick={() => setOn(false)}>Switch off</button>}
           </div>
           <Panel title="1. Choose documents (already read from Drive)" className="mb-4">

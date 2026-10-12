@@ -33,8 +33,7 @@ services:
         value: https://tender-estimating-platform.netlify.app
       - key: TOKEN_ENC_KEY
         generateValue: true  # encrypts the saved Google connection
-      # AI drafting (Anthropic) - see docs/AI_SETUP.md. Leave ANTHROPIC_API_KEY blank until the key exists.
-      - key: ANTHROPIC_API_KEY
-        sync: false
+      # AI drafting: each company enters its OWN provider key on the AI Drafting page (stored encrypted). Nothing is needed here.
+      # Optional managed-service arrangement only: set ANTHROPIC_API_KEY and AI_ALLOW_PLATFORM_KEY=true to let companies without a key use yours.
       - key: AI_MODEL
         value: claude-opus-5-5

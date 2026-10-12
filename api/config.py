@@ -44,5 +44,7 @@ if IS_PROD and GOOGLE_CLIENT_ID and len(TOKEN_ENC_KEY) < 32:
 
 # AI drafting (Anthropic API). Optional: without a key the AI features say "not set up yet".
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-AI_MODEL = os.environ.get("AI_MODEL", "claude-opus-5-5").strip()
+AI_MODEL = os.environ.get("AI_MODEL", "claude-opus-5-5").strip()        # default model for new companies
+# Each company brings its own AI key (stored encrypted). A server-wide ANTHROPIC_API_KEY is used ONLY when this is explicitly switched on (managed service).
+AI_ALLOW_PLATFORM_KEY = os.environ.get("AI_ALLOW_PLATFORM_KEY", "false").lower() == "true"
 AI_MAX_INPUT_CHARS = int(os.environ.get("AI_MAX_INPUT_CHARS", "400000"))      # about 100k tokens of document text per run

@@ -37,7 +37,6 @@ def item(kind="rfi", title="Retaining height conflict", basis="quoted", ev=None,
 
 @pytest.fixture()
 def ai(client, auth, monkeypatch):
-    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "sk-test")
     tid = client.post("/api/tenders", headers=auth, files={"file": ("a.xlsx", make_workbook())}).json()["id"]
 
     async def seed():
@@ -50,8 +49,12 @@ def ai(client, auth, monkeypatch):
     return tid
 
 
-def on(client, auth):
-    assert client.put("/api/ai/settings", headers=auth, json={"enabled": True, "acknowledged": True}).status_code == 200
+KEY = "sk-ant-test1234abcdefgh"
+
+
+def on(client, auth, **extra):
+    r = client.put("/api/ai/settings", headers=auth, json={"api_key": KEY, "enabled": True, "acknowledged": True, **extra})
+    assert r.status_code == 200, r.text
 
 
 def run(client, auth, tid, fake, files=("F-civil", "F-arch")):
@@ -62,31 +65,68 @@ def run(client, auth, tid, fake, files=("F-civil", "F-arch")):
         ai_client.CLIENT = None
 
 
-def test_switched_off_until_the_owner_acknowledges(client, auth, ai):
+def test_each_company_brings_its_own_key_and_the_owner_switches_it_on(client, auth, ai):
     st = client.get("/api/ai/status", headers=auth).json()
-    assert st["configured"] and not st["enabled"] and st["can_change"] and st["model"] == "claude-opus-5-5"
-    assert run(client, auth, ai, FakeClient([])).status_code == 403                                             # off by default
-    assert client.put("/api/ai/settings", headers=auth, json={"enabled": True}).status_code == 422             # needs the acknowledgement
-    assert client.put("/api/ai/settings", headers=auth, json={"enabled": True, "acknowledged": True}).status_code == 200
-    assert client.get("/api/ai/status", headers=auth).json()["enabled"] is True
-    assert client.put("/api/ai/settings", headers=auth, json={"enabled": False}).status_code == 200
-    assert client.get("/api/ai/status", headers=auth).json()["enabled"] is False
+    assert st["configured"] is False and st["enabled"] is False and st["can_change"] and st["provider"] == "anthropic" and st["model"] == "claude-opus-5-5"
+    assert {p["id"]: p["available"] for p in st["providers"]} == {"anthropic": True, "openai": False, "google": False}
+    assert run(client, auth, ai, FakeClient([])).status_code == 503                                             # no key yet
+    assert client.put("/api/ai/settings", headers=auth, json={"enabled": True, "acknowledged": True}).status_code == 409           # needs a key first
+    assert client.put("/api/ai/settings", headers=auth, json={"api_key": KEY, "enabled": True}).status_code == 422                 # needs the acknowledgement
+    r = client.put("/api/ai/settings", headers=auth, json={"api_key": KEY, "enabled": True, "acknowledged": True})
+    assert r.status_code == 200 and r.json()["enabled"] and r.json()["key_source"] == "own" and r.json()["key_last4"] == "efgh"
+    assert KEY not in json.dumps(client.get("/api/ai/status", headers=auth).json()) and KEY not in r.text                           # the key never comes back
+    org = asyncio.run(dbmod.get_db().orgs.find_one({}))
+    assert org["ai_key_enc"] != KEY and KEY not in str(org) and org["ai_ack_provider"] == "anthropic"                              # stored encrypted
+    assert client.put("/api/ai/settings", headers=auth, json={"enabled": False}).json()["enabled"] is False
+    assert run(client, auth, ai, FakeClient([])).status_code == 403                                             # switched off again
+    assert client.put("/api/ai/settings", headers=auth, json={"enabled": True}).json()["enabled"] is True        # already acknowledged: no need to repeat
 
 
-def test_not_configured_without_a_key(client, auth, monkeypatch):
-    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "")
+def test_key_and_provider_rules(client, auth, ai):
+    on(client, auth)
+    assert client.put("/api/ai/settings", headers=auth, json={"api_key": "not-a-key"}).status_code == 422
+    assert client.put("/api/ai/settings", headers=auth, json={"provider": "openai"}).status_code == 422            # planned, not available yet
+    assert client.put("/api/ai/settings", headers=auth, json={"provider": "nonsense"}).status_code == 422
+    assert client.put("/api/ai/settings", headers=auth, json={"model": "has space"}).status_code == 422
+    assert client.put("/api/ai/settings", headers=auth, json={"model": "claude-sonnet-5-5"}).json()["model"] == "claude-sonnet-5-5"
+    fake = FakeClient([item()])
+    assert run(client, auth, ai, fake).status_code == 200 and fake.calls[0]["model"] == "claude-sonnet-5-5"        # the company's model is the one used
+    r = client.put("/api/ai/settings", headers=auth, json={"clear_key": True}).json()
+    assert r["configured"] is False and r["enabled"] is False and r["key_last4"] == ""                              # removing the key switches AI off
+
+
+def test_a_server_wide_key_is_ignored_unless_the_operator_allows_it(client, auth, monkeypatch):
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "sk-ant-platform0000000000")
     assert client.get("/api/ai/status", headers=auth).json()["configured"] is False
-    assert client.put("/api/ai/settings", headers=auth, json={"enabled": True, "acknowledged": True}).status_code == 503
+    monkeypatch.setattr(config, "AI_ALLOW_PLATFORM_KEY", True)
+    st = client.get("/api/ai/status", headers=auth).json()
+    assert st["configured"] is True and st["key_source"] == "platform"
+    on(client, auth)                                                                                                # the company's own key then takes over
+    assert client.get("/api/ai/status", headers=auth).json()["key_source"] == "own"
 
 
-def test_only_the_owner_can_switch_it_on(client, auth, monkeypatch):
-    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "sk-test")
-
-    async def demote():
-        await dbmod.get_db().users.update_many({}, {"$set": {"role": "member"}})
-    asyncio.run(demote())
-    assert client.put("/api/ai/settings", headers=auth, json={"enabled": True, "acknowledged": True}).status_code == 403
+def test_only_the_owner_can_change_settings(client, auth, ai):
+    asyncio.run(dbmod.get_db().users.update_many({}, {"$set": {"role": "member"}}))
+    assert client.put("/api/ai/settings", headers=auth, json={"api_key": KEY, "enabled": True, "acknowledged": True}).status_code == 403
+    assert client.post("/api/ai/test", headers=auth).status_code == 403
     assert client.get("/api/ai/status", headers=auth).json()["can_change"] is False
+
+
+def test_connection_test_is_free_and_explains_failures(client, auth, ai):
+    assert client.post("/api/ai/test", headers=auth).status_code == 409                                             # no key
+    on(client, auth)
+    class Ok:
+        models = SimpleNamespace(retrieve=lambda m: SimpleNamespace(display_name="Claude Opus 5.5", id=m))
+    ai_client.CLIENT = Ok()
+    try:
+        assert client.post("/api/ai/test", headers=auth).json() == {"ok": True, "model": "Claude Opus 5.5"}
+        for name, text in (("AuthenticationError", "did not accept this key"), ("NotFoundError", "does not know that model"), ("RateLimitError", "out of credit")):
+            exc = type(name, (Exception,), {})("x")
+            ai_client.CLIENT = SimpleNamespace(models=SimpleNamespace(retrieve=lambda m, e=exc: (_ for _ in ()).throw(e)))
+            r = client.post("/api/ai/test", headers=auth)
+            assert r.status_code == 502 and text in r.json()["detail"]
+    finally:
+        ai_client.CLIENT = None
 
 
 def test_draft_sends_only_the_chosen_text_with_the_rules_and_checks_every_quote(client, auth, ai):
@@ -178,6 +218,8 @@ def test_size_limit_and_company_isolation(client, auth, ai, monkeypatch):
     assert client.get(f"/api/ai/tenders/{ai}/proposals", headers=other).status_code == 404
     assert client.post(f"/api/ai/proposals/{pid}/decision", headers=other, json={"decision": "accepted"}).status_code == 404
     assert client.post(f"/api/ai/tenders/{ai}/draft", headers=other, json={"file_ids": ["F-civil"]}).status_code == 404
+    st = client.get("/api/ai/status", headers=other).json()                                                          # the other company has no key of its own
+    assert st["configured"] is False and st["key_last4"] == ""
 
 
 def test_the_real_client_path_handles_sdk_errors_without_a_network(monkeypatch):
@@ -187,7 +229,7 @@ def test_the_real_client_path_handles_sdk_errors_without_a_network(monkeypatch):
     for name, text in (("AuthenticationError", "did not accept"), ("RateLimitError", "out of credit"), ("APITimeoutError", "could not be reached"), ("Weird", "returned an error")):
         ai_client.CLIENT = Boom(type(name, (Exception,), {})("x"))
         with pytest.raises(ai_client.AIError, match=text):
-            ai_client.draft_json("s", "u", ai_draft.SCHEMA)
+            ai_client.PROVIDERS["anthropic"].draft_json(KEY, "m", "s", "u", ai_draft.SCHEMA)
     # a beta-field rejection is retried once on the plain endpoint
     calls = []
     class Twice:
@@ -196,5 +238,5 @@ def test_the_real_client_path_handles_sdk_errors_without_a_network(monkeypatch):
             def plain(**kw): calls.append("plain"); return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text='{"items": [], "coverage_notes": ""}')])
             self.beta = SimpleNamespace(messages=SimpleNamespace(create=beta)); self.messages = SimpleNamespace(create=plain)
     ai_client.CLIENT = Twice()
-    assert ai_client.draft_json("s", "u", ai_draft.SCHEMA)["items"] == [] and calls == ["beta", "plain"]
+    assert ai_client.PROVIDERS["anthropic"].draft_json(KEY, "m", "s", "u", ai_draft.SCHEMA)["items"] == [] and calls == ["beta", "plain"]
     ai_client.CLIENT = None

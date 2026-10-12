@@ -1,22 +1,22 @@
-# Switching on AI drafting (one-off, about 10 minutes)
+# Switching on AI drafting (about 10 minutes, once per company)
 
-AI drafting reads the documents you choose and proposes tender-register items (documents, RFIs, assumptions, exclusions, inclusions, risks).
-It drafts only; every proposal must quote the document, the platform checks each quote, and nothing enters the estimate until you accept it and save a revision.
-It is billed by use on a separate Anthropic account (not your Claude chat subscription).
+Each company brings its own AI provider account and key. Nothing is set on the server. The key is entered on the AI Drafting page, stored encrypted,
+never shown again, and used only for that company. AI drafting reads the documents you choose and proposes tender-register items; it only drafts, every
+proposal must quote the document (the platform checks each quote), and nothing enters the estimate until you accept it and save a revision.
 
-## A. Account, credit and a spending limit
-1. Open https://console.anthropic.com and sign in with the 3bears email (organisation name: Three Bears Projects).
+## A. The provider account (Anthropic is the first provider supported)
+1. Open https://console.anthropic.com and sign in (organisation name: your company).
 2. Settings > Billing: add a payment method and buy a small credit amount (US$20 is plenty for testing). Turn auto-reload OFF.
 3. Settings > Limits: set a monthly spend limit of about US$20.
+4. Settings > API keys > Create key (name it `tender-platform`). Copy it once into a password manager. Never paste it into a chat or email.
 
-## B. The key (keep it private: never paste it in a chat or email)
-1. Settings > API keys > Create key. Name it `tender-platform`. Copy it once and store it in a password manager.
-2. Render dashboard > tender-platform-api > Environment > add `ANTHROPIC_API_KEY` = the key. Save (Render restarts, a couple of minutes).
-   (`AI_MODEL` is already set by the blueprint to claude-opus-5-5; leave it.)
+## B. In the platform (company owner only)
+1. Open any tender > AI Drafting > "AI provider for this company".
+2. Provider: Anthropic (Claude). Model: leave the default. Paste the key > Save > Test connection (free; checks the key and the model exist).
+3. Tick the acknowledgement (the text of the documents you choose is sent to the provider) > Switch on.
 
-## C. Switch it on in the platform
-Tender > AI Drafting > tick the acknowledgement (the text of the documents you choose is sent to Anthropic's API) > Switch on. Only the company owner can.
-Then: Drive Documents (read some files) > AI Drafting > tick documents > Draft register items > review each proposal > Edit > Accept into my draft > Review and save.
+## C. Using it
+Drive Documents: read some files. AI Drafting: tick documents > Draft register items > review each proposal > Edit > Accept into my draft > Review and save.
 
 ## What is sent, and what is not
 Only the text of the documents you tick, plus the tender's name, location, client and the titles already in its register. No rates, no costs, no workbook, no mailbox.
