@@ -14,23 +14,41 @@ SHEET_RE = re.compile(r"\b([A-Z]{1,2}\d{1,2}(?:\.\d{1,2})?)\b")
 
 
 def page_count(pdf: bytes) -> int:
-    return len(pdfium.PdfDocument(pdf))
+    doc = pdfium.PdfDocument(pdf)
+    try:
+        return len(doc)
+    finally:
+        doc.close()
 
 
 def render_page(pdf: bytes, n: int, scale: float = 1.5, max_side: int = 3000) -> bytes:
     """PNG of page n (1-based). The scale is reduced so the longest side never exceeds max_side pixels."""
     doc = pdfium.PdfDocument(pdf)
-    page = doc[n - 1]
-    w, h = page.get_size()
-    s = min(scale, max_side / max(w, h))
-    buf = io.BytesIO()
-    page.render(scale=s).to_pil().save(buf, format="PNG", optimize=True)
-    return buf.getvalue()
+    try:
+        page = doc[n - 1]
+        try:
+            w, h = page.get_size()
+            s = min(scale, max_side / max(w, h))
+            buf = io.BytesIO()
+            page.render(scale=s).to_pil().save(buf, format="PNG", optimize=True)
+            return buf.getvalue()
+        finally:
+            page.close()
+    finally:
+        doc.close()
 
 
 def crop_page(pdf: bytes, n: int, box: tuple[float, float, float, float], scale: float = 3.0) -> bytes:
     """PNG of a region of page n. box = (x0, y0, x1, y1) as fractions of the page (0-1, origin top left), so a closer look can be asked for."""
-    img = pdfium.PdfDocument(pdf)[n - 1].render(scale=scale).to_pil()
+    doc = pdfium.PdfDocument(pdf)
+    try:
+        page = doc[n - 1]
+        try:
+            img = page.render(scale=scale).to_pil()
+        finally:
+            page.close()
+    finally:
+        doc.close()
     iw, ih = img.size
     x0, y0, x1, y1 = box
     buf = io.BytesIO()
@@ -42,12 +60,18 @@ def page_texts(pdf: bytes) -> list[dict[str, Any]]:
     """One entry per page: {n, width, height, text, title_block}. title_block is the text in the bottom-right corner, where sheet numbers live."""
     out = []
     doc = pdfium.PdfDocument(pdf)
-    for i in range(len(doc)):
-        page = doc[i]
-        w, h = page.get_size()
-        tp = page.get_textpage()
-        out.append({"n": i + 1, "width": float(w), "height": float(h), "text": tp.get_text_range(),
-                    "title_block": tp.get_text_bounded(left=w * 0.86, bottom=0, right=w, top=h * 0.09)})
+    try:
+        for i in range(len(doc)):
+            page = doc[i]                       # each page and its text layer are closed straight away: left open, a 52-page A2 set costs over 300 MB
+            tp = page.get_textpage()
+            try:
+                w, h = page.get_size()
+                out.append({"n": i + 1, "width": float(w), "height": float(h), "text": tp.get_text_range(),
+                            "title_block": tp.get_text_bounded(left=w * 0.86, bottom=0, right=w, top=h * 0.09)})
+            finally:
+                tp.close(); page.close()
+    finally:
+        doc.close()
     return out
 
 
@@ -89,14 +113,11 @@ def _variants(value: Any) -> list[str]:
     return list(dict.fromkeys(s for s in out if s))
 
 
-def locate(pdf: bytes, n: int, quote: str, value: Any = None) -> dict[str, Any]:
-    """Where on page n (1-based) the quoted text is written. Returns {"how": "quote"|"number"|"none", "rects": [{"x0","y0","x1","y1"}], "width", "height"},
+def _locate(page: Any, tp: Any, quote: str, value: Any) -> dict[str, Any]:
+    """Where on the page (1-based) the quoted text is written. Returns {"how": "quote"|"number"|"none", "rects": [{"x0","y0","x1","y1"}], "width", "height"},
     rectangles as fractions of the page, origin top-left, so they can be drawn over an image of any size.
     Deterministic text search (no AI): first the whole quote, then the number itself, preferring the occurrence whose surroundings share the most words with the quote."""
-    doc = pdfium.PdfDocument(pdf)
-    page = doc[n - 1]
     w, h = page.get_size()
-    tp = page.get_textpage()
     full = tp.get_text_range()
 
     def boxes(idx: int, cnt: int) -> dict[str, float]:
@@ -149,3 +170,17 @@ def sheet_list(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             titles.setdefault(m.group(1), m.group(2).strip())
     by_page = {n: c for c, n in sheet_map(pages).items()}
     return [{"page": p["n"], "code": by_page.get(p["n"], ""), "title": titles.get(by_page.get(p["n"], ""), "")} for p in pages]
+
+
+def locate(pdf: bytes, n: int, quote: str, value: Any = None) -> dict[str, Any]:
+    """Where on page n (1-based) the quoted text is written (see `_locate`). Opens and closes the PDF so nothing stays in memory."""
+    doc = pdfium.PdfDocument(pdf)
+    try:
+        page = doc[n - 1]
+        tp = page.get_textpage()
+        try:
+            return _locate(page, tp, quote, value)
+        finally:
+            tp.close(); page.close()
+    finally:
+        doc.close()

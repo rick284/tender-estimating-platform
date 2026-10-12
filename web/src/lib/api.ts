@@ -15,20 +15,30 @@ export class ApiError extends Error {
 let onUnauthorized: () => void = () => {};
 export function setUnauthorizedHandler(fn: () => void) { onUnauthorized = fn; }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+const LONG = 600_000;           // AI takeoff / drafting runs can take several minutes
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function request<T>(path: string, init: RequestInit = {}, timeoutMs = 90_000): Promise<T> {
   const headers = new Headers(init.headers);
   const t = tokenStore.get();
   if (t) headers.set("Authorization", `Bearer ${t}`);
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
-  let res: Response;
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 90_000);
-  try { res = await fetch(`${BASE}${path}`, { ...init, headers, signal: ctl.signal }); }
-  catch (e) {
-    throw new ApiError(0, e instanceof DOMException && e.name === "AbortError"
-      ? "The server took too long to answer (over 90 seconds). It may be waking up; wait a minute and try again."
-      : "Can't reach the server. Check your connection and try again.");
-  } finally { clearTimeout(timer); }
+  const reads = (init.method ?? "GET").toUpperCase() === "GET";
+  let res: Response | undefined;
+  // The free server sleeps when idle and restarts after every update: a read that fails to connect is retried twice before the user sees a message.
+  for (let attempt = 0; attempt < (reads ? 3 : 1); attempt++) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), timeoutMs);
+    try { res = await fetch(`${BASE}${path}`, { ...init, headers, signal: ctl.signal }); break; }
+    catch (e) {
+      const aborted = e instanceof DOMException && e.name === "AbortError";
+      if (!aborted && attempt < 2 && reads) { await sleep(attempt === 0 ? 3000 : 8000); continue; }
+      throw new ApiError(0, aborted
+        ? `The server took too long to answer (over ${Math.round(timeoutMs / 1000)} seconds). If this was an AI run it may still have finished: open the page again to see its results. Otherwise the server may be waking up; wait a minute and try again.`
+        : "Can't reach the server. It may be restarting (it sleeps when idle and restarts after every update), so wait a minute and try again. If it keeps happening, check your internet connection or a VPN / ad blocker.");
+    } finally { clearTimeout(timer); }
+  }
+  if (!res) throw new ApiError(0, "Can't reach the server. Try again in a minute.");
   if (!res.ok) {
     let msg = `The server returned an error (${res.status}).`;
     try {
@@ -111,20 +121,20 @@ export async function fetchBlobUrl(path: string): Promise<string> {
 
 export const api = {
   takeoffSources: (lid: string) => request<{ line: string; description: string; sources: TakeoffSource[] }>(`/api/takeoff/lines/${lid}/sources`),
-  takeoffSheets: (tid: string, fid: string) => request<{ file: string; pages: SheetInfo[]; scale: Record<string, string> }>(`/api/takeoff/tenders/${tid}/files/${encodeURIComponent(fid)}/sheets`),
+  takeoffSheets: (tid: string, fid: string) => request<{ file: string; pages: SheetInfo[]; scale: Record<string, string> }>(`/api/takeoff/tenders/${tid}/files/${encodeURIComponent(fid)}/sheets`, {}, 180_000),
   pageImageUrl: (tid: string, fid: string, page: number) => fetchBlobUrl(`/api/takeoff/tenders/${tid}/files/${encodeURIComponent(fid)}/pages/${page}/image`),
   takeoffRun: (id: string, fileIds: string[], pictures: { file_id: string; page: number }[]) =>
-    request<{ run: string; lines: TakeoffLine[]; not_measurable: { what: string; why: string }[]; files_sent: string[]; pictures: number }>(`/api/takeoff/tenders/${id}/run`, { method: "POST", body: JSON.stringify({ file_ids: fileIds, pictures }) }),
+    request<{ run: string; lines: TakeoffLine[]; not_measurable: { what: string; why: string }[]; files_sent: string[]; pictures: number }>(`/api/takeoff/tenders/${id}/run`, { method: "POST", body: JSON.stringify({ file_ids: fileIds, pictures }) }, LONG),
   takeoffLines: (id: string) => request<{ lines: TakeoffLine[] }>(`/api/takeoff/tenders/${id}/lines`),
   takeoffAccept: (lid: string, commit: boolean) => request<{ decision: "accepted" | "pending"; qs: TakeoffQs }>(`/api/takeoff/lines/${lid}/decision`, { method: "POST", body: JSON.stringify({ decision: "accepted", commit }) }),
   takeoffReject: (lid: string, reason: string) => request<{ decision: "rejected" }>(`/api/takeoff/lines/${lid}/decision`, { method: "POST", body: JSON.stringify({ decision: "rejected", reason }) }),
   aiIntakePlan: (id: string) => request<IntakePlan>(`/api/ai/tenders/${id}/intake/plan`),
-  aiDraftParts: (id: string, parts: IntakePart[], run: string) => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ parts, run }) }),
+  aiDraftParts: (id: string, parts: IntakePart[], run: string) => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ parts, run }) }, LONG),
   driveTexts: (id: string) => request<{ texts: DriveTextSummary[] }>(`/api/drive/tenders/${id}/texts`),
   aiStatus: () => request<AiStatus>("/api/ai/status"),
   aiSettings: (b: { provider?: string; model?: string; api_key?: string; clear_key?: boolean; enabled?: boolean; acknowledged?: boolean }) => request<AiStatus>("/api/ai/settings", { method: "PUT", body: JSON.stringify(b) }),
   aiTest: () => request<{ ok: boolean; model: string }>("/api/ai/test", { method: "POST" }),
-  aiDraft: (id: string, fileIds: string[]) => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ file_ids: fileIds }) }),
+  aiDraft: (id: string, fileIds: string[]) => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ file_ids: fileIds }) }, LONG),
   aiProposals: (id: string) => request<{ proposals: AiProposal[] }>(`/api/ai/tenders/${id}/proposals`),
   aiAccept: (pid: string) => request<{ decision: "accepted"; edit: { target: string; op: "add"; key: string; value: Record<string, unknown> } }>(`/api/ai/proposals/${pid}/decision`, { method: "POST", body: JSON.stringify({ decision: "accepted" }) }),
   aiReject: (pid: string, reason: string) => request<{ decision: "rejected" }>(`/api/ai/proposals/${pid}/decision`, { method: "POST", body: JSON.stringify({ decision: "rejected", reason }) }),
@@ -135,7 +145,7 @@ export const api = {
   driveTender: (id: string) => request<{ folder: { id: string; name: string; url: string; linked_at: string } | null }>(`/api/drive/tenders/${id}`),
   driveLink: (id: string, folderId: string) => request<{ folder: { id: string; name: string; url: string } }>(`/api/drive/tenders/${id}`, { method: "PUT", body: JSON.stringify({ folder_id: folderId }) }),
   driveUnlink: (id: string) => request<{ ok: boolean }>(`/api/drive/tenders/${id}`, { method: "DELETE" }),
-  driveRead: (id: string, fileIds: string[]) => request<{ results: DriveReadResult[] }>(`/api/drive/tenders/${id}/read`, { method: "POST", body: JSON.stringify({ file_ids: fileIds }) }),
+  driveRead: (id: string, fileIds: string[]) => request<{ results: DriveReadResult[] }>(`/api/drive/tenders/${id}/read`, { method: "POST", body: JSON.stringify({ file_ids: fileIds }) }, LONG),
   driveText: (id: string, fileId: string) => request<DriveText>(`/api/drive/tenders/${id}/texts/${fileId}`),
   driveFiles: (id: string) => request<DriveListing>(`/api/drive/tenders/${id}/files`),
   downloadOutput: (id: string, n: number, kind: "report.pdf" | "schedule.pdf" | "pricing.xlsx" | "verification-index.pdf" | "evidence-notes.pdf" | "programme.xlsx") => download(`/api/tenders/${id}/revisions/${n}/outputs/${kind}`),
