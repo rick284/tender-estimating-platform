@@ -194,3 +194,7 @@ Do NOT commit client/tender files into this repo without asking; the Rev34E valu
 
 ## QS Takeoff column widths (15 Oct 2026)
 - Unit column was `w-14` so "week" wrapped to "wee/k" (worse in edit mode); now `w-20` with no wrapping, Qty `w-32` so the edit box fits its cell. The tender name in the top bar has `min-w-[14rem]` so the controls wrap to a second row on narrow windows instead of squeezing it to nothing. e2e `qs_columns_e2e.py` checks 1440 / 1100 / 820 px in view and edit mode (below 1024 px the side menu is a drawer: open it with "Open navigation" before clicking menu items in e2e).
+
+## Programme table layout (15 Oct 2026)
+- The two right-hand columns (the "throughout" tick and the Remove button) wrapped to "through/out" and "RE/MO/VE". Both cells are now `whitespace-nowrap`, with fixed widths; the Task column has `min-w-[17rem]` and the other columns were tightened so the whole edit-mode table fits at 1440 px without sideways scrolling (it scrolls inside its panel on narrower windows). e2e `programme_layout_e2e.py` (text never wraps in those cells, Task column >= 250 px, no sideways scroll at 1440).
+- General lesson for the formatting pass: narrow `w-*` table columns plus unbroken words/buttons crush text; give text columns a min width and mark short labels/buttons nowrap. Sweep the other tables (Resource Build-Up, Quotes, Register, Risk Truth, Weather) for the same thing.

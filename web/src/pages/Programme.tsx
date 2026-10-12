@@ -108,8 +108,8 @@ export function Programme({ est }: { est: Estimate }) {
       )}
       <Panel flush>
         <div className="overflow-x-auto">
-          <table className="grid-table min-w-[70rem]">
-            <thead><tr><th className="w-24">Code</th><th>Task</th><th className="w-24 text-right">Days</th><th className="w-36">Follows</th><th className="w-28">Start</th><th className="w-28">Finish</th><th className="w-16 text-right">Float</th><th className="w-[22%]">Timeline ({p.duration} WD)</th><th className="w-24" />{editing && <th />}</tr></thead>
+          <table className="grid-table min-w-[64rem]">
+            <thead><tr><th className="w-20">Code</th><th className="min-w-[17rem]">Task</th><th className="w-20 text-right">Days</th><th className="w-32">Follows</th><th className="w-[6.5rem]">Start</th><th className="w-[6.5rem]">Finish</th><th className="w-16 text-right">Float</th><th className="w-[14%] min-w-[7rem]">Timeline ({p.duration} WD)</th><th className="w-32" />{editing && <th className="w-24" />}</tr></thead>
             <tbody>
               {sections.map((sec) => (
                 <SectionRows key={sec} sec={sec} tasks={p.tasks.filter((t) => t.section === sec)} total={total} crit={crit} editing={editing} E={E} remove={remove} />
@@ -143,8 +143,8 @@ function SectionRows({ sec, tasks, total, crit, editing, E, remove }: { sec: str
               {t.duration > 0 && <div className={`absolute top-0 h-3 ${t.hammock ? "bg-foreground/30" : crit.has(t.code) ? "bg-red-fg" : "bg-primary"}`} style={{ left: `${(t.es / total) * 100}%`, width: `${Math.max((t.duration / total) * 100, 0.8)}%` }} />}
             </div>
           </td>
-          <td>{t.critical ? <Chip tone="red">Critical</Chip> : t.hammock ? <span className="text-xs text-muted-foreground">runs throughout</span> : null}{editing && <label className="mt-1 flex items-center gap-1 text-2xs text-muted-foreground"><EditToggle target="programme_task" id={t.id} field="hammock" value={t.hammock} label={`${t.code} runs throughout`} display="" /> throughout</label>}</td>
-          {editing && <td><button className="btn btn-ghost !px-2 !py-1" aria-label={`Remove ${t.code}`} onClick={() => remove("programme_task", t.id)}>Remove</button></td>}
+          <td className="whitespace-nowrap" data-col="flag">{t.critical ? <Chip tone="red">Critical</Chip> : t.hammock ? <span className="text-xs text-muted-foreground">runs throughout</span> : null}{editing && <label className="mt-1 flex items-center gap-1 text-2xs text-muted-foreground"><EditToggle target="programme_task" id={t.id} field="hammock" value={t.hammock} label={`${t.code} runs throughout`} display="" /> throughout</label>}</td>
+          {editing && <td className="whitespace-nowrap" data-col="remove"><button className="btn btn-ghost whitespace-nowrap !px-3 !py-1" aria-label={`Remove ${t.code}`} onClick={() => remove("programme_task", t.id)}>Remove</button></td>}
         </tr>
       ))}
     </>
