@@ -288,7 +288,7 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
       {/* The bar is exactly as tall as the brand block in the side menu (4rem, border included) so the two lines run straight across; every control in it is 2.25rem tall */}
       <div className="flex min-h-16 items-center border-b bg-background">
         <div className="mx-auto flex w-full max-w-[88rem] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 sm:px-6">
-          <div className="min-w-0 flex-1">
+          <div className="min-w-[14rem] flex-1">
             <div className="label">Tender</div>
             <div className="truncate font-heading text-sm font-bold uppercase" title={detail?.name}>{detail?.name ?? "Loading…"}</div>
           </div>

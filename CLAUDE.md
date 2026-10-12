@@ -191,3 +191,6 @@ Do NOT commit client/tender files into this repo without asking; the Rev34E valu
 
 ## Top bar alignment (15 Oct 2026)
 - The tender top bar now has `min-h-16` (same 4rem as the side menu's brand block, border included) so the two bottom lines run straight across, and every control in it (revision select, status chips via `<Chip bar>`, Edit / New revision / Editing) is 2.25rem tall in both view and edit mode. e2e `header_e2e.py` measures both at 1440 and 1100 px wide.
+
+## QS Takeoff column widths (15 Oct 2026)
+- Unit column was `w-14` so "week" wrapped to "wee/k" (worse in edit mode); now `w-20` with no wrapping, Qty `w-32` so the edit box fits its cell. The tender name in the top bar has `min-w-[14rem]` so the controls wrap to a second row on narrow windows instead of squeezing it to nothing. e2e `qs_columns_e2e.py` checks 1440 / 1100 / 820 px in view and edit mode (below 1024 px the side menu is a drawer: open it with "Open navigation" before clicking menu items in e2e).

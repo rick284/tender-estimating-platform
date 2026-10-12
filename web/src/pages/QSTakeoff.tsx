@@ -34,8 +34,8 @@ export function QSTakeoff({ est, openRows, onRowAdded }: { est: Estimate; openRo
               <thead>
                 <tr>
                   <th className="w-24">Code</th><th>Description</th>
-                  <th className="hidden w-14 sm:table-cell">Unit</th>
-                  <th className="hidden w-24 text-right sm:table-cell">Qty</th>
+                  <th className="hidden w-20 sm:table-cell">Unit</th>
+                  <th className="hidden w-32 text-right sm:table-cell">Qty</th>
                   <th className="hidden w-28 text-right md:table-cell">Rate</th>
                   <th className="w-32 text-right">Amount</th>
                   <th className="hidden w-24 lg:table-cell">Status</th>
@@ -55,7 +55,7 @@ export function QSTakeoff({ est, openRows, onRowAdded }: { est: Estimate; openRo
                               <div className="leading-snug">{i.description} {i.status.includes("ADDED IN PLATFORM") && <Chip tone="neutral">New</Chip>} {i.quantity > 0 && i.rows.length === 0 && <Chip tone="neutral" title="This item has a quantity but no build-up rows, so it adds no cost">No cost rows</Chip>}</div>
                               <div className="mt-1 text-xs text-muted-foreground sm:hidden">{fmtNum(i.quantity)} {i.unit} · <RagChip value={i.rag} /></div>
                             </td>
-                            <td className="hidden sm:table-cell">{i.unit}</td>
+                            <td className="hidden whitespace-nowrap sm:table-cell" data-col="unit">{i.unit}</td>
                             <td className="num hidden sm:table-cell"><EditNum target="qs" id={i.code} field="quantity" original={i.quantity} label={`${i.code} quantity`} display={fmtNum(i.quantity)} /></td>
                             <td className="num hidden md:table-cell"><Money v={i.rate} dash0 /></td>
                             <td className="num"><Money v={i.amount} dash0 /></td>
