@@ -49,7 +49,7 @@ async def status(user: dict[str, Any] = Depends(current_user)):
     prov = ai_client.PROVIDERS.get(pid) or ai_client.PROVIDERS["anthropic"]
     return {"configured": res is not None, "enabled": bool(org.get("ai_enabled")) and res is not None, "provider": prov.id, "model": (res[2] if res else (org.get("ai_model") or prov.default_model)),
             "key_source": res[3] if res else None, "key_last4": org.get("ai_key_last4", ""), "providers": ai_client.catalogue(), "can_change": user.get("role") == "owner",
-            "acknowledged_at": org["ai_ack_at"].isoformat() if org.get("ai_ack_at") else None, "max_files": MAX_FILES}
+            "acknowledged_at": org["ai_ack_at"].isoformat() if org.get("ai_ack_at") else None, "max_files": MAX_FILES, "max_pictures": config.TAKEOFF_MAX_PICTURES}
 
 
 @router.put("/settings")

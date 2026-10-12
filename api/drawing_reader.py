@@ -72,3 +72,80 @@ def scale_note(page: dict[str, Any]) -> str | None:
     """The drawing scale printed in the title block, e.g. '1:200 @ A2'. None if not found."""
     m = re.search(r"1\s*:\s*\d+\s*@\s*A\d", page.get("title_block", ""))
     return re.sub(r"\s+", "", m.group(0)) if m else None
+
+
+def _variants(value: Any) -> list[str]:
+    """The ways a drawing may write a number: 2105, 2,105, 2105.0 and, for a metre value read from millimetres, 2000 for 2.0."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return []
+    out: list[str] = []
+    for x in (v, v * 1000):
+        if abs(x - round(x)) < 1e-9:
+            out += [str(int(round(x))), f"{int(round(x)):,}"]
+        else:
+            out += [f"{x:g}", f"{x:.2f}", f"{x:.1f}"]
+    return list(dict.fromkeys(s for s in out if s))
+
+
+def locate(pdf: bytes, n: int, quote: str, value: Any = None) -> dict[str, Any]:
+    """Where on page n (1-based) the quoted text is written. Returns {"how": "quote"|"number"|"none", "rects": [{"x0","y0","x1","y1"}], "width", "height"},
+    rectangles as fractions of the page, origin top-left, so they can be drawn over an image of any size.
+    Deterministic text search (no AI): first the whole quote, then the number itself, preferring the occurrence whose surroundings share the most words with the quote."""
+    doc = pdfium.PdfDocument(pdf)
+    page = doc[n - 1]
+    w, h = page.get_size()
+    tp = page.get_textpage()
+    full = tp.get_text_range()
+
+    def boxes(idx: int, cnt: int) -> dict[str, float]:
+        bs = [tp.get_charbox(i) for i in range(idx, idx + cnt)]
+        l, b, r, t = min(x[0] for x in bs), min(x[1] for x in bs), max(x[2] for x in bs), max(x[3] for x in bs)
+        padx, pady = 6.0, 4.0
+        return {"x0": max(0.0, (l - padx) / w), "x1": min(1.0, (r + padx) / w), "y0": max(0.0, 1 - (t + pady) / h), "y1": min(1.0, 1 - (b - pady) / h)}
+
+    def hits(text: str) -> list[tuple[int, int]]:
+        if not text.strip():
+            return []
+        s, out = tp.search(text, match_case=False), []
+        while len(out) < 50:
+            r = s.get_next()
+            if not r:
+                break
+            out.append(r)
+        return out
+
+    q = re.sub(r"\s+", " ", quote or "").strip()
+    for cand in ((q, q[:80]) if len(re.sub(r"\W", "", q)) >= 6 else ()):      # a very short quote would match anywhere
+        hs = hits(cand)
+        if hs:
+            return {"how": "quote", "rects": [boxes(*hs[0])], "width": float(w), "height": float(h)}
+    words = {x for x in re.findall(r"[a-z]{4,}", q.lower())}
+    best: tuple[float, tuple[int, int]] | None = None
+    for var in _variants(value):
+        for idx, cnt in hits(var):
+            before, after = full[max(0, idx - 80):idx].lower(), full[idx + cnt: idx + cnt + 80].lower()
+            near = sum(1 for x in words if x in before or x in after)
+            # a number must stand alone: not part of a longer number
+            prev2, next2 = full[max(0, idx - 2):idx], full[idx + cnt: idx + cnt + 2]
+            if (prev2[-1:].isdigit()) or (next2[:1].isdigit()) or (len(prev2) == 2 and prev2[1] in ",." and prev2[0].isdigit()) or (len(next2) == 2 and next2[0] in ",." and next2[1].isdigit()):
+                continue
+            if best is None or near > best[0]:
+                best = (near, (idx, cnt))
+        if best:
+            break
+    if best:
+        return {"how": "number", "rects": [boxes(*best[1])], "width": float(w), "height": float(h)}
+    return {"how": "none", "rects": [], "width": float(w), "height": float(h)}
+
+
+def sheet_list(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """[{page, code, title}] for every page that can be tied to the sheet index on page 1; the rest are listed as plain pages with no code."""
+    titles: dict[str, str] = {}
+    for line in (pages[0]["text"].splitlines() if pages else []):
+        m = re.match(r"^([A-Z]{1,2}\d{1,2}(?:\.\d{1,2})?)\s+(.+)$", line.strip())
+        if m:
+            titles.setdefault(m.group(1), m.group(2).strip())
+    by_page = {n: c for c, n in sheet_map(pages).items()}
+    return [{"page": p["n"], "code": by_page.get(p["n"], ""), "title": titles.get(by_page.get(p["n"], ""), "")} for p in pages]

@@ -75,7 +75,7 @@ export interface DriveListing {
 }
 
 export interface AiProviderInfo { id: string; label: string; available: boolean; default_model: string; key_hint: string }
-export interface AiStatus { configured: boolean; enabled: boolean; provider: string; model: string; key_source: "own" | "platform" | null; key_last4: string; providers: AiProviderInfo[]; can_change: boolean; acknowledged_at: string | null; max_files: number }
+export interface AiStatus { configured: boolean; enabled: boolean; provider: string; model: string; key_source: "own" | "platform" | null; key_last4: string; providers: AiProviderInfo[]; can_change: boolean; acknowledged_at: string | null; max_files: number; max_pictures: number }
 export interface AiEvidence { file_id: string; file: string; page: number; quote: string; verified: boolean }
 export interface AiProposal {
   id: string; batch: string; kind: "document" | "rfi" | "assumption" | "exclusion" | "inclusion" | "risk"; title: string; detail: string; impact: string; rag: "RED" | "AMBER";
@@ -95,7 +95,24 @@ export interface TakeoffLine {
 }
 export interface TakeoffQs { description: string; unit: string; quantity: number; basis: string; source: string; notes: string; section_hint: string }
 
+export interface TakeoffSource { index: number; label: string; value: number; unit: string; source: string; file_id: string; file: string; sheet: string; page: number; quote: string; how: "quote" | "number" | "none"; rects: { x0: number; y0: number; x1: number; y1: number }[]; viewable: boolean; pages?: number }
+export interface SheetInfo { page: number; code: string; title: string }
+
+export async function fetchBlobUrl(path: string): Promise<string> {
+  const t = tokenStore.get();
+  const res = await fetch(`${BASE}${path}`, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
+  if (!res.ok) {
+    let msg = `The server returned an error (${res.status}).`;
+    try { const j = await res.json(); if (typeof j.detail === "string") msg = j.detail; } catch { /* ignore */ }
+    throw new ApiError(res.status, msg);
+  }
+  return URL.createObjectURL(await res.blob());
+}
+
 export const api = {
+  takeoffSources: (lid: string) => request<{ line: string; description: string; sources: TakeoffSource[] }>(`/api/takeoff/lines/${lid}/sources`),
+  takeoffSheets: (tid: string, fid: string) => request<{ file: string; pages: SheetInfo[]; scale: Record<string, string> }>(`/api/takeoff/tenders/${tid}/files/${encodeURIComponent(fid)}/sheets`),
+  pageImageUrl: (tid: string, fid: string, page: number) => fetchBlobUrl(`/api/takeoff/tenders/${tid}/files/${encodeURIComponent(fid)}/pages/${page}/image`),
   takeoffRun: (id: string, fileIds: string[], pictures: { file_id: string; page: number }[]) =>
     request<{ run: string; lines: TakeoffLine[]; not_measurable: { what: string; why: string }[]; files_sent: string[]; pictures: number }>(`/api/takeoff/tenders/${id}/run`, { method: "POST", body: JSON.stringify({ file_ids: fileIds, pictures }) }),
   takeoffLines: (id: string) => request<{ lines: TakeoffLine[] }>(`/api/takeoff/tenders/${id}/lines`),

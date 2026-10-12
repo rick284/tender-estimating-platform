@@ -47,4 +47,5 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 AI_MODEL = os.environ.get("AI_MODEL", "claude-opus-5-5").strip()        # default model for new companies
 # Each company brings its own AI key (stored encrypted). A server-wide ANTHROPIC_API_KEY is used ONLY when this is explicitly switched on (managed service).
 AI_ALLOW_PLATFORM_KEY = os.environ.get("AI_ALLOW_PLATFORM_KEY", "false").lower() == "true"
+TAKEOFF_MAX_PICTURES = int(os.environ.get("TAKEOFF_MAX_PICTURES", "20"))              # page pictures per takeoff run; every page is still read as text
 AI_MAX_INPUT_CHARS = int(os.environ.get("AI_MAX_INPUT_CHARS", "400000"))      # about 100k tokens of document text per run

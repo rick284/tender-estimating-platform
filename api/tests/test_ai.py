@@ -346,3 +346,72 @@ def test_pictures_are_sent_as_image_blocks_before_the_text():
         ai_client.CLIENT = None
     content = fake.calls[0]["messages"][0]["content"]
     assert [c["type"] for c in content] == ["text", "image", "text"] and content[1]["source"]["media_type"] == "image/png" and content[2]["text"] == "the text"
+
+
+# ---------------------------------------------------------------- viewer and pictures (Drive stood in for)
+def _drawing_pdf() -> bytes:
+    import io
+    from reportlab.lib.pagesizes import A3, landscape
+    from reportlab.pdfgen import canvas
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=landscape(A3))
+    c.drawString(100, 700, "A1 Site Plan"); c.drawString(100, 600, "Actual earthworks area 2,105m2"); c.drawString(1020, 40, "A1 25237  Site Plan  1:200 @ A3")
+    c.showPage(); c.drawString(100, 700, "Page two"); c.save()
+    return buf.getvalue()
+
+
+@pytest.fixture()
+def drive(client, auth, ai, monkeypatch):
+    import routes_takeoff as rt
+    pdf = _drawing_pdf()
+    calls = {"downloads": 0}
+
+    async def token(user): return "tok"
+    async def walk(tok, folder): return [{"id": "F-civil", "name": "Civil Drawings Rev C.pdf", "mime": "application/pdf", "is_folder": False, "path": ""}], False
+    async def download(tok, f):
+        calls["downloads"] += 1
+        return f["name"], "application/pdf", pdf
+    monkeypatch.setattr(rt, "_token", token); monkeypatch.setattr(rt.dc, "walk", walk); monkeypatch.setattr(rt.dc, "download", download)
+    rt._CACHE.clear()
+
+    async def seed():
+        d = dbmod.get_db()
+        await d.tenders.update_one({"_id": ai}, {"$set": {"drive_folder": {"id": "FOLDER", "name": "Job"}}})
+        await d.doc_texts.update_one({"_id": f"{ai}:F-civil"}, {"$set": {"mime": "application/pdf", "modified": "2026-10-01T00:00:00Z"}})
+    asyncio.run(seed())
+    return calls
+
+
+def test_pictures_are_rendered_and_sent_and_the_page_limit_is_explained(client, auth, ai, drive):
+    on(client, auth)
+    fake = FakeClient([])
+    ai_client.CLIENT = fake
+    try:
+        r = client.post(f"/api/takeoff/tenders/{ai}/run", headers=auth, json={"file_ids": ["F-civil"], "pictures": [{"file_id": "F-civil", "page": 1}, {"file_id": "F-civil", "page": 2}]})
+        assert r.status_code == 200 and r.json()["pictures"] == 2
+        blocks = fake.calls[0]["messages"][0]["content"]
+        assert [b["type"] for b in blocks] == ["text", "image", "text", "image", "text"] and blocks[0]["text"].startswith("D1 (Civil Drawings Rev C.pdf) page 1")
+        assert client.post(f"/api/takeoff/tenders/{ai}/run", headers=auth, json={"file_ids": ["F-civil"], "pictures": [{"file_id": "F-civil", "page": 9}]}).status_code == 422     # no such page
+        too_many = [{"file_id": "F-civil", "page": 1}] * (config.TAKEOFF_MAX_PICTURES + 1)
+        r = client.post(f"/api/takeoff/tenders/{ai}/run", headers=auth, json={"file_ids": ["F-civil"], "pictures": too_many})
+        assert r.status_code == 422 and "Run the takeoff again" in r.json()["detail"]
+    finally:
+        ai_client.CLIENT = None
+
+
+def test_click_to_source_finds_the_quote_on_the_page_serves_the_page_and_caches_the_pdf(client, auth, ai, drive):
+    on(client, auth)
+    good = takeoff_item(components=[{"label": "area", "value": 2105, "unit": "m2", "doc": "D1", "sheet": "A1", "page": 1, "source": "stated_area", "quote": "Actual earthworks area 2,105m2"}])
+    scaled = takeoff_item(description="Wall", unit="lm", method="SCALED", quantity=70, components=[{"label": "wall", "value": 70, "unit": "lm", "doc": "D1", "sheet": "A1", "page": 1, "source": "scaled", "quote": ""}])
+    lines = {x["description"]: x for x in run_takeoff(client, auth, ai, [good, scaled]).json()["lines"]}
+    s = client.get(f"/api/takeoff/lines/{lines['Earthworks area']['id']}/sources", headers=auth).json()["sources"][0]
+    assert s["viewable"] and s["how"] == "quote" and s["file_id"] == "F-civil" and s["page"] == 1 and len(s["rects"]) == 1 and s["pages"] == 2
+    w = client.get(f"/api/takeoff/lines/{lines['Wall']['id']}/sources", headers=auth).json()["sources"][0]
+    assert w["viewable"] and w["how"] == "none" and w["rects"] == []                                 # a scaled line shows the page with no highlight: the estimator measures
+    img = client.get(f"/api/takeoff/tenders/{ai}/files/F-civil/pages/1/image", headers=auth)
+    assert img.status_code == 200 and img.content[:4] == b"\x89PNG" and img.headers["content-type"] == "image/png"
+    assert client.get(f"/api/takeoff/tenders/{ai}/files/F-civil/pages/9/image", headers=auth).status_code == 404
+    sh = client.get(f"/api/takeoff/tenders/{ai}/files/F-civil/sheets", headers=auth).json()
+    assert [p["page"] for p in sh["pages"]] == [1, 2] and sh["scale"]["1"] == "1:200@A3"
+    assert drive["downloads"] == 1                                                                   # the same PDF is not downloaded again for every click
+    assert client.get(f"/api/takeoff/tenders/{ai}/files/NOPE/pages/1/image", headers=auth).status_code == 404       # only documents read for this tender

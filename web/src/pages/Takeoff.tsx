@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type AiStatus, type DriveTextSummary, type TakeoffLine, type TakeoffQs } from "../lib/api";
+import { api, type AiStatus, type DriveTextSummary, type SheetInfo, type TakeoffLine, type TakeoffQs } from "../lib/api";
 import type { Estimate } from "../lib/types";
 import { Chip, Empty, PageHeader, Panel } from "../components/ui";
 import { AddQsDialog } from "../components/AddDialogs";
+import { SourceViewer } from "../components/SourceViewer";
 import { fmtNum } from "../lib/format";
 import { newUid, useEdit } from "../lib/edit";
 
@@ -17,7 +18,7 @@ const SECTION_HINT: Record<string, RegExp> = {
   earthworks: /earth/i, pavements: /pavement|concrete/i, retaining: /retain/i, kerbs_external: /kerb|external/i, drainage: /drain|storm/i, parking: /pavement|marking/i, esc: /erosion|sediment/i,
 };
 
-function Line({ l, onAccept, onReject }: { l: TakeoffLine; onAccept: (l: TakeoffLine) => void; onReject: (l: TakeoffLine, reason: string) => void }) {
+function Line({ l, onAccept, onReject, onView }: { l: TakeoffLine; onAccept: (l: TakeoffLine) => void; onReject: (l: TakeoffLine, reason: string) => void; onView: (l: TakeoffLine, i: number) => void }) {
   const [open, setOpen] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
@@ -44,6 +45,7 @@ function Line({ l, onAccept, onReject }: { l: TakeoffLine; onAccept: (l: Takeoff
               <div><span className="num">{fmtNum(c.value)} {c.unit}</span> · {c.label}</div>
               <div className="text-xs text-muted-foreground">{c.file || c.doc} · {c.sheet} · page {c.page} · {c.source.replace("_", " ")}{c.found === true ? " · found on the page" : c.found === false ? " · NOT found on the page" : ""}</div>
               {c.quote && <div className="text-sm">“{c.quote}”</div>}
+              {c.file && <button className="mt-1 text-sm underline underline-offset-4" onClick={() => onView(l, i)}>View source on the drawing</button>}
             </li>
           ))}
           <li className="text-xs text-muted-foreground">Operation: {l.operation}. The platform does this arithmetic from the numbers above.</li>
@@ -77,6 +79,8 @@ export function Takeoff({ est, tenderId, goQs }: { est: Estimate; tenderId: stri
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [adding, setAdding] = useState<{ id: string; qs: TakeoffQs } | null>(null);
+  const [viewing, setViewing] = useState<{ l: TakeoffLine; i: number } | null>(null);
+  const [sheets, setSheets] = useState<Record<string, SheetInfo[] | "loading">>({});
 
   const load = useCallback(async () => {
     try {
@@ -87,6 +91,14 @@ export function Takeoff({ est, tenderId, goQs }: { est: Estimate; tenderId: stri
   }, [tenderId]);
   useEffect(() => { load(); }, [load]);
 
+  const maxPics = status?.max_pictures ?? 20;
+  const picked = (fid: string) => new Set((pics[fid] ?? "").split(/[ ,]+/).map(Number).filter((n) => Number.isInteger(n) && n > 0));
+  const togglePage = (fid: string, page: number) => { const n = picked(fid); if (n.has(page)) n.delete(page); else n.add(page); setPics({ ...pics, [fid]: [...n].sort((a, b) => a - b).join(", ") }); };
+  const loadSheets = (fid: string) => {
+    if (sheets[fid]) return setSheets({ ...sheets, [fid]: undefined as never });
+    setSheets({ ...sheets, [fid]: "loading" });
+    api.takeoffSheets(tenderId, fid).then((r) => setSheets((x) => ({ ...x, [fid]: r.pages }))).catch((e) => { setErr((e as Error).message); setSheets((x) => ({ ...x, [fid]: undefined as never })); });
+  };
   const toggle = (id: string) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else if (n.size < 8) n.add(id); return n; });
   const chars = texts.filter((t) => sel.has(t.file_id)).reduce((a, t) => a + t.chars, 0);
   const pictures = [...sel].flatMap((fid) => (pics[fid] ?? "").split(/[ ,]+/).map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0).map((page) => ({ file_id: fid, page })));
@@ -128,19 +140,35 @@ export function Takeoff({ est, tenderId, goQs }: { est: Estimate; tenderId: stri
                     <span className="min-w-0 flex-1 truncate">{t.name}</span>
                     <span className="text-xs text-muted-foreground">{t.pages} p · {fmtNum(t.chars)} chars</span>
                     {sel.has(t.file_id) && t.name.toLowerCase().endsWith(".pdf") && (
-                      <label className="flex items-center gap-2 text-xs"><span className="label">Show pages as pictures</span>
-                        <input aria-label={`Picture pages for ${t.name}`} className="h-8 w-28 border bg-background px-2 text-sm focus:border-primary" value={pics[t.file_id] ?? ""} onChange={(e) => setPics({ ...pics, [t.file_id]: e.target.value })} placeholder="e.g. 3, 4" /></label>
+                      <div className="flex items-center gap-2 text-xs">
+                        <label className="flex items-center gap-2"><span className="label">Show pages as pictures</span>
+                          <input aria-label={`Picture pages for ${t.name}`} className="h-8 w-32 border bg-background px-2 text-sm focus:border-primary" value={pics[t.file_id] ?? ""} onChange={(e) => setPics({ ...pics, [t.file_id]: e.target.value })} placeholder="e.g. 3, 4" /></label>
+                        <button className="underline underline-offset-4" onClick={() => loadSheets(t.file_id)}>{sheets[t.file_id] ? "Hide sheets" : "Choose from sheet list"}</button>
+                      </div>
+                    )}
+                    {sel.has(t.file_id) && sheets[t.file_id] && (
+                      <div className="basis-full">
+                        {sheets[t.file_id] === "loading" ? <p className="text-xs text-muted-foreground">Reading the drawing set…</p> : (
+                          <ul className="mt-1 grid max-h-56 gap-x-4 overflow-auto border p-2 sm:grid-cols-2 lg:grid-cols-3">
+                            {(sheets[t.file_id] as SheetInfo[]).map((sh) => (
+                              <li key={sh.page}><label className="flex items-start gap-2 py-0.5 text-xs">
+                                <input type="checkbox" className="mt-0.5" aria-label={`Page ${sh.page}`} checked={picked(t.file_id).has(sh.page)} onChange={() => togglePage(t.file_id, sh.page)} />
+                                <span><span className="num">p{sh.page}</span> {sh.code && <strong>{sh.code}</strong>} {sh.title}</span></label></li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
                     )}
                   </li>
                 ))}
               </ul>
             )}
-            <p className="mt-2 text-xs text-muted-foreground">Text is always sent. Pictures are optional (up to 8 pages in total) and help the AI measure from the drawing; pick the site plan, earthworks plan and foundation plan pages.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Text is always sent. Pictures are optional (up to {maxPics} pages per run) and help the AI measure from the drawing; pick the site plan, earthworks plan and foundation plan pages. Every page you tick is still read as text; for a large set, run the takeoff again for further pages and earlier lines are not repeated.</p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button className="btn btn-solid" disabled={busy || sel.size === 0 || pictures.length > 8} onClick={run}>{busy ? "Working… this can take a few minutes" : `Take off (${sel.size} ${sel.size === 1 ? "document" : "documents"})`}</button>
+              <button className="btn btn-solid" disabled={busy || sel.size === 0 || pictures.length > maxPics} onClick={run}>{busy ? "Working… this can take a few minutes" : `Take off (${sel.size} ${sel.size === 1 ? "document" : "documents"})`}</button>
               <span className="text-xs text-muted-foreground">{sel.size > 0 ? `About ${fmtNum(chars)} characters${pictures.length ? ` and ${pictures.length} page pictures` : ""} will be sent to ${status?.providers.find((p) => p.id === status.provider)?.label}.` : "Up to 8 documents per run."}</span>
             </div>
-            {pictures.length > 8 && <p className="mt-2 text-sm text-red-fg">That is {pictures.length} pictures; the limit is 8.</p>}
+            {pictures.length > maxPics && <p className="mt-2 text-sm text-red-fg">That is {pictures.length} pictures; the limit for one run is {maxPics}. Run the takeoff again for the rest.</p>}
           </Panel>
           {gaps.length > 0 && (
             <Panel title="What the AI could not establish" className="mb-4">
@@ -149,7 +177,7 @@ export function Takeoff({ est, tenderId, goQs }: { est: Estimate; tenderId: stri
           )}
           <h2 className="mb-2 text-sm tracking-wider">2. Review the proposed lines ({open.length})</h2>
           {open.length === 0 ? <Empty title="Nothing waiting for review" body="Choose documents and press Take off. Proposed lines appear here for you to add to your draft or reject." /> : (
-            <div className="space-y-3">{open.map((l) => <Line key={l.id} l={l} onAccept={accept} onReject={reject} />)}</div>
+            <div className="space-y-3">{open.map((l) => <Line key={l.id} l={l} onAccept={accept} onReject={reject} onView={(ln, i) => setViewing({ l: ln, i })} />)}</div>
           )}
           {decided.length > 0 && (
             <details className="mt-6">
@@ -161,6 +189,7 @@ export function Takeoff({ est, tenderId, goQs }: { est: Estimate; tenderId: stri
           )}
         </>
       )}
+      {viewing && <SourceViewer tenderId={tenderId} lineId={viewing.l.id} title={viewing.l.description} start={viewing.i} onClose={() => setViewing(null)} />}
       <AddQsDialog open={adding !== null} onClose={() => setAdding(null)} sections={est.sections} usedCodes={new Set(est.qs.map((x) => x.code))}
         initial={adding ? { section: hint, description: adding.qs.description, unit: adding.qs.unit, quantity: String(adding.qs.quantity), basis: adding.qs.basis, source: adding.qs.source } : undefined}
         onAdd={(code, payload, lump) => {
