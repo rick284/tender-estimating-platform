@@ -41,3 +41,8 @@ WEB_URL = os.environ.get("WEB_URL", "http://localhost:5173").strip().rstrip("/")
 TOKEN_ENC_KEY = os.environ.get("TOKEN_ENC_KEY", "").strip()
 if IS_PROD and GOOGLE_CLIENT_ID and len(TOKEN_ENC_KEY) < 32:
     raise RuntimeError("TOKEN_ENC_KEY must be set (32+ random characters) when Google Drive is configured")
+
+# AI drafting (Anthropic API). Optional: without a key the AI features say "not set up yet".
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+AI_MODEL = os.environ.get("AI_MODEL", "claude-opus-5-5").strip()
+AI_MAX_INPUT_CHARS = int(os.environ.get("AI_MAX_INPUT_CHARS", "400000"))      # about 100k tokens of document text per run

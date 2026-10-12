@@ -1,0 +1,154 @@
+import { useCallback, useEffect, useState } from "react";
+import { api, type AiProposal, type AiStatus, type DriveTextSummary } from "../lib/api";
+import { Chip, Empty, PageHeader, Panel } from "../components/ui";
+import { fmtNum } from "../lib/format";
+import { useEdit } from "../lib/edit";
+
+const KIND: Record<AiProposal["kind"], string> = { document: "Document", rfi: "RFI", assumption: "Assumption", exclusion: "Exclusion", inclusion: "Inclusion", risk: "Risk" };
+const STATUS: Record<AiProposal["status"], { tone: "green" | "amber" | "red" | "neutral"; text: string }> = {
+  verified: { tone: "green", text: "Quotes verified" }, gap: { tone: "amber", text: "Information gap" },
+  unverified: { tone: "red", text: "Can't accept: quote not found" }, duplicate: { tone: "neutral", text: "Already in the register" },
+};
+
+function Card({ p, onAccept, onReject }: { p: AiProposal; onAccept: (p: AiProposal) => void; onReject: (p: AiProposal, reason: string) => void }) {
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
+  const can = p.status === "verified" || p.status === "gap";
+  return (
+    <div className="border bg-background p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Chip tone="neutral">{KIND[p.kind]}</Chip><Chip tone={p.rag === "RED" ? "red" : "amber"}>{p.rag}</Chip><Chip tone={STATUS[p.status].tone}>{STATUS[p.status].text}</Chip>
+        <Chip tone="neutral" title="Nothing the AI drafts is verified until you approve it">AI draft</Chip>
+      </div>
+      <h3 className="mt-2 text-base font-semibold normal-case">{p.title}</h3>
+      <p className="mt-1 whitespace-pre-line text-sm">{p.detail}</p>
+      {p.impact && <p className="mt-2 whitespace-pre-line text-sm"><span className="label">If unresolved </span>{p.impact}</p>}
+      {p.evidence.length > 0 && (
+        <ul className="mt-3 space-y-1.5">
+          {p.evidence.map((e, i) => (
+            <li key={i} className="border-l-2 pl-3 text-sm" style={{ borderColor: e.verified ? "hsl(var(--green-line))" : "hsl(var(--red-line))" }}>
+              <div className="text-xs text-muted-foreground">{e.file || "(unknown file)"} · page {e.page} · {e.verified ? "found in the document" : "NOT found in the document"}</div>
+              <div>“{e.quote}”</div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {p.problems.length > 0 && <ul className="mt-2 list-inside list-disc text-sm text-red-fg">{p.problems.map((x) => <li key={x}>{x}</li>)}</ul>}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {can && <button className="btn btn-solid !py-1.5" onClick={() => onAccept(p)}>Accept into my draft</button>}
+        {!rejecting && <button className="btn btn-ghost !py-1.5" onClick={() => setRejecting(true)}>Reject</button>}
+        {rejecting && (
+          <>
+            <input aria-label="Reason for rejecting" className="h-9 min-w-[16rem] flex-1 border bg-background px-3 text-sm focus:border-primary" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why (a few words)" autoFocus />
+            <button className="btn btn-solid !py-1.5" onClick={() => reason.trim().length >= 3 && onReject(p, reason.trim())}>Reject</button>
+            <button className="btn btn-ghost !py-1.5" onClick={() => setRejecting(false)}>Cancel</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function AiDraft({ tenderId }: { tenderId: string }) {
+  const { editing, add } = useEdit();
+  const [status, setStatus] = useState<AiStatus | null>(null);
+  const [texts, setTexts] = useState<DriveTextSummary[]>([]);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [props, setProps] = useState<AiProposal[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [note, setNote] = useState("");
+  const [ack, setAck] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setStatus(await api.aiStatus());
+      setTexts((await api.driveTexts(tenderId)).texts.filter((t) => t.status === "ok" || t.status === "partial"));
+      setProps((await api.aiProposals(tenderId)).proposals);
+    } catch (e) { setErr((e as Error).message); }
+  }, [tenderId]);
+  useEffect(() => { load(); }, [load]);
+
+  const toggle = (id: string) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else if (n.size < (status?.max_files ?? 12)) n.add(id); return n; });
+  const chars = texts.filter((t) => sel.has(t.file_id)).reduce((a, t) => a + t.chars, 0);
+
+  const run = async () => {
+    setErr(""); setNote(""); setBusy(true);
+    try { const r = await api.aiDraft(tenderId, [...sel]); setNote(r.coverage_notes); setProps((await api.aiProposals(tenderId)).proposals); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  const accept = async (p: AiProposal) => {
+    setErr("");
+    if (!editing) return setErr("Press Edit (top right) first. Accepted items go into your draft, and nothing is in the estimate until you review and save a revision.");
+    try { const r = await api.aiAccept(p.id); add("register", r.edit.key, r.edit.value); setProps((await api.aiProposals(tenderId)).proposals); }
+    catch (e) { setErr((e as Error).message); }
+  };
+  const reject = async (p: AiProposal, reason: string) => {
+    setErr("");
+    try { await api.aiReject(p.id, reason); setProps((await api.aiProposals(tenderId)).proposals); } catch (e) { setErr((e as Error).message); }
+  };
+  const setOn = async (on: boolean) => {
+    setErr("");
+    try { await api.aiSettings(on, on ? ack : false); setStatus(await api.aiStatus()); } catch (e) { setErr((e as Error).message); }
+  };
+  const open = props.filter((p) => !p.decision);
+  const decided = props.filter((p) => p.decision);
+
+  return (
+    <div>
+      <PageHeader title="AI Drafting" sub="The AI reads the documents you choose and proposes register items: documents, RFIs, assumptions, exclusions, inclusions and risks. It drafts only. Every proposal must quote the document, and the platform checks each quote. Nothing enters the estimate until you accept it into your draft and save a revision." />
+      {err && <div role="alert" className="mb-4 border border-red-line bg-red-bg px-4 py-3 text-sm text-red-fg">{err}</div>}
+      {status && !status.configured && <Empty title="AI drafting is not switched on yet" body="No Anthropic key has been added to the server. Once it is, you will be able to switch AI drafting on here." />}
+      {status?.configured && !status.enabled && (
+        <Panel title="Switch on AI drafting">
+          <p className="mb-3 text-sm">When you run a draft, the <strong>text of the documents you select</strong> is sent to Anthropic's API (model {status.model}) to be read. Nothing is sent until you press Draft, and only the documents you tick. Nothing it proposes changes the estimate without your approval.</p>
+          {status.can_change ? (
+            <>
+              <label className="mb-3 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={ack} onChange={(e) => setAck(e.target.checked)} /> I understand that the text of the documents I select will be sent to Anthropic's API for drafting.</label>
+              <button className="btn btn-solid" disabled={!ack} onClick={() => setOn(true)}>Switch on</button>
+            </>
+          ) : <p className="text-sm text-muted-foreground">Only the company owner can switch this on.</p>}
+        </Panel>
+      )}
+      {status?.configured && status.enabled && (
+        <>
+          <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+            <Chip tone="green">On</Chip><span>Model {status.model}</span>
+            {status.can_change && <button className="underline underline-offset-4" onClick={() => setOn(false)}>Switch off</button>}
+          </div>
+          <Panel title="1. Choose documents (already read from Drive)" className="mb-4">
+            {texts.length === 0 ? <p className="text-sm text-muted-foreground">No documents have been read yet. On Drive Documents, tick files and press Read.</p> : (
+              <ul className="max-h-72 divide-y overflow-auto border">
+                {texts.map((t) => (
+                  <li key={t.file_id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                    <input type="checkbox" aria-label={`Select ${t.name}`} checked={sel.has(t.file_id)} onChange={() => toggle(t.file_id)} />
+                    <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                    <span className="text-xs text-muted-foreground">{t.path || "main folder"} · {t.pages} p · {fmtNum(t.chars)} chars</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button className="btn btn-solid" disabled={busy || sel.size === 0} onClick={run}>{busy ? "Drafting… this can take a minute" : `Draft register items (${sel.size})`}</button>
+              <span className="text-xs text-muted-foreground">{sel.size > 0 ? `About ${fmtNum(chars)} characters will be sent to Anthropic.` : `Up to ${status.max_files} documents per run.`}</span>
+            </div>
+            {note && <p className="mt-3 text-sm text-muted-foreground">AI note: {note}</p>}
+          </Panel>
+          <h2 className="mb-2 text-sm tracking-wider">2. Review the proposals ({open.length})</h2>
+          {open.length === 0 ? <Empty title="Nothing waiting for review" body="Choose documents and press Draft. Proposals appear here for you to accept or reject." /> : (
+            <div className="space-y-3">{open.map((p) => <Card key={p.id} p={p} onAccept={accept} onReject={reject} />)}</div>
+          )}
+          {decided.length > 0 && (
+            <details className="mt-6">
+              <summary className="cursor-pointer text-sm">Decided ({decided.length})</summary>
+              <ul className="mt-2 divide-y border text-sm">
+                {decided.map((p) => <li key={p.id} className="flex flex-wrap items-center gap-2 px-3 py-2"><Chip tone={p.decision?.decision === "accepted" ? "green" : "neutral"}>{p.decision?.decision}</Chip><span>{KIND[p.kind]}: {p.title}</span>{p.decision?.reason && <span className="text-muted-foreground">— {p.decision.reason}</span>}</li>)}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

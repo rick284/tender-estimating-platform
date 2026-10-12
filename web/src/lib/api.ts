@@ -74,7 +74,23 @@ export interface DriveListing {
   counts: { files: number; latest_revisions: number; superseded: number; ambiguous_groups: number; loose_in_root: number };
 }
 
+export interface AiStatus { configured: boolean; enabled: boolean; model: string; can_change: boolean; acknowledged_at: string | null; max_files: number }
+export interface AiEvidence { file_id: string; file: string; page: number; quote: string; verified: boolean }
+export interface AiProposal {
+  id: string; batch: string; kind: "document" | "rfi" | "assumption" | "exclusion" | "inclusion" | "risk"; title: string; detail: string; impact: string; rag: "RED" | "AMBER";
+  basis: "quoted" | "gap"; evidence: AiEvidence[]; status: "verified" | "gap" | "unverified" | "duplicate"; problems: string[];
+  decision: { decision: "accepted" | "rejected"; reason?: string; edit_key?: string } | null; created_at: string;
+}
+export interface DriveTextSummary { file_id: string; name: string; path: string; revision: string | null; status: string; pages: number; chars: number }
+
 export const api = {
+  driveTexts: (id: string) => request<{ texts: DriveTextSummary[] }>(`/api/drive/tenders/${id}/texts`),
+  aiStatus: () => request<AiStatus>("/api/ai/status"),
+  aiSettings: (enabled: boolean, acknowledged: boolean) => request<{ enabled: boolean }>("/api/ai/settings", { method: "PUT", body: JSON.stringify({ enabled, acknowledged }) }),
+  aiDraft: (id: string, fileIds: string[]) => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ file_ids: fileIds }) }),
+  aiProposals: (id: string) => request<{ proposals: AiProposal[] }>(`/api/ai/tenders/${id}/proposals`),
+  aiAccept: (pid: string) => request<{ decision: "accepted"; edit: { target: string; op: "add"; key: string; value: Record<string, unknown> } }>(`/api/ai/proposals/${pid}/decision`, { method: "POST", body: JSON.stringify({ decision: "accepted" }) }),
+  aiReject: (pid: string, reason: string) => request<{ decision: "rejected" }>(`/api/ai/proposals/${pid}/decision`, { method: "POST", body: JSON.stringify({ decision: "rejected", reason }) }),
   driveStatus: () => request<DriveStatus>("/api/drive/status"),
   driveConnect: (tender: string) => request<{ url: string }>(`/api/drive/connect?tender=${encodeURIComponent(tender)}`),
   driveDisconnect: () => request<{ ok: boolean }>("/api/drive/connection", { method: "DELETE" }),
