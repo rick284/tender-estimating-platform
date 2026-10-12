@@ -162,6 +162,9 @@ def compute(block: dict[str, Any], factor: Decimal, risk_exposures: list[dict[st
             reasons.append("Consequence not quantified: an unquantified tail")
             if counted:
                 unquantified += 1
+        elif cost_impact == 0:
+            w_lo = w_hi = ZERO                          # no known incremental consequence: nothing to weight, whatever the probability
+            reasons.append("No known incremental consequence against the current price")
         elif not prob_known:
             reasons.append("Probability unknown: no dollar value assigned (the full consequence is shown as a sensitivity)")
             if counted:
@@ -172,13 +175,14 @@ def compute(block: dict[str, Any], factor: Decimal, risk_exposures: list[dict[st
                 lo_c += w_lo; hi_c += w_hi
         if counted and it["prob_status"] == "AMBER":
             amber += 1
-        status = "RED" if (it["prob_status"] == "UNKNOWN" or not counted and any("Risk Truth" in r for r in reasons)) else "AMBER" if it["prob_status"] == "AMBER" else "GREEN"
+        status = "RED" if ((it["prob_status"] == "UNKNOWN" and cost_impact != 0) or not counted and any("Risk Truth" in r for r in reasons)) else "AMBER" if it["prob_status"] == "AMBER" else "GREEN"
         out.append({"id": it["id"], "cost_impact": cost_impact, "weighted_low": w_lo, "weighted_high": w_hi, "counted": counted and w_lo is not None,
                     "sensitivity": sensitivity if (not prob_known and cost_impact is not None) else None, "status": status, "reasons": reasons,
                     "weighted_low_sell": None if w_lo is None else w_lo * f, "weighted_high_sell": None if w_hi is None else w_hi * f})
     selected = _num(block.get("selected"))
     position = None
-    if selected is not None and out:
+    weighted_any = any(o["weighted_low"] is not None and o["counted"] for o in out) and hi_c > 0
+    if selected is not None and weighted_any:
         position = "below" if selected < lo_c else "above" if selected > hi_c else "within"
     notes = []
     if selected is not None and not block.get("selected_basis", "").strip():

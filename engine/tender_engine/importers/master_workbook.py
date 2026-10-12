@@ -243,14 +243,47 @@ def _programme_from_sheet(ws, qs_codes: set[str], start: str, days_per_week: int
     return {"start": start, "days_per_week": days_per_week, "hours_per_day": 8, "tasks": tasks}
 
 
-def _reserve_from_commercial(commercial: list[dict]) -> dict | None:
+def _reserve_from_commercial(commercial: list[dict], ws=None) -> dict | None:
     """A workbook whose CA16 Management Reserve is an included fixed amount becomes an adjudication block whose selected reserve is that amount
-    (total unchanged); the rationale in the workbook note is kept. Items are entered in the platform."""
+    (total unchanged). The workbook's own "MANAGEMENT RESERVE - ADJUDICATION BASIS" block on Commercial Inputs supplies the unresolved items (its
+    four red-item columns: consequence text), and the rationale. Probabilities are NOT invented: the workbook records none (UNKNOWN)."""
     from .. import management_reserve as mr
     ca = next((c for c in commercial if c["ref"] == "CA16"), None)
     if ca is None or ca["include"] != "Yes" or ca["method"] != "Fixed Amount" or D(ca["pc_sum"]) <= 0:
         return None
-    return mr.new_block(str(ca["pc_sum"]), (ca.get("note") or "")[:3000])
+    basis = (ca.get("note") or "")
+    items: list[dict] = []
+    if ws is not None:
+        top = next((r for r in range(1, ws.max_row + 1) if _s(ws.cell(r, 1).value).upper().startswith("MANAGEMENT RESERVE - ADJUDICATION BASIS")), None)
+        if top:
+            hdr, row = top + 1, top + 2
+            rows = {_s(ws.cell(r, 1).value): r for r in range(top + 2, top + 9)}
+            rate = rows.get("Selected reserve rate")
+            note = rows.get("Probability note")
+            extra = " ".join(x for x in (_s(ws.cell(rate, 4).value) if rate else "", _s(ws.cell(note, 4).value) if note else "") if x)
+            if extra:
+                basis = f"{basis}\n\nWorkbook adjudication basis: {extra}".strip()
+            for col in range(5, 9):
+                head, text = _s(ws.cell(hdr, col).value), _s(ws.cell(row, col).value)
+                if not head or not text:
+                    continue
+                m_ = re.search(r"\$\s*([\d.,]+)\s*k\b", text, re.I)
+                zero = bool(re.match(r"^[~+]?\$0\b", text))
+                impact = ""
+                if m_:
+                    impact = str(int(round(float(m_.group(1).replace(",", "")) * 1000))) if not zero else "0"
+                elif zero:
+                    impact = "0"
+                unq = bool(re.search(r"unquantified", text, re.I)) and (zero or not m_)
+                status = "Unquantified" if unq else "Proxy" if re.search(r"proxy|floor", text, re.I) else "Quantified"
+                it = mr.build_item(f"M-wb{col - 4:04d}", {
+                    "title": re.sub(r"\s+RED$", "", head).strip() + " (red item)", "description": text, "basis": "Sell", "impact": "" if status == "Unquantified" else impact,
+                    "impact_status": status, "prob_status": "UNKNOWN",
+                    "prob_basis": "Workbook records no evidenced probability (an earlier 50/50 discussion was a heuristic only). Enter a supportable range to weight this item."}, items)
+                items.append(it)
+    blk = mr.new_block(str(ca["pc_sum"]), basis[:3000])
+    blk["items"] = items
+    return blk
 
 
 def _register_with_risk_truth(v) -> list[dict]:
@@ -401,7 +434,7 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
         risk_feed=risk_feed, overlays=overlays, overlap=D(cp["B13"].value), weather_meta=weather_meta, weather_links=weather_links,
         controls=controls, register=_register_with_risk_truth(v),
         risk_truth=_risks_and_exposures_from_risk_truth(v["Risk Truth"])[1] if "Risk Truth" in v.sheetnames else [],
-        management_reserve=_reserve_from_commercial(commercial),
+        management_reserve=_reserve_from_commercial(commercial, v["Commercial Inputs"]),
         quotes=_quotes_from_sheet(v["Supplier Quote Register"]) if "Supplier Quote Register" in v.sheetnames else [],
         programme=_programme_from_sheet(v["Programme Export"] if "Programme Export" in v.sheetnames else None, {q.code for q in qs}, weather_meta.get("start", ""),
                                         int(weather_meta["wd_per_week"]) if str(weather_meta.get("wd_per_week", "")).isdigit() else 5), cached=v)

@@ -96,7 +96,14 @@ def test_hobsonville_import_keeps_the_total_and_the_rationale():
     e = compute_estimate(m)
     assert e["reconciled"] is True and abs(e["summary"]["all_in"] - 1226916.81) < 0.01 and e["summary"]["management_reserve"] > 18269
     r = e["management_reserve"]
-    assert abs(r["selected_sell"] - 23642.32) < 0.01 and r["status"] == "AMBER" and "No unresolved items recorded" in " ".join(r["notes"])
+    assert abs(r["selected_sell"] - 23642.32) < 0.01 and r["status"] == "AMBER" and r["position"] is None
+    # the four red items from the workbook's own "MANAGEMENT RESERVE - ADJUDICATION BASIS" block; no probabilities are invented
+    its = {i["ref"]: i for i in r["items"]}
+    assert [i["title"] for i in r["items"]] == ["Earthworks (red item)", "Ramp/stairs (red item)", "Retaining (red item)", "PV01 productivity (red item)"]
+    assert (its["MR-01"]["impact"], its["MR-01"]["impact_status"]) == ("28600", "Quantified") and (its["MR-02"]["impact"], its["MR-02"]["impact_status"]) == ("9500", "Proxy")
+    assert its["MR-03"]["impact"] == "0" and its["MR-04"]["impact_status"] == "Unquantified" and all(i["prob_status"] == "UNKNOWN" for i in r["items"])
+    assert r["weighted_high"] == 0 and r["unknown_items"] == 2 and r["unquantified_items"] == 1
+    assert "Probabilities are not independently evidenced" in r["selected_basis"] and "Rick Jones approved 4.0%" in r["selected_basis"]
     assert next(c for c in e["commercial"] if c["ref"] == "CA16")["method"] == "Management Reserve"
 
 
@@ -128,7 +135,7 @@ def test_items_flow_through_edit_save_and_range_check():
              {"target": "reserve", "key": "block", "field": "selected", "value": "17000"}]
     m2, ch = apply_edits(m, edits)
     r = compute_estimate(m2)["management_reserve"]
-    assert [i["ref"] for i in r["items"]] == ["MR-01", "MR-02"]
+    assert [i["ref"] for i in r["items"]][-2:] == ["MR-05", "MR-06"]
     assert abs(r["weighted_low_sell"] - 18580) < 0.01 and abs(r["weighted_high_sell"] - 22390) < 0.01 and r["position"] == "within"
     assert any(c["target"] == "reserve_item" and c["field"] == "added" for c in ch)
     back = from_json(to_json(m2))
@@ -141,3 +148,16 @@ def test_items_flow_through_edit_save_and_range_check():
     assert r3["items"][0]["counted"] is False and r3["status"] == "RED" and abs(r3["weighted_high_sell"] - 3800) < 0.01
     # old saved inputs without the block still load
     d = to_json(m); d.pop("management_reserve"); assert from_json(d).management_reserve is None
+
+
+@needs_private
+def test_supplying_probabilities_to_the_workbook_items_gives_the_policy_range():
+    """Rick's policy example ranges (55-65% earthworks, 30-40% ramp/stairs) applied to the imported workbook items give the policy's $18.6k-$22.4k."""
+    m = load_master_workbook(PRIVATE)
+    ed = []
+    for iid, lo, hi in (("M-wb0001", "0.55", "0.65"), ("M-wb0002", "0.3", "0.4")):
+        ed += [{"target": "reserve_item", "key": iid, "field": "probability_low", "value": lo}, {"target": "reserve_item", "key": iid, "field": "probability_high", "value": hi},
+               {"target": "reserve_item", "key": iid, "field": "prob_status", "value": "AMBER"}]
+    r = compute_estimate(apply_edits(m, ed)[0])["management_reserve"]
+    assert abs(r["weighted_low_sell"] - 18580) < 0.01 and abs(r["weighted_high_sell"] - 22390) < 0.01 and abs(r["weighted_mid_sell"] - 20485) < 0.01
+    assert r["position"] == "above" and r["unknown_items"] == 0 and r["unquantified_items"] == 1
