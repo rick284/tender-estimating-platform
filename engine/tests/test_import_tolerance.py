@@ -73,3 +73,18 @@ def test_an_essential_sheet_missing_says_which_and_what_it_holds():
         load_master_workbook(buf)
     msg = str(ei.value)
     assert "Resource Rate Library (the rates)" in msg and "Resource Build-Up (the cost build-up rows)" in msg and "Commercial Inputs" in msg and "QS Takeoff" not in msg.split("missing:")[1].split(".")[0]
+
+
+BRIDLE = PRIV / "Bridle_Trail.xlsx"
+
+
+@pytest.mark.skipif(not BRIDLE.exists(), reason="private workbook not present")
+def test_bridle_trail_jw_transfer_workbook_loads_and_reconciles_to_the_cent():
+    """Rev4.1 'JW Transfer': profit is a Fixed Amount cell holding a formula, the rate library continues below row 85 (JW-... composite rates) and there is no Consolidated Package."""
+    m = load_master_workbook(BRIDLE)
+    e = compute_estimate(m)
+    assert len(m.qs) == 76 and len(m.rows) == 76 and "JW-PG01" in m.library and "JW-RH04" in m.library        # nothing below the template's rows is dropped
+    assert round(e["tender"]["base_direct"], 2) == 1172308.00 and round(e["tender"]["total_excl_gst"], 2) == 1622010.25
+    assert e["reconciled"] is True and all(r["ok"] for r in e["reconciliation"])
+    assert next(c for c in e["commercial"] if c["ref"] == "CA18")["method"] == "Fixed Amount"                  # the formula's last calculated value is the input
+    assert any("held a formula" in n and "Commercial Inputs" in n for n in e["import_notes"])

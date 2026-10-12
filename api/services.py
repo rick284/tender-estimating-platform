@@ -33,8 +33,13 @@ def _compute(data: bytes) -> tuple[dict[str, Any], dict[str, Any]]:
         return compute_estimate(imported), to_json(imported)
     except ValueError as e:
         raise HTTPException(422, str(e))
-    except Exception:
-        raise HTTPException(422, "This file could not be read as a Master Estimate Workbook.")
+    except Exception as e:                                       # noqa: BLE001
+        import logging, traceback
+        logging.getLogger("tender").exception("workbook import failed")
+        tb = traceback.extract_tb(e.__traceback__)
+        where = next((f"{f.filename.rsplit('/', 1)[-1]} line {f.lineno}" for f in reversed(tb) if "tender_engine" in f.filename), "")
+        raise HTTPException(422, "This file could not be read as a Master Estimate Workbook. If you send this to support, include: "
+                                 f"{type(e).__name__}{(': ' + str(e)[:120]) if str(e) and not str(e).startswith('[<class') else ''}{(' (' + where + ')') if where else ''}.")
 
 
 async def read_workbook(upload) -> tuple[bytes, dict[str, Any], dict[str, Any]]:

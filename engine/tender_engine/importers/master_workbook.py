@@ -297,6 +297,42 @@ def _register_with_risk_truth(v) -> list[dict]:
     return reg
 
 
+class _Values:
+    """The workbook seen through its values: a cell that holds a formula gives the value Excel last calculated for it (None if it was never calculated).
+    The platform recalculates everything downstream itself; an input cell that is a formula is only ever a frozen number to it. Counts what was substituted."""
+    def __init__(self, formulas, values):
+        self._f, self._v = formulas, values
+        self.subs: dict[str, list[str]] = {}
+        self.uncalculated: dict[str, list[str]] = {}
+
+    def __getitem__(self, name):
+        return _VSheet(self, name)
+
+
+class _VSheet:
+    def __init__(self, book, name):
+        self._b, self._name = book, name
+        self._f, self._v = book._f[name], book._v[name]
+        self.max_row = self._f.max_row
+
+    def cell(self, r, c):
+        return self._at(self._f.cell(r, c), self._v.cell(r, c))
+
+    def __getitem__(self, addr):
+        return self._at(self._f[addr], self._v[addr])
+
+    def _at(self, fc, vc):
+        class _C:
+            pass
+        out = _C()
+        val = fc.value
+        if isinstance(val, str) and val.startswith("="):
+            val = vc.value
+            (self._b.subs if val is not None else self._b.uncalculated).setdefault(self._name, []).append(fc.coordinate)
+        out.value = val
+        return out
+
+
 class _Either:
     """Cell access that prefers the value Excel calculated and falls back to what was typed into the cell (a workbook never opened in Excel has no calculated
     values; a formula that was never calculated is never returned as a value)."""
@@ -328,7 +364,18 @@ def _numstr(x, default: str) -> str:
         return default
 
 
-_CODE_LIKE = re.compile(r"^[A-Za-z]{1,4}[-_]?\d{1,4}[A-Za-z]?$")
+def _check_numbers(sheet: str, row: int, code: Any, cells: list[tuple[str, Any]]) -> None:
+    """A number cell that holds words (TBC, n/a, a stray note) stops the import with the sheet, row and item named, instead of a technical error."""
+    for what, val in cells:
+        if val in (None, "") or isinstance(val, (int, float)) and not isinstance(val, bool):
+            continue
+        try:
+            float(str(val).replace(",", "").replace("$", "").strip())
+        except ValueError:
+            raise ValueError(f"{sheet} row {row} ({code}): the {what} is \"{str(val)[:40]}\", which is not a number. Change it to a number in the workbook and upload it again.") from None
+
+
+_CODE_LIKE = re.compile(r"^[A-Za-z0-9]+(?:[-_./][A-Za-z0-9]+){0,4}$")    # one word, no spaces: PG01, JW-PG01, ALLIED-SUB-SURVEY-ASB
 
 
 def _num_or0(x):
@@ -388,10 +435,12 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
     have = set(f.sheetnames)
 
     lib: dict[str, LibraryRate] = {}
-    ws = f["Resource Rate Library"]
+    fm = _Values(f, v)
+    ws = fm["Resource Rate Library"]
     for r in range(5, ws.max_row + 1):
         code = ws.cell(r, 1).value
-        if code and (r <= 85 or _CODE_LIKE.match(_s(code))):   # beyond the template's own rows, only cells that look like a rate code
+        if code and (r <= 85 or (_CODE_LIKE.match(_s(code)) and len(_s(code)) <= 40 and isinstance(ws.cell(r, 9).value, (int, float)))):   # beyond the template's own rows: a code with a numeric rate
+            _check_numbers("Resource Rate Library", r, code, [("rate", ws.cell(r, 9).value)])
             lib[str(code)] = LibraryRate(
                 code=str(code), category=_s(ws.cell(r, 2).value), description=_s(ws.cell(r, 3).value),
                 unit=_s(ws.cell(r, 5).value), operator_included=_s(ws.cell(r, 7).value),
@@ -400,10 +449,11 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
 
     qs: list[QSItem] = []
     qs_extra: dict[str, dict[str, str]] = {}
-    ws, wv = f["QS Takeoff"], v["QS Takeoff"]
+    ws, wv = fm["QS Takeoff"], v["QS Takeoff"]
     for r in range(3, ws.max_row + 1):
         code = ws.cell(r, 2).value
-        if code and (r <= 40 or _CODE_LIKE.match(_s(code))):   # items added below the template's rows are read too
+        if code and (r <= 40 or (_CODE_LIKE.match(_s(code)) and len(_s(code)) <= 24 and isinstance(ws.cell(r, 5).value, (int, float)))):   # items below the template's rows are read too (a code with a numeric quantity)
+            _check_numbers("QS Takeoff", r, code, [("quantity", ws.cell(r, 5).value)])
             qs.append(QSItem(code=str(code), section=_s(ws.cell(r, 1).value), description=_s(ws.cell(r, 3).value),
                              unit=_s(ws.cell(r, 4).value), quantity=D(ws.cell(r, 5).value)))
             qs_extra[str(code)] = {
@@ -416,12 +466,13 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
     rows: list[BuildUpRow] = []
     extra: list[dict[str, str]] = []
     excel_rows: list[int] = []
-    ws, wv = f["Resource Build-Up"], v["Resource Build-Up"]
+    ws, wv = fm["Resource Build-Up"], v["Resource Build-Up"]
     for r in range(7, ws.max_row + 1):
         code = ws.cell(r, 2).value
-        if not code or (r > 306 and not _CODE_LIKE.match(_s(code))):
+        if not code or (r > 306 and not (_CODE_LIKE.match(_s(code)) and _s(ws[f"N{r}"].value))):
             continue
         c = lambda col: ws[f"{col}{r}"].value
+        _check_numbers("Resource Build-Up", r, code, [(h, c(col)) for col, h in (("I", "productivity"), ("L", "duration override"), ("R", "count"), ("S", "quantity"), ("U", "utilisation"), ("V", "waste"), ("X", "job rate"))])
         rows.append(BuildUpRow(
             qs_code=str(code), mode=_s(c("N")), resource_type=_s(c("O")), resource_code=_s(c("P")),
             productivity_rate=_n(c("I")), duration_override_hrs=_n(c("L")), count=_n(c("R")),
@@ -466,11 +517,12 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
             notes.append("The workbook's weather sheet does not point at build-up rows for daily preliminaries and weekly hire, so the weather costs are not linked. "
                          "Link them on the Weather Risk page if you want the platform to work the weather allowance out.")
 
-    ci = f["Commercial Inputs"]
+    ci = fm["Commercial Inputs"]
     commercial: list[dict] = []
     for r in range(5, 29):
         ref = ci.cell(r, 1).value
         if ref and str(ref).startswith("CA"):
+            _check_numbers("Commercial Inputs", r, ref, [("percentage", ci.cell(r, 4).value), ("amount", ci.cell(r, 5).value)])
             commercial.append(dict(ref=str(ref), name=_s(ci.cell(r, 2).value), method=_s(ci.cell(r, 3).value),
                                    pct=D(ci.cell(r, 4).value), pc_sum=D(ci.cell(r, 5).value),
                                    include=_s(ci.cell(r, 6).value), basis=_s(v["Commercial Inputs"].cell(r, 8).value),
@@ -531,6 +583,12 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
     else:
         notes.append("No Tender Build-Up sheet: the platform's totals could not be compared with the workbook's own, so the revision shows no reconciliation.")
 
+    for sheet, cells in fm.subs.items():
+        notes.append(f"{len(cells)} input cell{'s' if len(cells) != 1 else ''} on {sheet} held a formula (for example {', '.join(cells[:3])}). The value Excel last calculated was used as the input; "
+                     "the platform recalculates everything from those numbers.")
+    for sheet, cells in fm.uncalculated.items():
+        notes.append(f"{len(cells)} input cell{'s' if len(cells) != 1 else ''} on {sheet} held a formula that had never been calculated (for example {', '.join(cells[:3])}) and was read as blank. "
+                     "Open the workbook in Excel, save it, and upload it again if those cells matter.")
     return MasterWorkbookImport(
         reference=reference,
         meta=_cover_meta(v) if cv is not None else {}, library=lib, qs=qs, qs_extra=qs_extra, rows=rows, row_extra=extra,

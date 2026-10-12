@@ -670,3 +670,19 @@ def test_a_workbook_without_a_consolidated_package_uploads_and_says_what_was_lef
 def test_a_workbook_missing_an_essential_sheet_is_refused_with_a_useful_message(client, auth):
     r = client.post("/api/tenders", headers=auth, files={"file": ("bad.xlsx", _without_sheets("Commercial Inputs"))})
     assert r.status_code == 422 and "Commercial Inputs (overhead, margin and allowances)" in r.json()["detail"]
+
+
+def test_words_in_a_number_cell_are_named_by_sheet_row_and_item(client, auth):
+    import io, openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(make_workbook()))
+    ws = wb["QS Takeoff"]
+    code_row = next(r for r in range(3, 20) if ws.cell(r, 2).value)
+    ws.cell(code_row, 5).value = "TBC"
+    buf = io.BytesIO(); wb.save(buf)
+    r = client.post("/api/tenders", headers=auth, files={"file": ("tbc.xlsx", buf.getvalue())})
+    assert r.status_code == 422 and f"QS Takeoff row {code_row}" in r.json()["detail"] and '"TBC"' in r.json()["detail"] and "not a number" in r.json()["detail"]
+
+
+def test_an_unexpected_problem_still_gives_a_message_with_something_to_quote(client, auth):
+    r = client.post("/api/tenders", headers=auth, files={"file": ("junk.xlsx", b"PK\x03\x04 not really a workbook")})
+    assert r.status_code == 422 and "support" in r.json()["detail"]
