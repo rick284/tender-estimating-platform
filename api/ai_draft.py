@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROMPT_VERSION = "register-v1"
+PROMPT_VERSION = "register-v2"
 KINDS = ("document", "rfi", "assumption", "exclusion", "inclusion", "risk")
 MIN_QUOTE = 12                       # compact characters; shorter quotes prove nothing
 
@@ -46,7 +46,10 @@ Non-negotiable rules:
 6. Stay inside the work package and scope described. Where another party's work touches it, record the interface as an exclusion or an RFI that says who owns it.
 7. `rag`: AMBER by default. RED only where a conflict or missing information blocks a responsible price. Never GREEN: nothing you draft is verified.
 8. Do not repeat items already in the register (listed below). Prefer fewer, sharper items to many vague ones. Plain, practical language, written for site and commercial readers.
-9. Respond with JSON only, matching the schema. `coverage_notes` says in a sentence or two which documents you read and anything you could not read (scanned pages, drawings without text)."""
+9. Quoted facts and your own inferences are different things. `detail` states what the documents say; if you are inferring a consequence, say "Inferred:" at the start of that sentence. Never present an inference as a quotation.
+10. Supplier and subcontractor quotes belong on the Quotes page, not the register: do not propose a document entry for a quote. Do propose RFIs, exclusions or risks that a quote's qualifications raise.
+11. The extracts may be one part of a larger tender folder; earlier parts have already produced the items listed above. Only add what is new.
+12. Respond with JSON only, matching the schema. `coverage_notes` says in a sentence or two which documents you read and anything you could not read (scanned pages, drawings without text)."""
 
 
 def _compact(s: str) -> str:
@@ -68,6 +71,32 @@ def build_user_message(meta: dict[str, str], docs: list[dict[str, Any]], existin
             if p["text"].strip():
                 lines += [f"[page {p['n']}]", p["text"].strip(), ""]
     return "\n".join(lines)
+
+
+def plan_batches(docs: list[dict[str, Any]], budget: int, max_files: int) -> list[list[dict[str, Any]]]:
+    """Split documents into batches that each stay under `budget` characters and `max_files` files.
+    A single document larger than the budget is cut at page boundaries into parts. Parts keep file_id and carry only their own pages.
+    docs: [{file_id, name, revision, pages:[{n, text}]}] -> [[doc-part, ...], ...]. Documents with no text are left out (the caller reports them)."""
+    parts: list[dict[str, Any]] = []
+    for d in docs:
+        cur, size = [], 0
+        for p in d["pages"]:
+            n = len(p["text"])
+            if cur and size + n > budget:
+                parts.append({**d, "pages": cur}); cur, size = [], 0
+            cur.append(p); size += n
+        if cur and size:
+            parts.append({**d, "pages": cur})
+    batches: list[list[dict[str, Any]]] = []
+    cur, size = [], 0
+    for part in parts:
+        n = sum(len(p["text"]) for p in part["pages"])
+        if cur and (size + n > budget or len(cur) >= max_files):
+            batches.append(cur); cur, size = [], 0
+        cur.append(part); size += n
+    if cur:
+        batches.append(cur)
+    return batches
 
 
 def verify(items: list[dict[str, Any]], docs: list[dict[str, Any]], existing: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -16,6 +16,9 @@ from services import audit, new_id, now
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 MAX_FILES = 12
+INTAKE_FILES = 20                 # parts per call in a whole-folder run
+BATCH_CHARS = 300_000             # characters per call in a whole-folder run
+MAX_INTAKE_BATCHES = 10          # a run over more than this is refused until the estimator narrows it
 
 
 async def _org(user: dict[str, Any]) -> dict[str, Any]:
@@ -136,34 +139,90 @@ def _public(p: dict[str, Any]) -> dict[str, Any]:
             "evidence": p["evidence"], "status": p["status"], "problems": p["problems"], "decision": p.get("decision"), "created_at": p["created_at"].isoformat()}
 
 
-@router.post("/tenders/{tender_id}/draft")
-async def draft(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)):
-    t = await _tender(user, tender_id)
-    org = await _org(user)
+async def _ready(user, org):
     res = _resolve(org)
     if res is None:
         raise HTTPException(503, "AI drafting is not set up for your company yet (no API key). The owner can add one in AI Drafting.")
     if not org.get("ai_enabled"):
         raise HTTPException(403, "AI drafting is switched off for your company. The owner can switch it on in AI Drafting.")
-    prov, key, model, _src = res
-    ids = [str(i) for i in body.get("file_ids", [])][:MAX_FILES]
-    if not ids:
+    return res
+
+
+def _doc(f: dict[str, Any], pages=None) -> dict[str, Any]:
+    return {"file_id": f["file_id"], "name": f["name"], "revision": f.get("revision"), "pages": f["pages"] if pages is None else pages}
+
+
+def _chars(docs) -> int:
+    return sum(len(p["text"]) for d in docs for p in d["pages"])
+
+
+async def _existing(db, user, t, est) -> list[dict[str, Any]]:
+    """Register items plus proposals already made for this tender (not rejected) so a later part of a run does not repeat an earlier one."""
+    out = list(est.get("register") or [])
+    async for p in db.ai_proposals.find({"org_id": user["org_id"], "tender_id": t["_id"]}):
+        if (p.get("decision") or {}).get("decision") != "rejected" and p["status"] in ("verified", "gap"):
+            out.append({"kind": p["kind"], "ref": "AI", "title": p["title"]})
+    return out
+
+
+@router.get("/tenders/{tender_id}/intake/plan")
+async def intake_plan(tender_id: str, user: dict[str, Any] = Depends(current_user)):
+    """Whole-folder intake: every read, latest, non-archive document with text, split into parts that each fit one AI call.  Nothing is sent here."""
+    t = await _tender(user, tender_id)
+    db = get_db()
+    ds = await db.doc_texts.find({"org_id": user["org_id"], "tender_id": t["_id"]}).sort("name", 1).to_list(2000)
+    use, skipped = [], []
+    for d in ds:
+        if d.get("in_archive"):
+            skipped.append({"name": d["name"], "reason": "In an archive / superseded folder."})
+        elif d.get("superseded_by"):
+            skipped.append({"name": d["name"], "reason": f"Superseded by {d['superseded_by']}."})
+        elif d["status"] not in ("ok", "partial"):
+            skipped.append({"name": d["name"], "reason": {"needs_ocr": "Scanned or drawing-only: no text to read (needs the drawing reader).", "unsupported": "File type not supported yet."}.get(d["status"], "Could not be read.")})
+        else:
+            use.append(d)
+            if d["status"] == "partial":
+                skipped.append({"name": d["name"], "reason": "Only part of this file had readable text (still included)."})
+    docs = [_doc(d) for d in use]
+    batches = ai_draft.plan_batches(docs, min(config.AI_MAX_INPUT_CHARS, BATCH_CHARS), INTAKE_FILES)
+    out = [{"index": i, "chars": _chars(b), "parts": [{"file_id": x["file_id"], "name": x["name"], "page_from": x["pages"][0]["n"], "page_to": x["pages"][-1]["n"]} for x in b]} for i, b in enumerate(batches)]
+    return {"batches": out, "skipped": skipped, "total_chars": sum(b["chars"] for b in out), "files": len(use), "max_batches": MAX_INTAKE_BATCHES}
+
+
+@router.post("/tenders/{tender_id}/draft")
+async def draft(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)):
+    """One AI call over chosen documents.  `file_ids` (whole files) or `parts` ([{file_id, page_from, page_to}]) as produced by the intake plan."""
+    t = await _tender(user, tender_id)
+    org = await _org(user)
+    prov, key, model, _src = await _ready(user, org)
+    parts = body.get("parts")
+    if parts:
+        want = [(str(x.get("file_id")), int(x.get("page_from", 0)), int(x.get("page_to", 0))) for x in parts][:INTAKE_FILES]
+    else:
+        want = [(str(i), None, None) for i in body.get("file_ids", [])][:MAX_FILES]
+    if not want:
         raise HTTPException(422, f"Choose at least one document that has been read (up to {MAX_FILES}).")
     db = get_db()
-    found = {d["file_id"]: d async for d in db.doc_texts.find({"org_id": user["org_id"], "tender_id": t["_id"], "file_id": {"$in": ids}})}
-    missing = [i for i in ids if i not in found]
-    if missing:
+    found = {d["file_id"]: d async for d in db.doc_texts.find({"org_id": user["org_id"], "tender_id": t["_id"], "file_id": {"$in": [w[0] for w in want]}})}
+    if [w for w in want if w[0] not in found]:
         raise HTTPException(409, "Some of those documents have not been read yet. Read them on the Drive Documents page first.")
-    docs = [{"file_id": f["file_id"], "name": f["name"], "revision": f.get("revision"), "pages": f["pages"]} for f in (found[i] for i in ids) if f["status"] in ("ok", "partial")]
+    docs = []
+    for fid, a, b in want:
+        f = found[fid]
+        if f["status"] not in ("ok", "partial"):
+            continue
+        pages = f["pages"] if a is None else [p for p in f["pages"] if a <= p["n"] <= b]
+        if pages:
+            docs.append(_doc(f, pages))
     if not docs:
         raise HTTPException(409, "None of the chosen documents has readable text (scanned files and drawings need the drawing reader).")
-    chars = sum(len(p["text"]) for d in docs for p in d["pages"])
+    chars = _chars(docs)
     if chars > config.AI_MAX_INPUT_CHARS:
         raise HTTPException(413, f"That is {chars:,} characters of text; the limit for one run is {config.AI_MAX_INPUT_CHARS:,}. Choose fewer documents.")
     last = await db.revisions.find_one({"tender_id": t["_id"], "org_id": user["org_id"]}, sort=[("n", -1)])
     est = (last or {}).get("estimate", {})
     meta = {**{k: v for k, v in (est.get("meta") or {}).items() if isinstance(v, str)}, "project": t["name"], "client": t.get("client", ""), "location": t.get("location", "")}
-    existing = (est.get("register") or [])
+    existing = await _existing(db, user, t, est)
     user_msg = ai_draft.build_user_message(meta, docs, existing)
     try:
         data = await run_in_threadpool(prov.draft_json, key, model, ai_draft.SYSTEM, user_msg, ai_draft.SCHEMA)
@@ -171,7 +230,7 @@ async def draft(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Dep
         await audit(db, user, "ai.draft_failed", t["_id"], str(e)[:200])
         raise HTTPException(502, str(e))
     items = ai_draft.verify(data["items"][:60], docs, existing)
-    batch = uuid.uuid4().hex
+    batch = str(body.get("run") or "")[:40] or uuid.uuid4().hex
     stamp = now()
     docs_out = []
     for it in items:
@@ -181,7 +240,7 @@ async def draft(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Dep
         docs_out.append(doc)
     if docs_out:
         await db.ai_proposals.insert_many(docs_out)
-    await db.ai_batches.insert_one({"_id": batch, "org_id": user["org_id"], "tender_id": t["_id"], "created_at": stamp, "created_by": user["_id"], "model": model, "provider": prov.id,
+    await db.ai_batches.insert_one({"_id": new_id(), "run": batch, "org_id": user["org_id"], "tender_id": t["_id"], "created_at": stamp, "created_by": user["_id"], "model": model, "provider": prov.id,
                                     "prompt_version": ai_draft.PROMPT_VERSION, "file_ids": [d["file_id"] for d in docs], "chars": chars,
                                     "coverage_notes": str(data.get("coverage_notes", ""))[:2000], "counts": {s: sum(1 for i in items if i["status"] == s) for s in ("verified", "gap", "unverified", "duplicate")}})
     await audit(db, user, "ai.draft", t["_id"], f"{len(docs)} files, {chars} chars, {len(items)} proposals")

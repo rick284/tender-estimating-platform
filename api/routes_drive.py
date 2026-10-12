@@ -211,7 +211,8 @@ async def read_files(tender_id: str, body: dict[str, Any], user: dict[str, Any] 
                 r["warnings"].append(f"Text was cut off at page {p['n']} (very large file)."); break
             pages.append(p); total += len(p["text"])
         doc = {"_id": f"{t['_id']}:{fid}", "org_id": user["org_id"], "tender_id": t["_id"], "file_id": fid, "name": f["name"], "path": f["path"], "mime": f["mime"],
-               "modified": f["modified"], "revision": f.get("revision"), "status": r["status"], "method": r["method"], "warnings": r["warnings"],
+               "modified": f["modified"], "revision": f.get("revision"), "latest": f.get("latest"), "superseded_by": f.get("superseded_by"),
+               "in_archive": bool(f.get("in_archive")), "status": r["status"], "method": r["method"], "warnings": r["warnings"],
                "pages": pages, "page_count": len(pages), "chars": total, "read_at": now(), "read_by": user["_id"]}
         await db.doc_texts.replace_one({"_id": doc["_id"]}, doc, upsert=True)
         out.append(_summary(doc))
