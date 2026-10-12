@@ -33,6 +33,12 @@ An edit is {"target", "key", "field", "value"} (set a value) or {"target", "op":
   exposure   add    key = new id ("X-xxxxxx")  value: risk_id / consequence / mode / ... (see risk_truth.FIELDS)   (Risk Truth exposure)
              set    key = id   field: any of risk_truth.FIELDS
              delete key = id
+  reserve    add    key = "setup"  (switch the Management Reserve adjudication on; the selected reserve starts at the current CA16 amount)
+             set    key = "block"  field: selected | selected_basis | adjudicated_by | adjudicated_on
+             delete key = "setup"  (back to a plain CA16 line holding the selected amount)
+  reserve_item  add key = new id ("M-xxxxxx")  value: title, impact, basis (Sell|Cost), probability_low/high, prob_status, ... (see management_reserve.ITEM_FIELDS)
+             set    key = id   field: any of management_reserve.ITEM_FIELDS
+             delete key = id
   programme  add    key = "setup"   value: start?, days_per_week?, hours_per_day?  (one task per QS item, no predecessors yet)
              delete key = "setup"
              set    key = "config"  field: start | days_per_week | hours_per_day
@@ -62,6 +68,7 @@ from . import schedule as sch
 from . import register as reg
 from . import quotes as qt
 from . import risk_truth as rtm
+from . import management_reserve as mrm
 from . import programme as prg
 import json
 
@@ -162,6 +169,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     register = copy.deepcopy(base.register)
     quotes = copy.deepcopy(base.quotes)
     exposures = copy.deepcopy(base.risk_truth)
+    reserve = copy.deepcopy(base.management_reserve)
     programme = copy.deepcopy(base.programme)
     sched_before = copy.deepcopy(base.schedule)
     setup_before = wx.clone(base.weather_setup)
@@ -298,6 +306,8 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
             if key not in com_pos:
                 raise EditError(f"Unknown commercial line {key!r}.")
             c = commercial[com_pos[key]]
+            if key == "CA16" and reserve is not None and field in ("pc_sum", "pct"):
+                raise EditError("The Management Reserve amount is set on the Management Reserve page (selected reserve), not here.")
             if field == "include":
                 c["include"] = _yesno(value, f"{key} include")
             elif field == "pct":
@@ -475,6 +485,57 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
             except qt.QuoteError as ex:
                 raise EditError(str(ex))
 
+        elif target == "reserve":
+            try:
+                if key == "setup":
+                    if op == "add":
+                        if reserve is not None:
+                            raise EditError("The Management Reserve adjudication is already switched on.")
+                        ca = commercial[com_pos["CA16"]] if "CA16" in com_pos else None
+                        reserve = mrm.new_block(str(ca["pc_sum"]) if ca and ca["method"] in ("Fixed Amount", "PC Sum") and D(ca["pc_sum"]) > 0 else "")
+                    elif op == "delete":
+                        if reserve is None:
+                            raise EditError("The Management Reserve adjudication isn't switched on.")
+                        if "CA16" in com_pos:                       # keep the selected amount as a plain fixed line
+                            ca = commercial[com_pos["CA16"]]
+                            ca["method"] = "Fixed Amount"; ca["pc_sum"] = D(mrm._num(reserve.get("selected")) or 0)
+                        reserve = None
+                    else:
+                        raise EditError("Use add or delete on the reserve setup.")
+                else:
+                    if reserve is None:
+                        raise EditError("Switch the Management Reserve adjudication on first.")
+                    if key != "block" or op != "set":
+                        raise EditError("Unknown reserve setting.")
+                    mrm.set_block_field(reserve, str(field), value)
+            except mrm.ReserveError as ex:
+                raise EditError(str(ex))
+
+        elif target == "reserve_item":
+            try:
+                if reserve is None:
+                    raise EditError("Switch the Management Reserve adjudication on first.")
+                items = reserve["items"]
+                if op == "add":
+                    mid = str(key or "")
+                    if not mrm.ITEM_ID.match(mid) or any(x["id"] == mid for x in items):
+                        raise EditError("That new item's identity is invalid or already used.")
+                    if len(items) >= mrm.MAX_ITEMS:
+                        raise EditError(f"The reserve can hold at most {mrm.MAX_ITEMS} items.")
+                    items.append(mrm.build_item(mid, value if isinstance(value, dict) else {}, items))
+                else:
+                    item = next((x for x in items if x["id"] == str(key)), None)
+                    if item is None:
+                        raise EditError(f"Unknown reserve item {key!r}.")
+                    if op == "delete":
+                        items.remove(item)
+                    else:
+                        mrm.set_item_field(item, str(field), value)
+                        if item["ref"] and sum(1 for x in items if x["ref"] == item["ref"]) > 1:
+                            raise EditError(f"{item['ref']} is already used.")
+            except mrm.ReserveError as ex:
+                raise EditError(str(ex))
+
         elif target == "exposure":
             try:
                 if op == "add":
@@ -584,6 +645,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
             t["predecessors"] = [c for c in t["predecessors"] if c not in gone]
     m.weather_links, m.weather_setup, m.schedule, m.register, m.quotes, m.programme = links, setup, sched, register, quotes, programme
     m.risk_truth = exposures
+    m.management_reserve = reserve
     m.reference = None            # no longer the workbook as received
     return m, _net_changes(base, m, rows, qs, new_library)
 
@@ -651,6 +713,7 @@ def _net_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, rows: list[_R
     _register_changes(a, b, add)
     _quote_changes(a, b, add)
     _exposure_changes(a, b, add)
+    _reserve_changes(a, b, add)
     _programme_changes(a, b, add)
     add("setting", "weather", "recovery_allowance", "Weather recovery allowance", D(a.recovery), D(b.recovery))
     add("setting", "consolidated", "confirmed_overlap", "Confirmed Siteworks / Coast overlap", D(a.overlap), D(b.overlap))
@@ -749,6 +812,28 @@ def _exposure_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> 
     for xid, y in ib.items():
         if xid not in ia:
             add("exposure", xid, "added", label(y), "", y["consequence"][:80])
+
+
+def _reserve_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:
+    ra, rb = a.management_reserve, b.management_reserve
+    if ra is None and rb is not None:
+        add("reserve", "setup", "added", "Management Reserve adjudication", "", "switched on")
+    elif ra is not None and rb is None:
+        add("reserve", "setup", "removed", "Management Reserve adjudication", "switched on", "")
+    if ra is not None and rb is not None:
+        for f in mrm.BLOCK_FIELDS:
+            add("reserve", "block", f, "Management Reserve", ra.get(f, ""), rb.get(f, ""))
+        ia, ib = {x["id"]: x for x in ra["items"]}, {x["id"]: x for x in rb["items"]}
+        label = lambda x: f"Reserve {x['ref']} {x['title']}".strip()[:120]
+        for xid, x in ia.items():
+            if xid not in ib:
+                add("reserve_item", xid, "removed", label(x), x["title"][:80], "")
+            else:
+                for f in mrm.ITEM_FIELDS:
+                    add("reserve_item", xid, f, label(x), x[f], ib[xid][f])
+        for xid, y in ib.items():
+            if xid not in ia:
+                add("reserve_item", xid, "added", label(y), "", y["title"][:80])
 
 
 def _programme_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:

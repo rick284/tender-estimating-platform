@@ -10,6 +10,7 @@ from typing import Any
 from .buildup import compute_buildup
 from .commercial import compute_tender
 from . import risk_truth as rtm
+from . import management_reserve as mrm
 from .consolidated import compute_consolidated
 from .importers.master_workbook import MasterWorkbookImport
 from .models import CommercialInput, WeatherInputs
@@ -90,11 +91,15 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
             ev = weather.allowance
         elif live_rt and c["ref"] in ("CA01", "CA02"):
             ev = rtr["ca01"] if c["ref"] == "CA01" else rtr["ca02"]
+        elif m.management_reserve is not None and c["ref"] == "CA16":
+            ev = mrm._num(m.management_reserve.get("selected")) or D(0)
+            c = {**c, "method": "Management Reserve"}
         else:
             ev = m.risk_feed.get(c["ref"], D(0))
         commercial.append(CommercialInput(c["ref"], c["name"], c["method"], c["include"], c["pct"], c["pc_sum"], ev))
     tender = compute_tender(qs.total_direct, commercial)
     cmap = {c.ref: c for c in commercial}
+    mr_out = _reserve_out(m, commercial, qs.total_direct, tender, rtr)
     cons = compute_consolidated(tender.subtotal, m.overlays, m.overlap, cmap["CA17"].pct, cmap["CA18"].pct)
 
     # ---- QS lines with their build-up rows
@@ -215,10 +220,43 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
         "consolidated": consolidated_out, "tender": tender_out, "commercial": commercial_out,
         "qs": qs_out, "sections": sections, "buildup": buildup, "library": library, "weather": weather_out,
         "reconciliation": reconciliation, "qa_counts": flag_counts, "schedule": schedule_out,
-        "risk_truth": _risk_truth_out(m, rtr), "register": m.register, "register_summary": register_status_summary(m.register), "quotes": m.quotes, "programme": programme_out,
+        "risk_truth": _risk_truth_out(m, rtr), "management_reserve": mr_out, "register": m.register, "register_summary": register_status_summary(m.register), "quotes": m.quotes, "programme": programme_out,
         "reconciled": all(r["ok"] for r in reconciliation) if m.reference is not None else None,
         "edited": m.reference is None,
     }
+
+
+def _reserve_out(m, commercial, base_direct, tender, rtr) -> dict[str, Any] | None:
+    """Management Reserve adjudication: weighted exposures vs the selected reserve. The markup factor is the tender's own sell effect of one more
+    dollar of pre-margin cost, taken from the commercial engine."""
+    blk = m.management_reserve
+    if blk is None:
+        return None
+    from dataclasses import replace as _rep
+    bump = D(1000)
+    ca16 = next((c for c in commercial if c.ref == "CA16"), None)
+    if ca16 is None:
+        factor = D(1)
+    else:          # sell effect of one more dollar of pre-margin reserve, through the commercial engine itself
+        more = [_rep(c, include="Yes", method="Management Reserve", engine_value=(c.engine_value if c.include == "Yes" else D(0)) + bump) if c.ref == "CA16" else c
+                for c in commercial]
+        factor = (compute_tender(base_direct, more).tender_excl_gst - compute_tender(base_direct, [_rep(c, include="Yes", method="Management Reserve", engine_value=c.engine_value if c.include == "Yes" else D(0))
+                                                                                                    if c.ref == "CA16" else c for c in commercial]).tender_excl_gst) / bump
+    exposures = [{"ref": x["ref"], "addition": o["addition"]} for x, o in zip(m.risk_truth, rtr["exposures"])]
+    r = mrm.compute(blk, factor, exposures, tender.subtotal)
+    items = []
+    for it, o in zip(blk["items"], r["items"]):
+        items.append({**it, "cost_impact": None if o["cost_impact"] is None else _f(o["cost_impact"]), "weighted_low": None if o["weighted_low"] is None else _f(o["weighted_low"]),
+                      "weighted_high": None if o["weighted_high"] is None else _f(o["weighted_high"]),
+                      "weighted_low_sell": None if o["weighted_low_sell"] is None else _f(o["weighted_low_sell"]),
+                      "weighted_high_sell": None if o["weighted_high_sell"] is None else _f(o["weighted_high_sell"]),
+                      "sensitivity": None if o["sensitivity"] is None else _f(o["sensitivity"]), "counted": o["counted"], "status": o["status"], "reasons": o["reasons"]})
+    g = lambda k: None if r[k] is None else _f(r[k])
+    return {"items": items, "selected": g("selected"), "selected_sell": g("selected_sell"), "selected_pct": g("selected_pct"), "selected_basis": blk.get("selected_basis", ""),
+            "adjudicated_by": blk.get("adjudicated_by", ""), "adjudicated_on": blk.get("adjudicated_on", ""),
+            "weighted_low": g("weighted_low"), "weighted_high": g("weighted_high"), "weighted_mid": g("weighted_mid"), "weighted_low_sell": g("weighted_low_sell"),
+            "weighted_high_sell": g("weighted_high_sell"), "weighted_mid_sell": g("weighted_mid_sell"), "position": r["position"], "factor": g("factor"),
+            "unknown_items": r["unknown_items"], "unquantified_items": r["unquantified_items"], "issues": r["issues"], "notes": r["notes"], "status": r["status"]}
 
 
 def _risk_truth_out(m, r) -> dict[str, Any]:

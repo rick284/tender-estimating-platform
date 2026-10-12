@@ -21,6 +21,7 @@ import { Register } from "./Register";
 import { Quotes } from "./Quotes";
 import { DriveDocs } from "./DriveDocs";
 import { RiskTruth } from "./RiskTruth";
+import { ManagementReserve } from "./ManagementReserve";
 import { Programme } from "./Programme";
 import { Revisions } from "./Revisions";
 import type { User } from "../lib/types";
@@ -327,6 +328,7 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
         {!err && shown && pg === "buildup" && <BuildUp est={shown} code={code} setCode={setCode} focusUid={focusUid} />}
         {!err && shown && pg === "weather" && <Weather est={shown} />}
         {!err && shown && pg === "risk" && <RiskTruth est={shown} />}
+        {!err && shown && pg === "reserve" && <ManagementReserve est={shown} />}
         {!err && shown && pg === "register" && <Register est={shown} />}
         {!err && shown && pg === "programme" && <Programme est={shown} />}
         {!err && shown && pg === "quotes" && <Quotes est={shown} />}

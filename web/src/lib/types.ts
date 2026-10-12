@@ -27,6 +27,7 @@ export interface Estimate {
   quotes: QuoteItem[];
   programme: ProgrammeData;
   risk_truth: RiskTruth;
+  management_reserve: ManagementReserve | null;
   reconciliation: { name: string; engine: number; workbook: number; difference: number; ok: boolean }[];
   qa_counts: Record<string, number>;
   reconciled: boolean | null;
@@ -122,4 +123,17 @@ export interface RiskExposure {
 export interface RiskTruth {
   exposures: RiskExposure[]; ca01: number; ca02: number; residual_total: number; red_risks: number; red_exposures: number; amber_exposures: number;
   duplicate_gate: string; programme_gate: string; gate: string; issues: string[]; live: boolean;
+}
+
+export interface ReserveItem {
+  id: string; ref: string; title: string; source_ref: string; exposure_ref: string; description: string; basis: "Sell" | "Cost"; impact: string;
+  impact_status: "Quantified" | "Proxy" | "Unquantified"; probability_low: string; probability_high: string; prob_status: "GREEN" | "AMBER" | "UNKNOWN";
+  prob_basis: string; overlap_group: string; owner: string; action: string;
+  cost_impact: number | null; weighted_low: number | null; weighted_high: number | null; weighted_low_sell: number | null; weighted_high_sell: number | null;
+  sensitivity: number | null; counted: boolean; status: "RED" | "AMBER" | "GREEN"; reasons: string[];
+}
+export interface ManagementReserve {
+  items: ReserveItem[]; selected: number | null; selected_sell: number | null; selected_pct: number | null; selected_basis: string; adjudicated_by: string; adjudicated_on: string;
+  weighted_low: number; weighted_high: number; weighted_mid: number; weighted_low_sell: number; weighted_high_sell: number; weighted_mid_sell: number;
+  position: "below" | "within" | "above" | null; factor: number; unknown_items: number; unquantified_items: number; issues: string[]; notes: string[]; status: "RED" | "AMBER" | "GREEN";
 }

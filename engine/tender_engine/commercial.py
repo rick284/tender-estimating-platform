@@ -45,7 +45,7 @@ def _pre_margin_amount(ci: CommercialInput, base: Decimal) -> Decimal:
     if ci.include != "Yes":
         return ZERO
     m = ci.method
-    if m in ("Risk Engine", "Weather Engine"):
+    if m in ("Risk Engine", "Weather Engine", "Management Reserve"):
         return D(ci.engine_value)
     if m in ("PC Sum", "Fixed Amount"):
         return D(ci.pc_sum)

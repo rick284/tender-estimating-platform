@@ -51,6 +51,7 @@ class MasterWorkbookImport:
     register: list = field(default_factory=list)  # tender register items (tender_engine.register)
     quotes: list = field(default_factory=list)    # supplier / subcontractor quote register (tender_engine.quotes)
     risk_truth: list = field(default_factory=list)  # Risk Truth exposures (tender_engine.risk_truth)
+    management_reserve: dict | None = None         # Management Reserve adjudication (tender_engine.management_reserve); None = CA16 stays a plain line
     programme: dict | None = None                # programme tasks, predecessors and calendar (tender_engine.programme); None = not set up
     cached: Any = field(repr=False, default=None)
 
@@ -242,6 +243,16 @@ def _programme_from_sheet(ws, qs_codes: set[str], start: str, days_per_week: int
     return {"start": start, "days_per_week": days_per_week, "hours_per_day": 8, "tasks": tasks}
 
 
+def _reserve_from_commercial(commercial: list[dict]) -> dict | None:
+    """A workbook whose CA16 Management Reserve is an included fixed amount becomes an adjudication block whose selected reserve is that amount
+    (total unchanged); the rationale in the workbook note is kept. Items are entered in the platform."""
+    from .. import management_reserve as mr
+    ca = next((c for c in commercial if c["ref"] == "CA16"), None)
+    if ca is None or ca["include"] != "Yes" or ca["method"] != "Fixed Amount" or D(ca["pc_sum"]) <= 0:
+        return None
+    return mr.new_block(str(ca["pc_sum"]), (ca.get("note") or "")[:3000])
+
+
 def _register_with_risk_truth(v) -> list[dict]:
     """Register from the Cover sheet; where the workbook has a Risk Truth tab its risk list (the controlling one) replaces the Cover's older key risks."""
     reg = _register_from_cover(v["Cover & Instructions"])
@@ -343,7 +354,8 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
         if ref and str(ref).startswith("CA"):
             commercial.append(dict(ref=str(ref), name=_s(ci.cell(r, 2).value), method=_s(ci.cell(r, 3).value),
                                    pct=D(ci.cell(r, 4).value), pc_sum=D(ci.cell(r, 5).value),
-                                   include=_s(ci.cell(r, 6).value), basis=_s(v["Commercial Inputs"].cell(r, 8).value)))
+                                   include=_s(ci.cell(r, 6).value), basis=_s(v["Commercial Inputs"].cell(r, 8).value),
+                                   note=_s(v["Commercial Inputs"].cell(r, 13).value)))
     rt = v["Risk Truth"]
     risk_feed = {"CA01": D(rt["B12"].value), "CA02": D(rt["B13"].value)}
 
@@ -389,6 +401,7 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
         risk_feed=risk_feed, overlays=overlays, overlap=D(cp["B13"].value), weather_meta=weather_meta, weather_links=weather_links,
         controls=controls, register=_register_with_risk_truth(v),
         risk_truth=_risks_and_exposures_from_risk_truth(v["Risk Truth"])[1] if "Risk Truth" in v.sheetnames else [],
+        management_reserve=_reserve_from_commercial(commercial),
         quotes=_quotes_from_sheet(v["Supplier Quote Register"]) if "Supplier Quote Register" in v.sheetnames else [],
         programme=_programme_from_sheet(v["Programme Export"] if "Programme Export" in v.sheetnames else None, {q.code for q in qs}, weather_meta.get("start", ""),
                                         int(weather_meta["wd_per_week"]) if str(weather_meta.get("wd_per_week", "")).isdigit() else 5), cached=v)
