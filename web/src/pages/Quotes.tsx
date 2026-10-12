@@ -68,7 +68,7 @@ export function Quotes({ est }: { est: Estimate }) {
         <Panel flush>
           <div className="overflow-x-auto">
             <table className="grid-table min-w-[64rem]">
-              <thead><tr><th className="w-16">Ref</th><th className="w-48">Package</th><th className="w-44">Supplier</th><th className="w-24">QS items</th><th className="w-28 text-right">Amount</th><th className="w-40">Status</th><th>Notes and action</th><th className="w-44">Evidence</th>{editing && <th />}</tr></thead>
+              <thead><tr><th className="min-w-[4rem]">Ref</th><th className="min-w-[12rem]">Package</th><th className="min-w-[11rem]">Supplier</th><th className="min-w-[6rem]">QS items</th><th className="min-w-[7rem] text-right">Amount</th><th className="min-w-[10rem]">Status</th><th className="min-w-[18rem]">Notes and action</th><th className="min-w-[11rem]">Evidence</th>{editing && <th />}</tr></thead>
               <tbody>
                 {quotes.map((q) => (
                   <tr key={q.id}>

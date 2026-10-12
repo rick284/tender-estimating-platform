@@ -27,8 +27,8 @@ export function Consolidated({ est }: { est: Estimate }) {
               {c.overlays.map((o) => (
                 <tr key={o.name}>
                   <td>{o.name}<div className="mt-0.5"><Chip tone="neutral">{o.kind.toLowerCase()}</Chip></div></td>
-                  <td className="num"><EditNum target="overlay" id={o.name} field="amount" original={o.amount} dp={2} width="w-32" label={`${o.name} amount`} display={<Money v={o.amount} />} />
-                    {editing && <button className="btn btn-ghost ml-2 !px-2 !py-1" aria-label={`Remove ${o.name}`} onClick={() => { if (window.confirm(`Remove ${o.name}? You can undo this before saving.`)) remove("overlay", o.name); }}>Remove</button>}</td>
+                  <td className="num"><div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:justify-end sm:gap-2"><EditNum target="overlay" id={o.name} field="amount" original={o.amount} dp={2} width="w-32" label={`${o.name} amount`} display={<Money v={o.amount} />} />
+                    {editing && <button className="btn btn-ghost !px-2 !py-1" aria-label={`Remove ${o.name}`} onClick={() => { if (window.confirm(`Remove ${o.name}? You can undo this before saving.`)) remove("overlay", o.name); }}>Remove</button>}</div></td>
                 </tr>
               ))}
               {c.overlays.length === 0 && <tr><td colSpan={2} className="text-sm text-muted-foreground">No subcontract packages yet.{editing ? "" : " Switch to Edit to add one."}</td></tr>}

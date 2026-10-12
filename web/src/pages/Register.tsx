@@ -91,19 +91,19 @@ export function Register({ est }: { est: Estimate }) {
       {rows.length === 0 ? <Empty title={`No ${tab.label.toLowerCase()} yet`} body={editing ? `Use Add ${tab.one} to record one. ${tab.hint}` : `${tab.hint} Press Edit to add one.`} /> : (
         <Panel flush>
           <div className="overflow-x-auto">
-            <table className="grid-table min-w-[48rem]">
+            <table className="grid-table min-w-[60rem]">
               {kind === "rfi" && <>
-                <thead><tr><th className="w-24">Ref</th><th className="w-56">Item</th><th>Detail</th><th className="w-28">Status</th><th className="w-28">Rating</th>{editing && <th />}</tr></thead>
+                <thead><tr><th className="w-24">Ref</th><th className="min-w-[14rem]">Item</th><th className="min-w-[18rem]">Detail</th><th className="w-28">Status</th><th className="w-28">Rating</th>{editing && <th />}</tr></thead>
                 <tbody>{rows.map((it) => <tr key={it.id}><td className="font-mono text-xs">{E(it, "ref", "reference", { width: "w-20" })}</td><td className="font-medium">{E(it, "title", "title")}</td>
                   <td className={wrap}>{E(it, "detail", "detail", { kind: "textarea" })}</td><td>{E(it, "status", "status", { kind: "select", options: STATUS, width: "w-24" })}</td>
                   <td>{E(it, "rag", "rating", { kind: "select", options: RAGS, width: "w-24" })}</td>{editing && <td>{del(it)}</td>}</tr>)}</tbody></>}
               {kind === "risk" && <>
-                <thead><tr><th className="w-20">Ref</th><th className="w-52">Risk</th><th className="w-20">Likelihood</th><th className="w-20">Impact</th><th>Treatment in the price</th><th>Outside baseline / closeout</th><th className="w-28">Owner</th><th className="w-24">Rating</th>{editing && <th />}</tr></thead>
+                <thead><tr><th className="w-20">Ref</th><th className="min-w-[13rem]">Risk</th><th className="w-20">Likelihood</th><th className="w-20">Impact</th><th>Treatment in the price</th><th>Outside baseline / closeout</th><th className="w-28">Owner</th><th className="w-24">Rating</th>{editing && <th />}</tr></thead>
                 <tbody>{rows.map((it) => <tr key={it.id}><td className="font-mono text-xs">{E(it, "ref", "reference", { width: "w-16" })}</td><td className="font-medium">{E(it, "title", "title")}</td><td>{E(it, "likelihood", "likelihood", { width: "w-20" })}</td>
                   <td>{E(it, "impact", "impact", { width: "w-20" })}</td><td className={wrap}>{E(it, "detail", "treatment", { kind: "textarea" })}</td><td className={wrap}>{E(it, "action", "closeout", { kind: "textarea" })}</td>
                   <td>{E(it, "owner", "owner", { width: "w-24" })}</td><td>{E(it, "rag", "rating", { kind: "select", options: RAGS, width: "w-24" })}</td>{editing && <td>{del(it)}</td>}</tr>)}</tbody></>}
               {(kind === "assumption" || kind === "exclusion" || kind === "inclusion") && <>
-                <thead><tr><th className="w-24">Ref</th><th className="w-64">Summary</th><th>Detail</th>{editing && <th />}</tr></thead>
+                <thead><tr><th className="w-24">Ref</th><th className="w-64">Summary</th><th className="min-w-[18rem]">Detail</th>{editing && <th />}</tr></thead>
                 <tbody>{rows.map((it) => <tr key={it.id}><td className="font-mono text-xs">{E(it, "ref", "reference", { width: "w-20" })}</td><td className="font-medium">{E(it, "title", "summary", { kind: "textarea" })}</td>
                   <td className={wrap}>{E(it, "detail", "detail", { kind: "textarea" })}</td>{editing && <td>{del(it)}</td>}</tr>)}</tbody></>}
               {kind === "document" && <>

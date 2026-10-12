@@ -83,8 +83,8 @@ export function RiskTruth({ est }: { est: Estimate }) {
           </Panel>
           <Panel flush>
             <div className="overflow-x-auto">
-              <table className="grid-table min-w-[72rem]">
-                <thead><tr><th className="w-24">Ref</th><th className="w-72">Exposure</th><th className="w-44">Already priced at</th><th className="w-44">Calculation</th><th className="w-28 text-right">Provision</th><th className="w-20">Adds cost?</th><th className="w-24">Aimed at</th><th className="w-28">Evidence</th><th className="w-28">Status</th>{editing && <th className="w-12" />}</tr></thead>
+              <table className="grid-table min-w-[86rem]">
+                <thead><tr><th className="min-w-[6rem]">Ref</th><th className="min-w-[18rem]">Exposure</th><th className="min-w-[14rem]">Already priced at</th><th className="min-w-[12rem]">Calculation</th><th className="min-w-[7rem] text-right">Provision</th><th className="min-w-[5rem]">Adds cost?</th><th className="min-w-[12rem]">Aimed at</th><th className="min-w-[7rem]">Evidence</th><th className="min-w-[7rem]">Status</th>{editing && <th className="min-w-[3rem]" />}</tr></thead>
                 <tbody>
                   {xs.map((x) => (
                     <Fragment key={x.id}>

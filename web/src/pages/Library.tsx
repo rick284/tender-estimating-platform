@@ -19,12 +19,12 @@ export function RateLibrary({ est }: { est: Estimate }) {
       {rows.length === 0 ? <Empty title="No rates match" body="Clear the search or category." /> : (
         <Panel flush>
           <div className="overflow-x-auto">
-            <table className="grid-table min-w-[40rem]">
-              <thead><tr><th className="w-36">Code</th><th>Description</th><th className="hidden w-28 sm:table-cell">Category</th><th className="w-14">Unit</th><th className="w-28 text-right">Rate</th><th className="hidden w-16 lg:table-cell">Used</th><th className="hidden lg:table-cell">Source</th></tr></thead>
+            <table className="grid-table min-w-[48rem]">
+              <thead><tr><th className="w-36">Code</th><th className="min-w-[14rem]">Description</th><th className="hidden w-28 sm:table-cell">Category</th><th className="w-20">Unit</th><th className="w-28 text-right">Rate</th><th className="hidden w-16 lg:table-cell">Used</th><th className="hidden lg:table-cell">Source</th></tr></thead>
               <tbody>
                 {rows.map((l) => (
                   <tr key={l.code}>
-                    <td className="font-mono text-xs">{l.code}</td><td>{l.description}</td>
+                    <td className="nowrap whitespace-nowrap font-mono text-xs">{l.code}</td><td>{l.description}</td>
                     <td className="hidden text-muted-foreground sm:table-cell">{l.category}</td><td>{l.unit}</td>
                     <td className="num">{fmtMoney(l.rate)}</td>
                     <td className="hidden lg:table-cell">{used.has(l.code) ? "Yes" : <span className="text-muted-foreground">—</span>}</td>

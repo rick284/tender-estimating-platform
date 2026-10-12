@@ -29,9 +29,9 @@
 @layer components {
   .label { @apply font-heading text-2xs font-bold uppercase text-muted-foreground; letter-spacing: 0.08em; }
   .num { @apply font-mono text-right whitespace-nowrap; font-variant-numeric: tabular-nums; }
-  .panel { @apply border bg-card; }
-  .panel-head { @apply flex items-center justify-between gap-3 border-b px-4 py-3; }
-  .btn { @apply inline-flex items-center justify-center gap-2 border border-primary px-4 py-2 font-heading text-xs font-bold uppercase tracking-wider transition-colors; }
+  .panel { @apply min-w-0 border bg-card; }
+  .panel-head { @apply flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3; }
+  .btn { @apply inline-flex whitespace-nowrap items-center justify-center gap-2 border border-primary px-4 py-2 font-heading text-xs font-bold uppercase tracking-wider transition-colors; }
   .btn:disabled { @apply cursor-not-allowed opacity-40; }
   .btn-solid { @apply bg-primary text-primary-foreground hover:bg-foreground/85; }
   .btn-ghost { @apply bg-background text-foreground hover:bg-muted; }
@@ -46,7 +46,8 @@
 }
 
 @media (max-width: 639px) { .grid-table :where(td, thead th) { padding-left: 0.5rem; padding-right: 0.5rem; } }
-.grid-table td { overflow-wrap: anywhere; }
+.grid-table td { overflow-wrap: break-word; }
+dd, dt { overflow-wrap: anywhere; }
 .grid-table td.num, .grid-table td.nowrap { overflow-wrap: normal; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }

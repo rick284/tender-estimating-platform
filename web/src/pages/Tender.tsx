@@ -24,7 +24,7 @@ function Basis({ c }: { c: Estimate["commercial"][number] }) {
           ? <EditField target="commercial" id={c.ref} field="method" value={c.method} kind="select" width="w-full" label={`${c.ref} basis`} options={c.methods.map((m) => ({ value: m, label: METHOD_LABEL[m] ?? m }))} />
           : <span className="text-xs text-muted-foreground">{c.method}</span>}
         <div className="flex items-center gap-1.5">
-          {pctMethod && <><span className="w-3" aria-hidden="true" /><EditNum target="commercial" id={c.ref} field="pct" original={c.pct} scale={100} width="w-28" label={`${c.ref} percentage`} display="" /><span className="text-xs text-muted-foreground">% {PCT_OF(c.ref, c.method)}</span></>}
+          {pctMethod && <><span className="w-3" aria-hidden="true" /><EditNum target="commercial" id={c.ref} field="pct" original={c.pct} scale={100} width="w-28" label={`${c.ref} percentage`} display="" /><span className="whitespace-nowrap text-xs text-muted-foreground">% {PCT_OF(c.ref, c.method)}</span></>}
           {amtMethod && <><span className="w-3 text-right text-xs text-muted-foreground">$</span><EditNum target="commercial" id={c.ref} field="pc_sum" original={c.pc_sum} dp={2} width="w-28" label={`${c.ref} amount`} display="" /></>}
         </div>
       </div>

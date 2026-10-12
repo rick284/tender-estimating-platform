@@ -71,15 +71,15 @@ export function Outputs({ est, tenderId, rev }: { est: Estimate; tenderId: strin
       </Panel>
 
       <Panel className="mt-4" title="Price schedule" flush
-        action={<span className="flex items-center gap-2"><Chip tone={sch.reconciles ? "green" : "red"}>{sch.reconciles ? "Reconciles" : "Not reconciled"}</Chip>
+        action={<span className="flex flex-wrap items-center gap-2"><Chip tone={sch.reconciles ? "green" : "red"}>{sch.reconciles ? "Reconciles" : "Not reconciled"}</Chip>
           {editing && <button className="btn btn-ghost !py-1" onClick={() => setFormatOpen(true)}>{sch.auto ? "Use the client's format" : "Replace format"}</button>}
           {editing && !sch.auto && <button className="btn btn-ghost !py-1" onClick={() => { if (window.confirm("Go back to the automatic schedule by section? You can undo this before saving.")) remove("schedule", "format"); }}>Back to automatic</button>}</span>}>
         <div className="border-b px-4 py-3 text-sm text-muted-foreground">
           {sch.auto ? "Automatic format: one line per QS section and one per subcontract package. If the client gave you their own schedule, use their format." : <>Format: <strong className="text-foreground">{sch.name || "Client format"}</strong>{sch.client && <> · {sch.client}</>}</>}
         </div>
         <div className="overflow-x-auto">
-          <table className="grid-table">
-            <thead><tr><th className="w-28">Ref</th><th>Trade</th><th className="w-40 text-right">Total (excl. GST)</th></tr></thead>
+          <table className="grid-table min-w-[28rem]">
+            <thead><tr><th className="w-28">Ref</th><th className="min-w-[14rem]">Trade</th><th className="w-40 text-right">Total (excl. GST)</th></tr></thead>
             <tbody>
               {sch.groups.map((g) => (
                 <GroupRows key={g.id} g={g} single={!multi} />
@@ -100,8 +100,8 @@ export function Outputs({ est, tenderId, rev }: { est: Estimate; tenderId: strin
       <Panel className="mt-4" title="Where each cost goes" flush
         action={sch.unmapped.length > 0 ? <Chip tone="red">{sch.unmapped.length} not mapped</Chip> : <Chip tone="green">All mapped</Chip>}>
         <div className="overflow-x-auto">
-          <table className="grid-table min-w-[40rem]">
-            <thead><tr><th>Item</th><th className="w-28">Type</th><th className="w-36 text-right">Amount</th><th className="w-80">Schedule line</th></tr></thead>
+          <table className="grid-table min-w-[48rem]">
+            <thead><tr><th className="min-w-[14rem]">Item</th><th className="w-28">Type</th><th className="w-36 text-right">Amount</th><th className="w-80">Schedule line</th></tr></thead>
             <tbody>
               {sources.map((s) => {
                 const v = current(s);
