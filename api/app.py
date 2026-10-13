@@ -35,7 +35,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Tender Estimating Platform API", version="0.2.0", lifespan=lifespan,
+app = FastAPI(title="Blackline QSi Pro API", version="0.2.0", lifespan=lifespan,
               docs_url=None if config.IS_PROD else "/docs", redoc_url=None, openapi_url=None if config.IS_PROD else "/openapi.json")
 
 

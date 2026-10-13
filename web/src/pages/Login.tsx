@@ -27,7 +27,7 @@ export function Login() {
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
       <form onSubmit={submit} className="w-full max-w-sm" noValidate>
         <div className="mb-8">
-          <div className="font-heading text-2xl font-black uppercase tracking-tight">Estimating Platform</div>
+          <div className="font-heading text-2xl font-black uppercase tracking-tight">Blackline QSi Pro</div>
           <div className="label mt-1">Civil &amp; commercial tenders</div>
         </div>
         <h1 className="text-xl">{mode === "in" ? "Sign in" : cfg?.first_account ? "Create your workspace" : "Create account"}</h1>

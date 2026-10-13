@@ -28,7 +28,7 @@ export const isTenderPage = (p: string): p is TenderPage => TENDER_NAV.some((n) 
 function Brand() {
   return (
     <div className="leading-none">
-      <div className="font-heading text-base font-black uppercase tracking-tight">Estimating Platform</div>
+      <div className="font-heading text-base font-black uppercase tracking-tight">Blackline QSi Pro</div>
       <div className="label mt-1 !text-[0.625rem]">Civil &amp; commercial tenders</div>
     </div>
   );

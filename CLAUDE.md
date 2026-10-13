@@ -1,4 +1,6 @@
-# Tender Estimating Platform — handoff for Claude
+# Blackline QSi Pro (working name until now: Tender Estimating Platform) — handoff for Claude
+
+Rename (Rick, 13 Oct 2026): this product is **Blackline QSi Pro**; the other tool (rick284/blackline-estimating-standalone) is being renamed too. Visible brand text updated in the side menu, sign-in page, page title and API title; the repo, Netlify/Render service names and URLs are unchanged for now.
 
 Owner: Rick (non-technical; wants step-by-step walkthroughs, plain language, no unexplained jargon).
 Purpose: a standalone, sellable (managed web subscription) tender-estimating platform for smaller NZ civil/commercial contractors. It recreates Rick's ChatGPT-built estimating system without depending on a chat session.
