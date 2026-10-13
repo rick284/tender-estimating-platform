@@ -54,6 +54,9 @@ with sync_playwright() as p:
     expect(pg.get_by_text("Can't be used")).to_be_visible()
     assert pg.locator("[data-testid=ai-logic-dialog] input[type=checkbox]").nth(2).is_disabled()                                  # the failed one cannot be selected
     pg.screenshot(path=SHOT + "ai_logic.png")
+    pg.get_by_test_id("question-to-rfi").first.click(); pg.wait_for_timeout(600)                                                  # a question becomes an RFI in the register draft
+    expect(pg.get_by_test_id("question-to-rfi").first).to_contain_text("RFI added")
+    expect(pg.get_by_test_id("question-to-rfi").first).to_be_disabled()
     expect(pg.get_by_test_id("ai-apply")).to_contain_text("Apply 2 selected")
     # reject needs a reason: untick one, add reason
     pg.locator("[data-testid=ai-logic-dialog] input[type=checkbox]").nth(1).uncheck()

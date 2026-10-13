@@ -241,3 +241,33 @@ def test_ai_needs_a_saved_programme_with_tasks(client, auth):
     d = client.post(f"/api/tenders/{tid}/programmes/blank", headers=auth, json={"name": "P"}).json()
     r, _ = _propose(client, auth, tid, d["id"], {"links": [], "remove_links": [], "questions": [], "coverage_notes": ""})
     assert r.status_code == 409 and "Add at least a few tasks" in r.json()["detail"]
+
+
+def test_a_removal_that_changes_the_link_type_carries_its_replacement_as_a_checked_pair():
+    data = {"links": [], "remove_links": [{"pred_uid": 2, "succ_uid": 3, "reason": "Cartage runs alongside stripping", "confidence": "medium", "replace_type": "SS", "replace_lag_days": 1},
+                                           {"pred_uid": 3, "succ_uid": 4, "reason": "Not needed", "confidence": "high", "replace_type": "none", "replace_lag_days": 0}],
+            "questions": [], "coverage_notes": ""}
+    r = pa.verify(data, TASKS)
+    rem = [p for p in r["proposals"] if p["kind"] == "remove"]
+    new = [p for p in r["proposals"] if p["kind"] == "link"]
+    assert [p["confidence"] for p in rem] == ["medium", "high"]                       # removals now carry their own confidence
+    assert len(new) == 1 and (new[0]["pred_uid"], new[0]["succ_uid"], new[0]["type"], new[0]["lag_days"]) == (2, 3, "SS", 1)
+    assert new[0]["status"] == "ok" and new[0]["pair"] == rem[0]["pair"] and "pair" not in rem[1]
+
+
+def test_prompt_explains_confidence_and_replacement():
+    assert pa.PROMPT_VERSION == "programme-v2" and "replace_type" in pa.SYSTEM and "normal, near-universal construction sequence" in pa.SYSTEM
+
+
+def test_accepting_one_half_of_a_replacement_pair_takes_the_other_too(client, auth):
+    tid = tender(client, auth)
+    pid = _saved_programme(client, auth, tid)
+    _ai_on(client, auth)
+    payload = {"links": [], "remove_links": [{"pred_uid": 2, "succ_uid": 3, "reason": "Runs alongside", "confidence": "medium", "replace_type": "SS", "replace_lag_days": 0}],
+                "questions": [], "coverage_notes": ""}
+    r, _ = _propose(client, auth, tid, pid, payload)
+    ps = r.json()["proposals"]
+    assert {p["kind"] for p in ps} == {"link", "remove"} and len({p["pair"] for p in ps}) == 1
+    rm = next(p["id"] for p in ps if p["kind"] == "remove")
+    d = client.post(f"/api/tenders/{tid}/programmes/{pid}/ai/decision", headers=auth, json={"accept": [rm]})
+    assert d.status_code == 200 and {a["kind"] for a in d.json()["accepted"]} == {"link", "remove"}      # the link is never lost

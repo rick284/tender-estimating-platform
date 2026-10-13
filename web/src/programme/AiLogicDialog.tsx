@@ -4,6 +4,7 @@ import { api, type AiStatus, type ProgrammeAiProposal, type ProgrammeAiResult } 
 import { Modal } from "../components/Modal";
 import { Chip } from "../components/ui";
 import { toast } from "../lib/toast";
+import { newUid, useEdit } from "../lib/edit";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const TYPE_NAME: Record<string, string> = { FS: "finish to start", SS: "start to start", FF: "finish to finish", SF: "start to finish" };
@@ -28,6 +29,9 @@ export function AiLogicDialog({ open, onClose, tenderId, programmeId, dirty, sav
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState("");
   const [err, setErr] = useState("");
+  const [rfis, setRfis] = useState<Record<number, boolean>>({});
+  const [qNote, setQNote] = useState<{ i: number; text: string } | null>(null);
+  const { editing, canEdit, editHint, startEdit, add } = useEdit();
 
   useEffect(() => {
     if (!open) return;
@@ -49,6 +53,19 @@ export function AiLogicDialog({ open, onClose, tenderId, programmeId, dirty, sav
       setPick(Object.fromEntries(r.proposals.map((p) => [p.id, p.status === "ok" && p.confidence !== "low"])));
     } catch (e) { setErr(msg(e)); } finally { setBusy(false); }
   };
+
+  const makeRfi = (i: number, q: { question: string; why: string }) => {
+    setQNote(null);
+    if (!editing) {
+      if (!canEdit) return setQNote({ i, text: editHint || "This revision can't be edited, so nothing can be added to the register. Open the latest revision and try again." });
+      startEdit();
+    }
+    add("register", newUid(), { kind: "rfi", title: q.question.replace(/\?$/, "").slice(0, 120), detail: `Raised from the AI programme logic review. ${q.question}`, action: q.why, rag: "AMBER", status: "OPEN" });
+    setRfis((r) => ({ ...r, [i]: true }));
+    toast.success("RFI added to your register draft. Save the revision to keep it.");
+  };
+  const togglePick = (p: ProgrammeAiProposal, on: boolean) =>
+    setPick((cur) => { const n = { ...cur, [p.id]: on }; if (p.pair) (res?.proposals ?? []).forEach((o) => { if (o.pair === p.pair) n[o.id] = on; }); return n; });
 
   const chosen = (res?.proposals ?? []).filter((p) => pick[p.id] && p.status === "ok");
   const applyChosen = async () => {
@@ -80,13 +97,14 @@ export function AiLogicDialog({ open, onClose, tenderId, programmeId, dirty, sav
   const rows = (kind: "link" | "remove") => (res?.proposals ?? []).filter((p) => p.kind === kind);
   const Row = ({ p }: { p: ProgrammeAiProposal }) => (
     <li className={`flex gap-3 border-b px-3 py-3 last:border-b-0 ${p.status === "ok" ? "" : "bg-muted/50 text-muted-foreground"}`} data-testid="ai-proposal">
-      <input type="checkbox" className="mt-1 h-4 w-4 accent-black" disabled={p.status !== "ok"} checked={!!pick[p.id] && p.status === "ok"} onChange={(e) => setPick({ ...pick, [p.id]: e.target.checked })} aria-label={`Select ${p.pred_name} to ${p.succ_name}`} />
+      <input type="checkbox" className="mt-1 h-4 w-4 accent-black" disabled={p.status !== "ok"} checked={!!pick[p.id] && p.status === "ok"} onChange={(e) => togglePick(p, e.target.checked)} aria-label={`Select ${p.pred_name} to ${p.succ_name}`} />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium leading-snug">{p.pred_name || `Task ${p.pred_uid}`} <span aria-label="then" className="text-muted-foreground">→</span> {p.succ_name || `Task ${p.succ_uid}`}</div>
         {p.kind === "link" && <div className="mt-0.5 text-xs text-muted-foreground">{TYPE_NAME[p.type] ?? p.type}{p.lag_days ? `, ${p.lag_days > 0 ? "lag" : "lead"} ${Math.abs(p.lag_days)} day${Math.abs(p.lag_days) === 1 ? "" : "s"}` : ""}</div>}
         <p className="mt-1 text-sm leading-snug">{p.reason}</p>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <Chip tone={CONF_TONE[p.confidence]}>{p.confidence} confidence</Chip><Chip tone="neutral">{BASIS[p.basis]}{p.register_ref ? ` ${p.register_ref}` : ""}</Chip>
+          {p.pair && <Chip tone="neutral">{p.kind === "remove" ? "Replaced by a different link (selected together)" : "Replaces a removed link (selected together)"}</Chip>}
           {p.status === "exists" && <Chip tone="neutral">Already in the programme</Chip>}
           {p.status === "invalid" && <Chip tone="red">Can't be used</Chip>}
         </div>
@@ -109,7 +127,8 @@ export function AiLogicDialog({ open, onClose, tenderId, programmeId, dirty, sav
 
         {res && res.questions.length > 0 && (
           <section className="mb-4 border"><h3 className="border-b bg-muted px-3 py-2 text-xs tracking-wider">Questions to confirm</h3>
-            <ul className="divide-y">{res.questions.map((q, i) => <li key={i} className="px-3 py-2 text-sm"><span className="font-medium">{q.question}</span><span className="block text-xs text-muted-foreground">{q.why}</span></li>)}</ul>
+            <ul className="divide-y">{res.questions.map((q, i) => <li key={i} className="flex flex-wrap items-start gap-3 px-3 py-2 text-sm"><div className="min-w-0 flex-1"><span className="font-medium">{q.question}</span><span className="block text-xs text-muted-foreground">{q.why}</span>{qNote?.i === i && <span role="alert" className="mt-1 block border border-red-line bg-red-bg px-2 py-1 text-xs text-red-fg">{qNote.text}</span>}</div>
+              <button className="btn btn-ghost shrink-0" disabled={!!rfis[i]} onClick={() => makeRfi(i, q)} data-testid="question-to-rfi">{rfis[i] ? "RFI added" : "Make this an RFI"}</button></li>)}</ul>
           </section>
         )}
         {res && rows("link").length > 0 && <section className="mb-4 border"><h3 className="border-b bg-muted px-3 py-2 text-xs tracking-wider">Links to add ({rows("link").length})</h3><ul>{rows("link").map((p) => <Row key={p.id} p={p} />)}</ul></section>}

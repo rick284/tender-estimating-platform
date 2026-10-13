@@ -207,6 +207,7 @@ MAX_AI_TASKS = 400
 
 def _public(p: dict[str, Any], names: dict[int, str]) -> dict[str, Any]:
     o = {k: p[k] for k in ("kind", "pred_uid", "succ_uid", "type", "lag_days", "reason", "basis", "confidence", "register_ref", "status", "problems", "decision", "created_at")}
+    o["pair"] = p.get("pair", "")
     o["id"] = p["_id"]
     o["pred_name"], o["succ_name"] = names.get(p["pred_uid"], ""), names.get(p["succ_uid"], "")
     return o
@@ -274,6 +275,13 @@ async def ai_decision(tender_id: str, pid: str, body: dict[str, Any], user: dict
     if any(len(reason) < 5 for _i, reason in rej):
         raise HTTPException(422, "Say briefly why you are rejecting (at least a few words): it helps the AI learn what is not wanted.")
     found = {p["_id"]: p async for p in db.ai_programme_proposals.find({"org_id": user["org_id"], "programme_id": pid, "_id": {"$in": acc_ids + [i for i, _ in rej]}})}
+    pairs = {p["pair"] for i, p in found.items() if i in acc_ids and p.get("pair")}
+    if pairs:                                                 # a removal and its replacement go together, or the link is lost
+        async for q in db.ai_programme_proposals.find({"org_id": user["org_id"], "programme_id": pid, "batch": {"$in": list({found[i]["batch"] for i in acc_ids})}, "pair": {"$in": list(pairs)}, "decision": None}):
+            if q["_id"] not in found:
+                found[q["_id"]] = q
+            if q["_id"] not in acc_ids and q["status"] == "ok":
+                acc_ids.append(q["_id"])
     if any(i not in found for i in acc_ids + [i for i, _ in rej]):
         raise HTTPException(404, "One of those proposals no longer exists. Ask the AI again.")
     if any(found[i]["status"] != "ok" for i in acc_ids):

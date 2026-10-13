@@ -8,7 +8,7 @@ link must not already exist, and it must not create a loop. The estimator accept
 from __future__ import annotations
 from typing import Any
 
-PROMPT_VERSION = "programme-v1"
+PROMPT_VERSION = "programme-v2"
 LINK_TYPES = ("FS", "SS", "FF", "SF")
 MAX_LAG = 30                      # days either way; anything bigger is a typing mistake or a different programme
 
@@ -22,8 +22,10 @@ SCHEMA: dict[str, Any] = {
             "register_ref": {"type": "string"}, "confidence": {"type": "string", "enum": ["high", "medium", "low"]}},
             "required": ["pred_uid", "succ_uid", "type", "lag_days", "reason", "basis", "register_ref", "confidence"], "additionalProperties": False}},
         "remove_links": {"type": "array", "items": {"type": "object", "properties": {
-            "pred_uid": {"type": "integer"}, "succ_uid": {"type": "integer"}, "reason": {"type": "string"}},
-            "required": ["pred_uid", "succ_uid", "reason"], "additionalProperties": False}},
+            "pred_uid": {"type": "integer"}, "succ_uid": {"type": "integer"}, "reason": {"type": "string"},
+            "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+            "replace_type": {"type": "string", "enum": ["none", "FS", "SS", "FF", "SF"]}, "replace_lag_days": {"type": "integer"}},
+            "required": ["pred_uid", "succ_uid", "reason", "confidence", "replace_type", "replace_lag_days"], "additionalProperties": False}},
         "questions": {"type": "array", "items": {"type": "object", "properties": {"question": {"type": "string"}, "why": {"type": "string"}}, "required": ["question", "why"], "additionalProperties": False}},
         "coverage_notes": {"type": "string"},
     },
@@ -36,13 +38,13 @@ You are given the programme's tasks (each with a uid, outline level, name, durat
 
 Propose:
 1. `links`: a dependency between two existing work tasks, by uid. `pred_uid` must finish (FS), start (SS) or finish (FF) before `succ_uid` can ... in the usual way. Use FS unless work genuinely overlaps; for an overlap use SS or FF with a lag in whole working days (a negative lag is a lead). Prefer few, meaningful links over many: every task that has to wait for another should say so; do not add a link that is already implied through other links.
-2. `remove_links`: a current link that is wrong or not needed (for example the estimate-order chain between unrelated trades). Give the reason.
+2. `remove_links`: a current link that is wrong or not needed (for example the estimate-order chain between unrelated trades). Give the reason and your confidence. If the same two tasks should still be linked but in a different way (for example finish-to-start should become start-to-start), say so in `replace_type` (and `replace_lag_days`) on THIS entry instead of mentioning it only in the reason; use "none" when the link should simply go.
 3. `questions`: things you could not settle that the estimator should confirm (sequence depends on a design decision, a temporary-works method, a consent, cure or stand-down times, access). Plain, practical questions.
 
 Rules:
 - Use only uids that appear in the list. Never create, rename, delete or re-time tasks. Never state or change a duration, date, quantity or price.
 - Every link needs a short plain-language `reason` that a site foreman would accept (for example "Subgrade must be proof-rolled and signed off before basecourse is placed").
-- `basis`: "construction_logic" for normal construction sequence; "tender_document" only when the tender context below says so (then give its `register_ref`, otherwise an empty string); "inference" when you are guessing from the task names. `confidence`: high only when the sequence is not in doubt.
+- `basis`: "construction_logic" for normal construction sequence; "tender_document" only when the tender context below says so (then give its `register_ref`, otherwise an empty string); "inference" when you are guessing from the task names. `confidence` is how sure you are that a competent estimator would agree: "high" = the normal, near-universal construction sequence (for example proof-roll before basecourse, formwork before pour, cure before loading) or something the tender context states; "medium" = very likely but depends on method or site; "low" = a guess you could not support from the task names or the context. Do not use "low" for ordinary construction sequence, and do not use "high" for guesses. Rate each proposal on its own merits.
 - Do not link tasks that can happen in parallel just to keep a tidy chain. Do not close loops. Do not link section headings.
 - Respond with JSON only, matching the schema. `coverage_notes` says in a sentence or two what you looked at and anything you could not judge."""
 
@@ -103,11 +105,12 @@ def verify(data: dict[str, Any], tasks: list[dict[str, Any]]) -> dict[str, Any]:
 
     def base(kind: str, raw: dict[str, Any]) -> dict[str, Any]:
         return {"kind": kind, "pred_uid": raw.get("pred_uid"), "succ_uid": raw.get("succ_uid"), "type": str(raw.get("type") or "FS"), "lag_days": int(raw.get("lag_days") or 0),
-                "reason": str(raw.get("reason") or "").strip()[:600], "basis": str(raw.get("basis") or "inference"), "confidence": str(raw.get("confidence") or "low"),
+                "reason": str(raw.get("reason") or "").strip()[:600], "basis": str(raw.get("basis") or "inference"), "confidence": str(raw.get("confidence") or "medium"),
                 "register_ref": str(raw.get("register_ref") or "")[:40], "problems": [], "status": "ok"}
 
     removed: set[tuple[int, int]] = set()
-    for raw in data.get("remove_links") or []:
+    replacements: list[dict[str, Any]] = []
+    for n, raw in enumerate(data.get("remove_links") or []):
         p = base("remove", raw)
         key = (raw.get("pred_uid"), raw.get("succ_uid"))
         if key not in cur:
@@ -117,10 +120,17 @@ def verify(data: dict[str, Any], tasks: list[dict[str, Any]]) -> dict[str, Any]:
         else:
             removed.add(key)
             preds[key[1]].discard(key[0])
+            rt = str(raw.get("replace_type") or "none")
+            if rt != "none":                                  # the link is being changed, not dropped: the new form is its own checked proposal, paired with this removal
+                p["pair"] = f"P{n}"
+                replacements.append({"pred_uid": key[0], "succ_uid": key[1], "type": rt, "lag_days": raw.get("replace_lag_days") or 0, "reason": "Replaces the link being removed: " + p["reason"],
+                                     "basis": p["basis"], "register_ref": p["register_ref"], "confidence": p["confidence"], "_pair": f"P{n}"})
         p["status"] = "invalid" if p["problems"] else "ok"
         out.append(p)
-    for raw in data.get("links") or []:
+    for raw in list(data.get("links") or []) + replacements:
         p = base("link", raw)
+        if raw.get("_pair"):
+            p["pair"] = raw["_pair"]
         a, b = raw.get("pred_uid"), raw.get("succ_uid")
         if a not in by_uid or b not in by_uid:
             p["problems"].append("A task in this link does not exist in the programme.")

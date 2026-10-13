@@ -128,7 +128,7 @@ export interface ProgrammeDoc {
 
 export interface ProgrammeAiProposal {
   id: string; kind: "link" | "remove"; pred_uid: number; succ_uid: number; pred_name: string; succ_name: string; type: string; lag_days: number; reason: string;
-  basis: "construction_logic" | "tender_document" | "inference"; confidence: "high" | "medium" | "low"; register_ref: string; status: "ok" | "exists" | "invalid"; problems: string[];
+  basis: "construction_logic" | "tender_document" | "inference"; confidence: "high" | "medium" | "low"; register_ref: string; pair?: string; status: "ok" | "exists" | "invalid"; problems: string[];
   decision: { decision: "accepted" | "rejected"; reason?: string } | null; created_at: string;
 }
 export interface ProgrammeAiResult { proposals: ProgrammeAiProposal[]; questions: { question: string; why: string }[]; coverage_notes: string }
