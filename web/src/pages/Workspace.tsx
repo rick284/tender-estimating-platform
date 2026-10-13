@@ -25,6 +25,7 @@ import { ManagementReserve } from "./ManagementReserve";
 import { AiDraft } from "./AiDraft";
 import { Takeoff } from "./Takeoff";
 import { Programme } from "./Programme";
+import { ProgrammeEditor } from "./ProgrammeEditor";
 import { Revisions } from "./Revisions";
 import type { User } from "../lib/types";
 
@@ -153,7 +154,7 @@ function SaveEdits({ open, onClose, changes, defaultLabel, onSave }: { open: boo
   );
 }
 
-export function Workspace({ id, page, rev, user, onLogout }: { id: string; page: string; rev: number | null; user: User; onLogout: () => void }) {
+export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; page: string; rev: number | null; sub?: string; user: User; onLogout: () => void }) {
   const [detail, setDetail] = useState<TenderDetail | null>(null);
   const [est, setEst] = useState<Estimate | null>(null);
   const [err, setErr] = useState("");
@@ -348,6 +349,7 @@ export function Workspace({ id, page, rev, user, onLogout }: { id: string; page:
         {!err && shown && pg === "reserve" && <ManagementReserve est={shown} />}
         {!err && shown && pg === "register" && <Register est={shown} />}
         {!err && shown && pg === "programme" && <Programme est={shown} />}
+        {!err && shown && pg === "gantt" && <ProgrammeEditor tenderId={id} est={shown} rev={cur} sub={sub} />}
         {!err && shown && pg === "quotes" && <Quotes est={shown} />}
         {!err && pg === "ai" && <AiDraft tenderId={id} />}
         {!err && shown && pg === "takeoff" && <Takeoff est={shown} tenderId={id} goQs={() => view("qs")} />}

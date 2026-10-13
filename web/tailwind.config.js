@@ -1,6 +1,6 @@
 /** Design tokens mirror Blackline Estimating PRO (monochrome, square, Chivo/Inter/JetBrains Mono). */
 export default {
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  content: ["./index.html", "./src/**/*.{ts,tsx,js,jsx}"],
   theme: {
     extend: {
       fontFamily: {

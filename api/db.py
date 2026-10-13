@@ -34,4 +34,5 @@ async def ensure_indexes(db: Any) -> None:
     await db.login_attempts.create_index("ts", expireAfterSeconds=config.LOGIN_WINDOW_MINUTES * 60)
     await db.audit.create_index([("org_id", 1), ("ts", -1)])
     await db.ai_proposals.create_index([("org_id", 1), ("tender_id", 1), ("created_at", -1)])
+    await db.programme_docs.create_index([("org_id", 1), ("tender_id", 1), ("updated_at", -1)])
     await db.doc_texts.create_index([("org_id", 1), ("tender_id", 1)])

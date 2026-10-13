@@ -119,7 +119,24 @@ export async function fetchBlobUrl(path: string): Promise<string> {
   return URL.createObjectURL(await res.blob());
 }
 
+export interface ProgrammeDoc {
+  id: string; name: string; source: string; filename: string | null; start: string; finish: string; status_date: string | null; working_days: boolean[];
+  non_working_dates: string[]; hours_per_day: number; task_count: number; needs_schedule?: boolean; revision?: number; updated_at: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tasks: any[];
+}
+
 export const api = {
+  programmes: (id: string) => request<{ programmes: Omit<ProgrammeDoc, "tasks">[] }>(`/api/tenders/${id}/programmes`),
+  programme: (id: string, pid: string) => request<ProgrammeDoc>(`/api/tenders/${id}/programmes/${pid}`),
+  programmeUpload: (id: string, file: File) => request<ProgrammeDoc>(`/api/tenders/${id}/programmes/upload`, { method: "POST", body: form({ file }) }, LONG),
+  programmeBlank: (id: string, name: string, start: string) => request<ProgrammeDoc>(`/api/tenders/${id}/programmes/blank`, { method: "POST", body: JSON.stringify({ name, start_date: start }) }),
+  programmeFromEstimate: (id: string, revision: number, name: string, start: string) =>
+    request<ProgrammeDoc>(`/api/tenders/${id}/programmes/from-estimate`, { method: "POST", body: JSON.stringify({ revision, name: name || undefined, start_date: start }) }),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  programmeSave: (id: string, pid: string, body: Record<string, any>) => request<ProgrammeDoc>(`/api/tenders/${id}/programmes/${pid}`, { method: "PUT", body: JSON.stringify(body) }),
+  programmeDelete: (id: string, pid: string) => request<{ ok: boolean }>(`/api/tenders/${id}/programmes/${pid}`, { method: "DELETE" }),
+  programmeExportXml: (id: string, pid: string) => download(`/api/tenders/${id}/programmes/${pid}/export/xml`),
   takeoffSources: (lid: string) => request<{ line: string; description: string; sources: TakeoffSource[] }>(`/api/takeoff/lines/${lid}/sources`),
   takeoffSheets: (tid: string, fid: string) => request<{ file: string; pages: SheetInfo[]; scale: Record<string, string> }>(`/api/takeoff/tenders/${tid}/files/${encodeURIComponent(fid)}/sheets`, {}, 180_000),
   pageImageUrl: (tid: string, fid: string, page: number) => fetchBlobUrl(`/api/takeoff/tenders/${tid}/files/${encodeURIComponent(fid)}/pages/${page}/image`),
