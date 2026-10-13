@@ -15,7 +15,7 @@ tok = api("POST", "/api/auth/login", {"email": "rick@3bearsprojects.co.nz", "pas
 tid = next(t["id"] for t in api("GET", "/api/tenders", t=tok)["tenders"] if "Hobsonville" in t["name"])
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path="/opt/pw-browsers/chromium-1194/chrome-linux/chrome", args=["--no-sandbox"])
-    ctx = b.new_context(viewport={"width": 1440, "height": 900}, accept_downloads=True); pg = ctx.new_page()
+    ctx = b.new_context(viewport={"width": int(os.environ.get("W", 1440)), "height": int(os.environ.get("H", 900))}, accept_downloads=True); pg = ctx.new_page()
     errs = []; pg.on("pageerror", lambda e: errs.append(str(e)))
     pg.goto("http://localhost:5173/"); pg.get_by_label("Email").fill("rick@3bearsprojects.co.nz"); pg.get_by_label("Password").fill("a long test password")
     pg.get_by_role("button", name="Sign in").click(); pg.wait_for_timeout(1200)

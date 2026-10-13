@@ -619,7 +619,7 @@ const ProgramGantt = ({
         </div>
       </div>
 
-      <div ref={bodyRef} className="overflow-y-auto overflow-x-hidden relative" style={{ maxHeight: 'calc(100vh - 330px)', minHeight: 320 }}>
+      <div ref={bodyRef} className="overflow-y-auto overflow-x-hidden relative" style={{ maxHeight: editable ? 'calc(100vh - 21rem)' : 'calc(100vh - 14.5rem)', minHeight: 320 }}>
         <div className="flex items-stretch">
           {/* Table pane */}
           <div className="flex-none" style={{ width: visibleLeftW, overflowX: 'clip' }} onWheel={wheelPane(leftBarRef)}>

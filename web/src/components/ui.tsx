@@ -63,7 +63,7 @@ export function PageHeader({ title, sub, actions }: { title: string; sub?: React
   return (
     <>
       {/* Title and actions stay in view while the page scrolls (below the tender bar, which is also fixed in place). */}
-      <div className="sticky top-14 z-20 -mx-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b bg-background px-4 py-3 sm:-mx-6 sm:px-6 lg:top-[var(--tbar,0px)] print:static">
+      <div className="sticky top-14 z-20 -mx-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b bg-background px-3 py-2.5 sm:-mx-4 sm:px-4 lg:top-[var(--tbar,0px)] print:static">
         <h1 className="min-w-0 text-2xl leading-none sm:text-3xl">{title}</h1>
         {actions && <div className="no-print flex flex-wrap items-center gap-2">{actions}</div>}
       </div>

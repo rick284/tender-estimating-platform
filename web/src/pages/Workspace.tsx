@@ -299,7 +299,7 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
     <Shell user={user} route={{ name: "tender", id, page: pg, rev }} tenderName={detail?.name} onLogout={onLogout}>
       {/* The bar is exactly as tall as the brand block in the side menu (4rem, border included) so the two lines run straight across; every control in it is 2.25rem tall */}
       <div ref={barRef} className="z-30 flex min-h-16 items-center border-b bg-background lg:sticky lg:top-0">
-        <div className="mx-auto flex w-full max-w-[88rem] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 sm:px-6">
+        <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2 sm:px-4">
           <div className="min-w-[14rem] flex-1">
             <div className="label">Tender</div>
             <div className="truncate font-heading text-sm font-bold uppercase" title={detail?.name}>{detail?.name ?? "Loading…"}</div>
@@ -327,14 +327,14 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
       </div>
       {stale && detail && (
         <div className="border-b border-amber-line bg-amber-bg">
-          <div className="mx-auto flex max-w-[88rem] flex-wrap items-center gap-3 px-4 py-2 text-sm text-amber-fg sm:px-6">
+          <div className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm text-amber-fg sm:px-4">
             You're viewing {label}, an earlier revision. The latest is {detail.revisions[0].label}.
             <button className="font-medium underline underline-offset-4" onClick={() => go({ name: "tender", id, page: pg, rev: null })}>Go to latest</button>
           </div>
         </div>
       )}
       <EditProvider value={ctx}>
-      <main className={`mx-auto max-w-[88rem] px-4 py-6 sm:px-6 sm:py-8 ${editing ? "pb-28" : ""}`}>
+      <main className={`w-full px-3 py-4 sm:px-4 ${editing ? "pb-28" : ""}`}>
         {err && <div role="alert" className="border border-red-line bg-red-bg px-4 py-3 text-sm text-red-fg">{err}</div>}
         <ErrorBoundary key={pg}>
         {!err && pg === "revisions" && detail && <Revisions detail={detail} current={cur} onAdd={() => setUpload(true)} />}
@@ -361,7 +361,7 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
       </EditProvider>
       {editing && est && (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-primary bg-background lg:left-60">
-          <div className="mx-auto flex max-w-[88rem] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-3 py-3 sm:px-4">
             <div>
               <div className="label">Editing {label}</div>
               <div className="text-sm">{editList.length === 0 ? "No changes yet. Change a value in the tables." : `${changes.length || editList.length} change${(changes.length || editList.length) === 1 ? "" : "s"}${calculating ? " · recalculating…" : ""}`}</div>

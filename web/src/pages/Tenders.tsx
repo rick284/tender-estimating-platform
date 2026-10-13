@@ -128,7 +128,7 @@ export function Tenders() {
   const kpi = (s: Stage, label: string) => <Stat label={label} value={fmtCompactMoney(by?.[s].value ?? 0)} sub={`${by?.[s].count ?? 0} tender${by?.[s].count === 1 ? "" : "s"}`} />;
 
   return (
-    <main className="mx-auto max-w-[88rem] px-4 py-6 sm:px-6 sm:py-8">
+    <main className="w-full px-3 py-4 sm:px-4">
       <PageHeader title="Tenders" sub="Every tender in your workspace. Open one to see its estimate, revisions and what changed between them."
         actions={<button className="btn btn-solid" onClick={() => setOpenNew(true)}><Plus size={14} aria-hidden /> New tender</button>} />
       {err && <div role="alert" className="mb-4 border border-red-line bg-red-bg px-4 py-3 text-sm text-red-fg">{err}</div>}
