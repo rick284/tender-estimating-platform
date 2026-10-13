@@ -58,8 +58,9 @@ class AnthropicProvider:
             raise self._friendly(e)
         return getattr(m, "display_name", None) or model
 
-    def draft_json(self, key: str, model: str, system: str, user: str, schema: dict[str, Any], images: list[tuple[str, bytes]] | None = None) -> dict[str, Any]:
-        """images: optional [(caption, PNG bytes)] shown to the model before the text (drawing pages for a takeoff)."""
+    def draft_json(self, key: str, model: str, system: str, user: str, schema: dict[str, Any], images: list[tuple[str, bytes]] | None = None,
+                   shape_key: str = "items") -> dict[str, Any]:
+        """images: optional [(caption, PNG bytes)] shown to the model before the text (drawing pages for a takeoff). shape_key: the list the answer must contain."""
         client = self._client(key)
         content: Any = user
         if images:
@@ -91,7 +92,7 @@ class AnthropicProvider:
             data = json.loads(text)
         except ValueError:
             raise AIError("The AI's answer could not be read. Nothing was drafted; try again.")
-        if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        if not isinstance(data, dict) or not isinstance(data.get(shape_key), list):
             raise AIError("The AI's answer was not in the expected shape. Nothing was drafted; try again.")
         return data
 

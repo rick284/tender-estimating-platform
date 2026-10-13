@@ -126,7 +126,18 @@ export interface ProgrammeDoc {
   tasks: any[];
 }
 
+export interface ProgrammeAiProposal {
+  id: string; kind: "link" | "remove"; pred_uid: number; succ_uid: number; pred_name: string; succ_name: string; type: string; lag_days: number; reason: string;
+  basis: "construction_logic" | "tender_document" | "inference"; confidence: "high" | "medium" | "low"; register_ref: string; status: "ok" | "exists" | "invalid"; problems: string[];
+  decision: { decision: "accepted" | "rejected"; reason?: string } | null; created_at: string;
+}
+export interface ProgrammeAiResult { proposals: ProgrammeAiProposal[]; questions: { question: string; why: string }[]; coverage_notes: string }
+
 export const api = {
+  programmeAiPropose: (id: string, pid: string) => request<ProgrammeAiResult>(`/api/tenders/${id}/programmes/${pid}/ai/propose`, { method: "POST" }, LONG),
+  programmeAiProposals: (id: string, pid: string) => request<ProgrammeAiResult>(`/api/tenders/${id}/programmes/${pid}/ai/proposals`),
+  programmeAiDecision: (id: string, pid: string, accept: string[], reject: { id: string; reason: string }[]) =>
+    request<{ accepted: ProgrammeAiProposal[]; rejected: number }>(`/api/tenders/${id}/programmes/${pid}/ai/decision`, { method: "POST", body: JSON.stringify({ accept, reject }) }),
   programmes: (id: string) => request<{ programmes: Omit<ProgrammeDoc, "tasks">[] }>(`/api/tenders/${id}/programmes`),
   programme: (id: string, pid: string) => request<ProgrammeDoc>(`/api/tenders/${id}/programmes/${pid}`),
   programmeUpload: (id: string, file: File) => request<ProgrammeDoc>(`/api/tenders/${id}/programmes/upload`, { method: "POST", body: form({ file }) }, LONG),

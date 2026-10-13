@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown, ArrowLeft, ArrowUp, ClipboardList, Download, Eye, FilePlus2, FileText, Flag, IndentDecrease, IndentIncrease, Link2, Link2Off,
-  Loader2, Pencil, Plus, Redo2, Save, Trash2, Undo2, Upload,
+  Loader2, Pencil, Plus, Redo2, Save, Sparkles, Trash2, Undo2, Upload,
 } from "lucide-react";
 import { api, ApiError, type ProgrammeDoc } from "../lib/api";
 import { go } from "../lib/route";
@@ -18,6 +18,7 @@ import useProgramEditor from "../programme/useProgramEditor";
 import ProgramGantt from "../programme/ProgramGantt";
 import { LinksDialog, ResourceDialog } from "../programme/ProgramDialogs";
 import { ResourcePanel } from "../programme/ResourcePanel";
+import { AiLogicDialog } from "../programme/AiLogicDialog";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const fmt = (s?: string | null) => {
@@ -42,6 +43,7 @@ function Editor({ doc, tenderId, library, onDeleted, onBack }: { doc: ProgrammeD
   const [linksUid, setLinksUid] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const editable = mode === "edit";
   const justAdded = useRef(false);
   const autoSaved = useRef(false);
@@ -164,6 +166,8 @@ function Editor({ doc, tenderId, library, onDeleted, onBack }: { doc: ProgrammeD
           <span className="mx-1 h-5 w-px bg-border" />
           <button className={tb} disabled={!selected || selected.is_summary} onClick={() => setResUid(ed.selectedUid)} data-testid="open-resources">Resources</button>
           <span className="mx-1 h-5 w-px bg-border" />
+          <button className={tb} onClick={() => setAiOpen(true)} disabled={ed.tasks.length < 3} title="Ask the AI to propose the links between tasks" data-testid="open-ai-logic"><Sparkles size={14} aria-hidden />AI logic</button>
+          <span className="mx-1 h-5 w-px bg-border" />
           <label className="flex items-center gap-1 text-muted-foreground">Project start
             <input type="date" value={ed.projectStartYmd} onChange={(e) => e.target.value && actions.setStart(e.target.value)} className={`${field} h-8 px-1 text-xs`} data-testid="project-start" />
           </label>
@@ -177,6 +181,8 @@ function Editor({ doc, tenderId, library, onDeleted, onBack }: { doc: ProgrammeD
           onError={(m: string) => toast.error(m)} />
       ) : <ResourcePanel tasks={ed.tasks} cal={ed.cal} />}
 
+      <AiLogicDialog open={aiOpen} onClose={() => setAiOpen(false)} tenderId={tenderId} programmeId={doc.id} dirty={ed.dirty} save={save} tasks={ed.tasks}
+        apply={(uid, preds) => actions.edit(uid, { predecessors: preds })} />
       <LinksDialog open={linksUid != null} task={linksTask} tasks={ed.tasks} onClose={() => setLinksUid(null)}
         onApply={(preds) => { actions.edit(linksUid, { predecessors: preds }); setLinksUid(null); }} />
       <ResourceDialog open={resUid != null} task={resTask} library={library} onClose={() => setResUid(null)}
