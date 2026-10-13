@@ -21,6 +21,20 @@ from .models import CommercialInput
 from .money import D, ZERO, ONE
 
 PRE_MARGIN_REFS = tuple(f"CA{n:02d}" for n in range(1, 17))
+CUSTOM_PREFIX = "CX"             # allowance lines added by the estimator on the Commercial page (CX01, CX02 ...): a % of base direct or a PC sum, before overhead and margin
+
+
+def is_custom(ref: str) -> bool:
+    return ref.startswith(CUSTOM_PREFIX)
+
+
+def is_pre_margin(ref: str) -> bool:
+    return ref in PRE_MARGIN_REFS or is_custom(ref)
+
+
+def methods_for(ref: str) -> list[str]:
+    """Bases a line may be switched between (empty = set by the platform)."""
+    return ["%", "PC Sum"] if is_custom(ref) else COMMERCIAL_METHODS.get(ref, [])
 # Which bases a commercial line may be switched between in the platform. Weather (CA10), management reserve (CA16) and GST are not listed: those are set on their own pages or are a % only.
 COMMERCIAL_METHODS = {**{f"CA{n:02d}": ["%", "PC Sum"] for n in (3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 19, 20)},
                       "CA01": ["Risk Engine", "%", "PC Sum"], "CA02": ["Risk Engine", "%", "PC Sum"],     # a manual basis replaces what Risk Truth feeds; the screen warns when that leaves approved provisions out
@@ -62,7 +76,7 @@ def compute_tender(base_direct: Decimal, inputs: Sequence[CommercialInput]) -> T
     by_ref: Mapping[str, CommercialInput] = {c.ref: c for c in inputs}
     base = D(base_direct)
 
-    additions = {ref: _pre_margin_amount(by_ref[ref], base) for ref in PRE_MARGIN_REFS if ref in by_ref}
+    additions = {c.ref: _pre_margin_amount(c, base) for c in inputs if is_pre_margin(c.ref)}
     pre = sum(additions.values(), ZERO)
     subtotal = base + pre
 

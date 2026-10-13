@@ -10,7 +10,9 @@ An edit is {"target", "key", "field", "value"} (set a value) or {"target", "op":
              add    key = new code       value: section, description, unit, quantity, basis, source?, notes?
              delete key = QS code        (also removes its build-up rows)
   library    add    key = new code       value: description, unit, base_rate, category, source?
-  commercial set    key = CA ref         fields: include, pct, pc_sum, method (only between the bases in COMMERCIAL_METHODS)
+  commercial set    key = CA ref         fields: include, pct, pc_sum, method (only between the bases in COMMERCIAL_METHODS), name, note
+  commercial add    key = "" (next free CX01..) or a CX ref, value {name, method (% | PC Sum), pct | pc_sum, include, note}: an allowance added by the estimator, before overhead and margin
+  commercial delete key = CX ref         (platform lines CA01..CA25 can be switched off but not removed)
   overlay    set    key = package name   field : amount
              add    key = new package name   value: amount, kind? (default QUOTED)
              delete key = package name
@@ -59,7 +61,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from .commercial import COMMERCIAL_METHODS
+from .commercial import COMMERCIAL_METHODS, is_custom, is_pre_margin, methods_for
 from .ids import display_ids
 from .importers.master_workbook import MasterWorkbookImport
 from .models import BuildUpRow, LibraryRate, Overlay, QSItem, MODES
@@ -303,6 +305,39 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
                                         category=category, source=_text(v.get("source"), "Source", maxlen=300, required=False) or "Added in platform (AMBER: no supplier evidence yet)")
             new_library.append(code)
 
+        elif target == "commercial" and op == "add":
+            v = value if isinstance(value, dict) else {}
+            ref = str(key or "").strip().upper()
+            if not ref:
+                n = 1
+                while f"CX{n:02d}" in com_pos:
+                    n += 1
+                ref = f"CX{n:02d}"
+            if not re.fullmatch(r"CX\d{2}", ref):
+                raise EditError("Added allowances are numbered CX01, CX02 ...")
+            if ref in com_pos:
+                raise EditError(f"{ref} already exists.")
+            method = str(v.get("method") or "%").strip()
+            if method not in ("%", "PC Sum"):
+                raise EditError("An added allowance is either a percentage of base direct or a PC sum.")
+            name = _text(v.get("name"), "Description", maxlen=80)
+            if name.lower() in {c["name"].lower() for c in commercial}:
+                raise EditError(f"There is already a commercial line called {name!r}.")
+            pos = max([i for i, c in enumerate(commercial) if is_pre_margin(c["ref"])] or [-1]) + 1          # sits with the other pre-margin allowances
+            commercial.insert(pos, {"ref": ref, "name": name, "method": method, "include": _yesno(v.get("include", "Yes"), f"{ref} include"),
+                                    "basis": "", "note": _text(v.get("note"), "Note", maxlen=500, required=False),
+                                    "pct": _num(v.get("pct"), f"{ref} percentage", hi=Decimal("10")) if method == "%" else D(0),
+                                    "pc_sum": _num(v.get("pc_sum"), f"{ref} amount") if method == "PC Sum" else D(0)})
+            com_pos = {c["ref"]: i for i, c in enumerate(commercial)}
+
+        elif target == "commercial" and op == "delete":
+            if key not in com_pos:
+                raise EditError(f"Unknown commercial line {key!r}.")
+            if not is_custom(key):
+                raise EditError(f"{key} is a platform line: switch it off instead of removing it.")
+            commercial = [c for c in commercial if c["ref"] != key]
+            com_pos = {c["ref"]: i for i, c in enumerate(commercial)}
+
         elif target == "commercial":
             if key not in com_pos:
                 raise EditError(f"Unknown commercial line {key!r}.")
@@ -316,8 +351,15 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
                 c["pct"] = _num(value, f"{key} percentage", hi=hi)
             elif field == "pc_sum":
                 c["pc_sum"] = _num(value, f"{key} amount")
+            elif field == "name":
+                new = _text(value, "Description", maxlen=80)
+                if new.lower() in {x["name"].lower() for x in commercial if x["ref"] != key}:
+                    raise EditError(f"There is already a commercial line called {new!r}.")
+                c["name"] = new
+            elif field == "note":
+                c["note"] = _text(value, "Note", maxlen=500, required=False)
             elif field == "method":
-                allowed = COMMERCIAL_METHODS.get(key)
+                allowed = methods_for(key)
                 if not allowed or c["method"] not in allowed:
                     raise EditError(f"{key} is calculated by the platform (its basis can't be changed here).")
                 new = str(value or "").strip()
@@ -432,7 +474,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
                 live_qs = [q for q in qs if not q.deleted]
                 sched = sch.default_schedule(list(dict.fromkeys(q.item.section for q in live_qs)), [o.name for o in overlays])
                 sched["map"] = sch.auto_map(sched, [{"code": q.item.code, "section": q.item.section} for q in live_qs],
-                                            [{"name": o.name} for o in overlays], [c["ref"] for c in commercial if c["ref"] <= "CA16"])
+                                            [{"name": o.name} for o in overlays], [c["ref"] for c in commercial if is_pre_margin(c["ref"])])
                 sched["auto_map"] = dict(sched["map"])
             v = value
             if isinstance(v, str) and v.strip().startswith("["):
@@ -661,6 +703,10 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     return m, _net_changes(base, m, rows, qs, new_library)
 
 
+def _line_text(c: dict[str, Any]) -> str:
+    return f"{Decimal(str(c['pct'])) * 100:g}% of base direct" if c["method"] == "%" else f"PC sum ${Decimal(str(c['pc_sum'])):,.2f}"
+
+
 def _fmt(v: Any) -> str:
     if v is None:
         return ""
@@ -707,9 +753,16 @@ def _net_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, rows: list[_R
             for f in sorted(ROW_NUMERIC_NULLABLE | ROW_YESNO):
                 add("row", r.uid, f, f"{base_ids[r.uid]} {old.task}", getattr(old, f), getattr(r.row, f))
 
-    for x, y in zip(a.commercial, b.commercial):
-        for f in ("include", "method", "pct", "pc_sum"):
-            add("commercial", x["ref"], f, f"{x['ref']} {x['name']}", x[f], y[f])
+    a_com, b_com = {c["ref"]: c for c in a.commercial}, {c["ref"]: c for c in b.commercial}
+    for ref, x in a_com.items():
+        if ref not in b_com:
+            add("commercial", ref, "removed", f"{ref} {x['name']}", _line_text(x), "")
+            continue
+        for f in ("include", "method", "pct", "pc_sum", "name"):
+            add("commercial", ref, f, f"{ref} {x['name']}", x[f], b_com[ref][f])
+    for ref, y in b_com.items():
+        if ref not in a_com:
+            add("commercial", ref, "added", f"{ref} {y['name']}", "", _line_text(y))
     a_ov, b_ov = {o.name: o for o in a.overlays}, {o.name: o for o in b.overlays}
     for name, x in a_ov.items():
         if name not in b_ov:

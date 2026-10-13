@@ -8,7 +8,7 @@ const METHOD_LABEL: Record<string, string> = { "%": "Percentage", "PC Sum": "PC 
 // What a percentage is taken of, so the estimator knows what typing 2 means
 const PCT_OF = (ref: string, method: string) => (method === "Margin %" ? "true margin on cost" : method === "Markup %" ? (ref === "CA18" ? "of cost" : "of subtotal") : ref === "CA19" || ref === "CA20" ? "of subtotal" : ref === "CA21" ? "of tender" : "of base direct");
 
-function Basis({ c }: { c: Estimate["commercial"][number] }) {
+export function Basis({ c }: { c: Estimate["commercial"][number] }) {
   const { editing } = useEdit();
   const pctMethod = c.method === "%" || c.method === "Markup %" || c.method === "Margin %";
   const amtMethod = c.method === "PC Sum" || c.method === "Fixed Amount";
@@ -40,7 +40,7 @@ export function Tender({ est }: { est: Estimate }) {
   const com = est.commercial.filter((c) => c.stage === "commercial");
   return (
     <>
-      <PageHeader title="Tender build-up" sub="Siteworks only. Base direct cost flows from the QS Takeoff. Press Edit to switch commercial lines on or off and change their percentages and amounts, including GST at the bottom." />
+      <PageHeader title="Tender build-up" sub="Siteworks only. Base direct cost flows from the QS Takeoff. Press Edit to switch commercial lines on or off and change their percentages and amounts, including GST at the bottom. The lines themselves (names, notes, extra allowances) are set up on the Commercial page." />
       <Panel flush>
         <div className="grid-scroll">
           <table className="grid-table min-w-[36rem]">

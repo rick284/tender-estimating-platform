@@ -179,3 +179,59 @@ def test_edited_estimate_survives_json_roundtrip(base):
     a = compute_estimate(m)
     b = compute_estimate(from_json(json.loads(json.dumps(to_json(m)))))
     assert a == b and b["edited"] is True
+
+
+# ---- custom commercial allowances (Commercial page: add / remove lines that flow into the Tender Build-Up)
+def _cx(name, **v):
+    return {"target": "commercial", "op": "add", "key": "", "value": {"name": name, **v}}
+
+
+@needs_private
+def test_added_allowance_flows_through_overhead_and_margin_and_the_schedule(base):
+    b = compute_estimate(base)
+    m, changes = apply_edits(base, [_cx("Temporary works allowance", method="%", pct="0.01", note="Hoarding and traffic management"), _cx("Insurance excess", method="PC Sum", pc_sum="5000")])
+    e = compute_estimate(m)
+    lines = {c["ref"]: c for c in e["commercial"]}
+    assert lines["CX01"]["custom"] and lines["CX01"]["stage"] == "pre" and lines["CX01"]["note"] == "Hoarding and traffic management"
+    assert lines["CX02"]["amount"] == 5000
+    added = e["tender"]["pre_margin_total"] - b["tender"]["pre_margin_total"]
+    assert abs(added - (lines["CX01"]["amount"] + 5000)) < 0.005 and abs(lines["CX01"]["amount"] - 0.01 * b["tender"]["base_direct"]) < 0.005
+    assert e["tender"]["total_excl_gst"] - b["tender"]["total_excl_gst"] > added            # overhead and margin are charged on them
+    assert [c["ref"] for c in e["commercial"]].index("CX01") > [c["ref"] for c in e["commercial"]].index("CA16")      # sits with the other allowances
+    assert e["schedule"]["reconciles"]                                                      # the automatic price schedule picks them up
+    assert [c["field"] for c in changes] == ["added", "added"]
+    again = compute_estimate(from_json(to_json(m)))                                          # survives saving and reopening
+    assert again["tender"]["total_excl_gst"] == e["tender"]["total_excl_gst"] and {c["ref"]: c["note"] for c in again["commercial"]}["CX01"] == "Hoarding and traffic management"
+
+
+@needs_private
+def test_remove_added_allowance_but_never_a_platform_line(base):
+    m, _ = apply_edits(base, [_cx("Temporary works allowance", method="%", pct="0.01")])
+    m2, ch = apply_edits(m, [{"target": "commercial", "op": "delete", "key": "CX01"}])
+    assert compute_estimate(m2)["tender"]["total_excl_gst"] == compute_estimate(base)["tender"]["total_excl_gst"] and ch[0]["field"] == "removed"
+    with pytest.raises(EditError, match="switch it off"):
+        apply_edits(base, [{"target": "commercial", "op": "delete", "key": "CA05"}])
+
+
+@needs_private
+def test_added_allowance_rules(base):
+    for bad in (_cx("", method="%", pct="0.01"), _cx("X", method="Markup %", pct="0.01"), _cx("X", method="%", pct="-1"), _cx("X", method="PC Sum", pc_sum="-5")):
+        with pytest.raises(EditError):
+            apply_edits(base, [bad])
+    existing = compute_estimate(base)["commercial"][2]["name"]
+    with pytest.raises(EditError, match="already a commercial line"):
+        apply_edits(base, [_cx(existing, method="%", pct="0.01")])
+    m, _ = apply_edits(base, [_cx("A", method="%", pct="0.01")])
+    with pytest.raises(EditError, match="already a commercial line"):
+        apply_edits(m, [_cx("a", method="%", pct="0.01")])
+
+
+@needs_private
+def test_rename_and_note_on_any_line_and_basis_of_added_line(base):
+    m, _ = apply_edits(base, [{"target": "commercial", "key": "CA05", "field": "name", "value": "Site insurance"}, {"target": "commercial", "key": "CA05", "field": "note", "value": "per broker"},
+                               _cx("Extra", method="%", pct="0.02"), {"target": "commercial", "key": "CX01", "field": "method", "value": "PC Sum"},
+                               {"target": "commercial", "key": "CX01", "field": "pc_sum", "value": "1234"}])
+    e = {c["ref"]: c for c in compute_estimate(m)["commercial"]}
+    assert e["CA05"]["name"] == "Site insurance" and e["CA05"]["note"] == "per broker" and e["CX01"]["amount"] == 1234
+    with pytest.raises(EditError, match="calculated by the platform"):
+        apply_edits(base, [{"target": "commercial", "key": "CA10", "field": "method", "value": "%"}])

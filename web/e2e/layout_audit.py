@@ -6,7 +6,7 @@ from playwright.sync_api import sync_playwright, expect
 OUT = sys.argv[1]
 WIDTHS = [int(x) for x in (sys.argv[2] if len(sys.argv) > 2 else "1440,1100,820,390").split(",")]
 ONLY = sys.argv[3].split(",") if len(sys.argv) > 3 else None
-PAGES = ["overview", "consolidated", "tender", "qs", "buildup", "programme", "weather", "risk", "reserve", "register", "quotes", "drive", "ai", "takeoff", "outputs", "library", "revisions"]
+PAGES = ["overview", "consolidated", "commercial", "tender", "qs", "buildup", "programme", "weather", "risk", "reserve", "register", "quotes", "drive", "ai", "takeoff", "outputs", "library", "revisions"]
 if ONLY: PAGES = [p for p in PAGES if p in ONLY]
 SHOT = "/tmp/claude-0/-home-user/d48f647b-2b13-5568-9c30-5dd27b3706a0/scratchpad/audit/"
 

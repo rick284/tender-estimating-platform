@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 from .buildup import compute_buildup
-from .commercial import COMMERCIAL_METHODS, compute_tender
+from .commercial import COMMERCIAL_METHODS, compute_tender, is_custom, is_pre_margin, methods_for
 from . import risk_truth as rtm
 from . import management_reserve as mrm
 from .consolidated import compute_consolidated
@@ -147,17 +147,20 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
 
     # ---- Commercial / tender build-up lines
     commercial_out = []
+    basis_by_ref = {c["ref"]: c.get("basis", "") for c in m.commercial}
+    note_by_ref = {c["ref"]: c.get("note", "") for c in m.commercial}
     for c in commercial:
         amt = tender.additions.get(c.ref)
         if amt is None:
             amt = {"CA17": tender.overhead, "CA18": tender.profit, "CA19": tender.bonds, "CA20": tender.retention_finance,
                    "CA21": tender.gst, "CA22": tender.retention_withheld}.get(c.ref, D(0))
         commercial_out.append({"ref": c.ref, "name": c.name, "method": c.method, "include": c.include == "Yes",
-                               "pct": _f(c.pct), "pc_sum": _f(c.pc_sum), "amount": _f(amt), "methods": COMMERCIAL_METHODS.get(c.ref, []),
+                               "pct": _f(c.pct), "pc_sum": _f(c.pc_sum), "amount": _f(amt), "methods": methods_for(c.ref), "custom": is_custom(c.ref),
+                               "basis": basis_by_ref.get(c.ref, ""), "note": note_by_ref.get(c.ref, ""),
                                "engine_value": _f(c.engine_value) if c.ref in ("CA01", "CA02") else None})
-    stage = lambda r: ("pre" if r <= 16 else "commercial" if r <= 21 else "cashflow")
+    stage = lambda ref: "pre" if is_pre_margin(ref) else ("commercial" if int(ref[2:]) <= 21 else "cashflow")
     for c in commercial_out:
-        c["stage"] = stage(int(c["ref"][2:]))
+        c["stage"] = stage(c["ref"])
 
     weather_out = {
         "meta": wm, "exposed_pool": _f(weather.exposed_pool), "tool_pool": _f(tool.exposed_pool),

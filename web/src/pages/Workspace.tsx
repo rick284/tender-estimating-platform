@@ -26,6 +26,7 @@ import { AiDraft } from "./AiDraft";
 import { Takeoff } from "./Takeoff";
 import { Programme } from "./Programme";
 import { ProgrammeEditor } from "./ProgrammeEditor";
+import { Commercial } from "./Commercial";
 import { Revisions } from "./Revisions";
 import type { User } from "../lib/types";
 
@@ -71,7 +72,7 @@ const FIELD_NAME: Record<string, string> = {
   quantity: "Quantity", job_rate_override: "Job rate", productivity_rate: "Productivity", duration_override_hrs: "Hours override",
   count: "Count / factor", manual_qty: "Quantity", utilisation: "Utilisation", waste: "Waste", verified: "Verified",
   weather_exposed: "Weather exposed", include: "Included", method: "Basis", pct: "Percentage", pc_sum: "Amount", amount: "Amount",
-  recovery_allowance: "Allowance", confirmed_overlap: "Amount", added: "Added", removed: "Removed",
+  recovery_allowance: "Allowance", confirmed_overlap: "Amount", added: "Added", removed: "Removed", name: "Description", note: "Note",
 };
 const PCT_FIELDS = new Set(["pct", "utilisation", "waste"]);
 const MONEY_FIELDS = new Set(["job_rate_override", "pc_sum", "amount", "recovery_allowance", "confirmed_overlap"]);
@@ -341,6 +342,7 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
         {!err && pg !== "revisions" && !shown && <div className="text-sm text-muted-foreground" aria-live="polite">Loading estimate…</div>}
         {!err && shown && pg === "overview" && <Overview est={shown} go={view} />}
         {!err && shown && pg === "consolidated" && <Consolidated est={shown} />}
+        {!err && shown && pg === "commercial" && <Commercial est={shown} />}
         {!err && shown && pg === "tender" && <Tender est={shown} />}
         {!err && shown && pg === "qs" && <QSTakeoff est={shown} openRows={(c) => { setCode(c); view("buildup"); }} onRowAdded={(uid, c) => { setCode(c); setFocusUid(uid); view("buildup"); }} />}
         {!err && shown && pg === "buildup" && <BuildUp est={shown} code={code} setCode={setCode} focusUid={focusUid} />}

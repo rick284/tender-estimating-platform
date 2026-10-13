@@ -54,9 +54,9 @@ const field = "h-8 border bg-background px-2 text-sm focus:border-primary";
 
 /** Text / number / date / select input for settings that aren't plain money amounts. `value` is what is shown now
  *  (including any pending edit); the first value seen is remembered as the original so typing it back clears the edit. */
-export function EditField({ target, id, field: f, value, display, kind = "text", options, label, width = "w-36", placeholder }: {
+export function EditField({ target, id, field: f, value, display, kind = "text", options, label, width = "w-36", placeholder, rows = 3 }: {
   target: string; id: string; field: string; value: string; display?: ReactNode; kind?: "text" | "number" | "date" | "select" | "textarea";
-  options?: { value: string; label: string }[]; label: string; width?: string; placeholder?: string;
+  options?: { value: string; label: string }[]; label: string; width?: string; placeholder?: string; rows?: number;
 }) {
   const { editing, edits, set, reset } = useEdit();
   if (!editing) return <>{display ?? (value === "" ? "—" : value)}</>;
@@ -75,7 +75,7 @@ export function EditField({ target, id, field: f, value, display, kind = "text",
   }
   if (kind === "textarea") {
     return (
-      <textarea aria-label={label} rows={3} placeholder={placeholder} title={e ? `Was ${original === "" ? "blank" : original}` : undefined} value={shown}
+      <textarea aria-label={label} rows={rows} placeholder={placeholder} title={e ? `Was ${original === "" ? "blank" : original}` : undefined} value={shown}
         onClick={(ev) => ev.stopPropagation()} onChange={(ev) => change(ev.target.value)}
         className={`w-full border bg-background px-2 py-1 text-sm focus:border-primary ${e ? "border-amber-line bg-amber-bg" : ""}`} />
     );

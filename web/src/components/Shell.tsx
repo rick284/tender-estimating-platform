@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from "react";
-import { BarChart3, Calculator, CalendarRange, GanttChart, ClipboardList, CloudRain, FileText, Handshake, FolderOpen, GitCompare, Layers, LayoutDashboard, Library, ListTree, LogOut, Menu, Package, Ruler, Scale, ShieldAlert, Sparkles, X } from "lucide-react";
+import { BarChart3, Calculator, CalendarRange, GanttChart, ClipboardList, CloudRain, FileText, Handshake, FolderOpen, GitCompare, Layers, LayoutDashboard, Library, ListTree, LogOut, Menu, Package, Percent, Ruler, Scale, ShieldAlert, Sparkles, X } from "lucide-react";
 import { go, type Route } from "../lib/route";
 import type { User } from "../lib/types";
 
 export const TENDER_NAV = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "consolidated", label: "Consolidated Package", icon: Package },
+  { id: "commercial", label: "Commercial", icon: Percent },
   { id: "tender", label: "Tender Build-Up", icon: Calculator },
   { id: "qs", label: "QS Takeoff", icon: ListTree },
   { id: "buildup", label: "Resource Build-Up", icon: Layers },
