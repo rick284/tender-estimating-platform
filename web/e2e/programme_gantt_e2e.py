@@ -29,6 +29,20 @@ with sync_playwright() as p:
     expect(pg.locator("p.mt-0\\.5", has_text=" · 43 tasks")).to_be_visible()
     pg.screenshot(path=SHOT + "gantt_view.png")
     print("opened .mpp: 43 tasks")
+    # the Resources column is there in view mode too, and columns can be hidden and brought back (remembered)
+    hdr = pg.get_by_test_id("gantt-columns")
+    expect(pg.get_by_text("Resources", exact=True).first).to_be_visible()
+    assert pg.get_by_text("Predecessors", exact=True).count() >= 1
+    hdr.click(); pg.get_by_test_id("gantt-columns-menu").get_by_label("Predecessors").uncheck(); pg.wait_for_timeout(400)
+    pg.keyboard.press("Escape"); pg.mouse.click(5, 5); pg.wait_for_timeout(300)
+    assert pg.get_by_text("Predecessors", exact=True).count() == 0, "column still showing"
+    assert pg.get_by_test_id("gantt-columns").inner_text().startswith("Columns (")
+    pg.screenshot(path=SHOT + "gantt_columns.png")
+    pg.reload(); pg.wait_for_timeout(2500)
+    assert pg.get_by_text("Predecessors", exact=True).count() == 0, "hidden column not remembered"
+    pg.get_by_test_id("gantt-columns").click(); pg.get_by_text("Show all columns").click(); pg.wait_for_timeout(400); pg.mouse.click(5, 5)
+    assert pg.get_by_text("Predecessors", exact=True).count() >= 1
+    print("columns hide / show / remembered")
 
     # 2. edit like MS Project: add a task, link two tasks, undo, save
     pg.get_by_test_id("toggle-edit").click(); pg.wait_for_timeout(500)

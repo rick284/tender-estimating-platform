@@ -104,6 +104,16 @@ const ProgramGantt = ({
   const [showBaseline, setShowBaseline] = useState(true);
   const [showLinks, setShowLinks] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
+  // Which table columns are hidden (remembered on this computer). Task Name can't be hidden.
+  const [hiddenCols, setHiddenCols] = useState(() => {
+    try { const v = JSON.parse(localStorage.getItem('qsi.gantt.hiddenCols') || '[]'); return Array.isArray(v) ? v.filter((x) => x !== 'name') : []; } catch { return []; }
+  });
+  const [colMenu, setColMenu] = useState(false);
+  const toggleCol = (key) => setHiddenCols((cur) => {
+    const next = cur.includes(key) ? cur.filter((x) => x !== key) : [...cur, key];
+    try { localStorage.setItem('qsi.gantt.hiddenCols', JSON.stringify(next)); } catch { /* private mode */ }
+    return next;
+  });
   const [localSel, setLocalSel] = useState(null);
   const [colWidths, setColWidths] = useState({}); // user-resized table columns, by key
   const [paneW, setPaneW] = useState(null); // visible width of the table pane (drag the divider)
@@ -125,7 +135,7 @@ const ProgramGantt = ({
     if (rightBarRef.current) viewportW.current = rightBarRef.current.clientWidth;
   }, []);
 
-  useEffect(() => { setColWidths({}); setPaneW(null); }, [editable]);
+  useEffect(() => { setColWidths({}); setPaneW(null); }, [editable, hiddenCols]);
 
   // Timeline range
   const range = useMemo(() => {
@@ -439,7 +449,7 @@ const ProgramGantt = ({
           />
           {showLabels && !drag && (
             <text x={g.x1 + s + 5} y={cy + 4} fontSize="11" fill="#374151" pointerEvents="none">
-              {fmtDate(t.finish).split(' ')[1]}
+              {names.length ? names.join(', ') : fmtDate(t.finish).split(' ')[1]}
             </text>
           )}
           {handle(g.x1 + s + 9)}
@@ -497,7 +507,7 @@ const ProgramGantt = ({
   const btn = (active) =>
     `px-2.5 py-1 text-xs border ${active ? 'bg-primary text-primary-foreground border-primary' : 'bg-card border-border hover:bg-muted'}`;
 
-  const leftCols = useMemo(() => {
+  const allCols = useMemo(() => {
     const cols = [
       { key: 'id', label: 'ID', w: 36 },
       { key: 'name', label: 'Task Name', w: 220 },
@@ -506,12 +516,11 @@ const ProgramGantt = ({
       { key: 'finish', label: 'Finish', w: editable ? 118 : 96 },
       { key: 'pred', label: 'Predecessors', w: editable ? 112 : 90 },
     ];
-    if (editable) {
-      cols.push({ key: 'pct', label: '%', w: 48 });
-      cols.push({ key: 'res', label: 'Resources', w: 150 });
-    }
+    cols.push({ key: 'pct', label: '%', w: 48 });
+    cols.push({ key: 'res', label: 'Resources', w: 150 });
     return cols;
   }, [editable]);
+  const leftCols = useMemo(() => allCols.filter((c) => !hiddenCols.includes(c.key)), [allCols, hiddenCols]);
   const colW = (c) => colWidths[c.key] ?? c.w;
   const leftW = leftCols.reduce((a, c) => a + colW(c), 0);
 
@@ -611,6 +620,22 @@ const ProgramGantt = ({
         <label className="flex items-center gap-1 cursor-pointer">
           <input type="checkbox" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} /> Resource labels
         </label>
+        <div className="relative">
+          <button className={btn(colMenu)} onClick={() => setColMenu((v) => !v)} aria-expanded={colMenu} data-testid="gantt-columns">Columns{hiddenCols.length ? ` (${allCols.length - hiddenCols.length}/${allCols.length})` : ''}</button>
+          {colMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setColMenu(false)} aria-hidden="true" />
+              <div className="absolute left-0 top-full z-50 mt-1 w-48 border border-border bg-card p-2 shadow-lg" role="menu" data-testid="gantt-columns-menu">
+                {allCols.map((c) => (
+                  <label key={c.key} className={`flex items-center gap-2 px-1 py-1 text-xs ${c.key === 'name' ? 'text-muted-foreground' : 'cursor-pointer hover:bg-muted'}`}>
+                    <input type="checkbox" disabled={c.key === 'name'} checked={!hiddenCols.includes(c.key)} onChange={() => toggleCol(c.key)} /> {c.label}
+                  </label>
+                ))}
+                {hiddenCols.length > 0 && <button className="mt-1 w-full border-t px-1 pt-2 text-left text-xs underline" onClick={() => { setHiddenCols([]); try { localStorage.removeItem('qsi.gantt.hiddenCols'); } catch { /* ignore */ } }}>Show all columns</button>}
+              </div>
+            </>
+          )}
+        </div>
         <div className="ml-auto flex items-center gap-3 text-muted-foreground">
           <span className="flex items-center gap-1"><span className="inline-block w-3 h-2" style={{ background: COLORS.normal }} /> Task</span>
           <span className="flex items-center gap-1"><span className="inline-block w-3 h-2" style={{ background: COLORS.critical }} /> Critical</span>
@@ -736,13 +761,13 @@ const ProgramGantt = ({
                         ) : `${Math.round(t.percent_complete || 0)}%`)}
                         {c.key === 'res' && (
                           <button
-                            className={`flex items-center gap-1 w-full text-left ${leaf ? 'hover:text-primary' : 'cursor-default'}`}
-                            disabled={!leaf}
+                            className={`flex items-center gap-1 w-full text-left ${leaf && editable ? 'hover:text-primary' : 'cursor-default'}`}
+                            disabled={!leaf || !editable}
                             data-res-uid={k}
                             onClick={(e) => { e.stopPropagation(); select(k); if (onOpenResources) onOpenResources(k); }}
-                            title={leaf ? 'Assign resources' : ''}
+                            title={leaf && editable ? 'Assign resources' : ''}
                           >
-                            {leaf && <Users className="w-3 h-3 flex-none text-muted-foreground" />}
+                            {leaf && editable && <Users className="w-3 h-3 flex-none text-muted-foreground" />}
                             <span className="truncate">{assignmentNames(t).join(', ')}</span>
                           </button>
                         )}
