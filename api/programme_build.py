@@ -33,11 +33,34 @@ def _leaf(uid: int, name: str, days: int, preds: list[dict[str, Any]], note: str
             "resources": [], "resource_assignments": [], "constraint_type": None, "constraint_date": None, "notes": note, "is_active": True, "source_ref": ref}
 
 
+def _assignments(est: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Who and what each QS item uses, from its build-up rows (labour, plant, subcontract; materials are not scheduled resources).
+    Units = the row's count (e.g. 2 labourers), at least 1."""
+    out: dict[str, list[dict[str, Any]]] = {}
+    for r in est.get("buildup") or []:
+        kind = str(r.get("resource_type", "")).strip().lower()
+        name = (r.get("resource") or r.get("resource_code") or "").strip()
+        if not name or kind in ("material", "materials", ""):
+            continue
+        lst = out.setdefault(r.get("qs_code", ""), [])
+        if any(a["name"] == name for a in lst):
+            continue
+        lst.append({"resource_id": r.get("resource_code") or None, "name": name, "type": kind, "unit": r.get("unit"), "units": max(1.0, float(r.get("count") or 1))})
+    return out
+
+
+def _with_resources(leaf: dict[str, Any], asg: list[dict[str, Any]]) -> dict[str, Any]:
+    leaf["resource_assignments"] = [dict(a) for a in asg]
+    leaf["resources"] = [a["name"] for a in asg]
+    return leaf
+
+
 def tasks_from_estimate(est: dict[str, Any]) -> list[dict[str, Any]]:
     """A first-cut programme from an estimate. Sections become summary rows; QS items become tasks, in order.
     The durations are the platform's own (programme page if it is set up, otherwise slowest labour/plant row hours / 8); the order and links are a
     starting point for the estimator to change. Nothing here is AI: the AI drafting step proposes logic separately."""
     prog = est.get("programme") or {}
+    asg = _assignments(est)
     out: list[dict[str, Any]] = []
     uid = 0
 
@@ -66,6 +89,7 @@ def tasks_from_estimate(est: dict[str, Any]) -> list[dict[str, Any]]:
                 leaf = _leaf(u, f"{t['code']} {t['name']}".strip(), days, [], (t.get("basis") or "").strip(), t["code"])
                 if days == 0:
                     leaf["is_milestone"] = True
+                _with_resources(leaf, asg.get(t.get("qs_code") or "", []))
                 out.append(leaf)
                 by_code[t["code"]] = u
                 pending.append((u, list(t.get("predecessors") or [])))
@@ -90,6 +114,6 @@ def tasks_from_estimate(est: dict[str, Any]) -> list[dict[str, Any]]:
         h = hours.get(q["code"])
         days = max(1, -(-int(round(h * 100)) // 800)) if h else 1          # ROUNDUP(hours / 8), at least 1
         note = "Duration from the estimate's labour/plant hours; review." if h else "No labour/plant hours in the estimate for this item: 1 day placeholder; set it."
-        out.append(_leaf(u, f"{q['code']} {q.get('description', '')}".strip(), days, [{"uid": prev, "type": "FS", "lag_days": 0}] if prev else [], note, q["code"]))
+        out.append(_with_resources(_leaf(u, f"{q['code']} {q.get('description', '')}".strip(), days, [{"uid": prev, "type": "FS", "lag_days": 0}] if prev else [], note, q["code"]), asg.get(q["code"], [])))
         prev = u
     return out

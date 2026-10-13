@@ -24,12 +24,15 @@ def test_tasks_from_estimate_uses_sections_and_hours():
     est = {"programme": {"set_up": False}, "qs": [{"code": "EW01", "section": "Earthworks", "description": "Strip", "amount": 100},
                                                    {"code": "EW02", "section": "Earthworks", "description": "Fill", "amount": 200},
                                                    {"code": "ZZ", "section": "Other", "description": "Nothing", "amount": 0}],
-           "buildup": [{"qs_code": "EW01", "resource_type": "Labour", "hours": 20}, {"qs_code": "EW01", "resource_type": "Plant", "hours": 33},
+           "buildup": [{"qs_code": "EW01", "resource_type": "Labour", "hours": 20, "resource": "Civil labourer", "count": 2}, {"qs_code": "EW01", "resource_type": "Plant", "hours": 33, "resource": "14 t excavator"},
                        {"qs_code": "EW01", "resource_type": "Material", "hours": 999}]}
     t = pb.tasks_from_estimate(est)
     assert [x["name"] for x in t] == ["Earthworks", "EW01 Strip", "EW02 Fill"]            # zero-amount item left out, materials never drive duration
     assert t[1]["duration"]["value"] == 5 and t[2]["duration"]["value"] == 1              # ROUNDUP(33/8)=5; no hours -> 1 day placeholder
     assert t[2]["predecessors"] == [{"uid": t[1]["uid"], "type": "FS", "lag_days": 0}] and t[1]["predecessors"] == []
+    assert [(a["name"], a["type"], a["units"]) for a in t[1]["resource_assignments"]] == [("Civil labourer", "labour", 2.0), ("14 t excavator", "plant", 1.0)]
+    assert t[1]["resources"] == ["Civil labourer", "14 t excavator"]                       # materials never become resources
+    assert t[0]["resource_assignments"] == []                                               # summary rows carry no resources
 
 
 def test_tasks_from_platform_programme_keep_links_and_group_sections():
