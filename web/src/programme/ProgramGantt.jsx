@@ -18,6 +18,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const DOW_LONG = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const ZOOMS = { day: 26, week: 9, month: 2.6 };
+const MIN_PX = 1.2, MAX_PX = 90, ZOOM_STEP = 1.3;
 
 const COLORS = {
   normal: '#4472C4',
@@ -219,6 +220,19 @@ const ProgramGantt = ({
   const collapseAll = () => setCollapsed(new Set(tasks.filter((t) => t.is_summary).map(key)));
 
   const setZoomLevel = (z) => { setZoom(z); setPxPerDay(ZOOMS[z]); };
+  // Zoom in / out in steps, keeping the date in the middle of the chart where it is
+  const pendingScroll = useRef(null);
+  const zoomBy = (factor) => {
+    const next = Math.min(MAX_PX, Math.max(MIN_PX, pxPerDay * factor));
+    if (next === pxPerDay) return;
+    const bar = rightBarRef.current;
+    if (bar) pendingScroll.current = Math.max(0, (bar.scrollLeft + bar.clientWidth / 2) * (next / pxPerDay) - bar.clientWidth / 2);
+    setZoom('custom');
+    setPxPerDay(next);
+  };
+  useLayoutEffect(() => {
+    if (pendingScroll.current !== null && rightBarRef.current) { rightBarRef.current.scrollLeft = pendingScroll.current; pendingScroll.current = null; }
+  }, [pxPerDay]);
   const fit = () => {
     const w = (rightBarRef.current?.clientWidth || viewportW.current) - 24;
     setZoom('fit');
@@ -606,6 +620,11 @@ const ProgramGantt = ({
             </button>
           ))}
           <button className={btn(zoom === 'fit')} onClick={fit}>Fit</button>
+        </div>
+        <div className="flex items-center" role="group" aria-label="Zoom the chart">
+          <button className={btn(false)} onClick={() => zoomBy(1 / ZOOM_STEP)} disabled={pxPerDay <= MIN_PX} aria-label="Zoom out" title="Zoom out" data-testid="gantt-zoom-out">&minus;</button>
+          <span className="border-y border-border bg-card px-2 py-1 text-xs tabular-nums text-muted-foreground" data-testid="gantt-zoom-level" title="Chart zoom (100% = Days)">{Math.round((pxPerDay / ZOOMS.day) * 100)}%</span>
+          <button className={btn(false)} onClick={() => zoomBy(ZOOM_STEP)} disabled={pxPerDay >= MAX_PX} aria-label="Zoom in" title="Zoom in" data-testid="gantt-zoom-in">+</button>
         </div>
         <div className="flex">
           <button className={btn(false)} onClick={expandAll}>Expand all</button>

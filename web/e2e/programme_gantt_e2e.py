@@ -29,6 +29,15 @@ with sync_playwright() as p:
     expect(pg.locator("p.mt-0\\.5", has_text=" · 43 tasks")).to_be_visible()
     pg.screenshot(path=SHOT + "gantt_view.png")
     print("opened .mpp: 43 tasks")
+    # zoom in / out in steps
+    lvl = lambda: int(pg.get_by_test_id("gantt-zoom-level").inner_text().rstrip("%"))
+    base = lvl(); assert base == 100, base
+    pg.get_by_test_id("gantt-zoom-in").click(); pg.get_by_test_id("gantt-zoom-in").click(); pg.wait_for_timeout(300)
+    assert lvl() > 150, lvl()
+    pg.get_by_test_id("gantt-zoom-out").click(); pg.get_by_test_id("gantt-zoom-out").click(); pg.get_by_test_id("gantt-zoom-out").click(); pg.get_by_test_id("gantt-zoom-out").click(); pg.wait_for_timeout(300)
+    assert lvl() < 70, lvl()
+    pg.get_by_role("button", name="Days", exact=True).click(); pg.wait_for_timeout(300); assert lvl() == 100
+    print("zoom in / out ok")
     # the Resources column is there in view mode too, and columns can be hidden and brought back (remembered)
     hdr = pg.get_by_test_id("gantt-columns")
     expect(pg.get_by_text("Resources", exact=True).first).to_be_visible()
