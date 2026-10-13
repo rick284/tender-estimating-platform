@@ -154,7 +154,7 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
             <Chip tone="green">Connected</Chip><span>{status.account || "Google account"} · read-only</span>
             <button className="underline underline-offset-4" onClick={disconnect}>Disconnect</button>
           </div>
-          {folder === null && <Empty title="No folder linked to this tender" body="Choose the folder that holds this tender's documents (for example “329 Hobsonville Road”)." />}
+          {folder === null && <Empty title="No folder linked to this tender" body="Choose the folder that holds this tender's documents (the job folder, not the folder above it)." />}
           {folder === null && <div className="mt-4"><button className="btn btn-solid" onClick={() => setPick(true)}>Choose folder</button></div>}
           {folder && (
             <div className="space-y-5">

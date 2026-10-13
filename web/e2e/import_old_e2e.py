@@ -23,7 +23,7 @@ with sync_playwright() as p:
     expect(pg.get_by_text("Reconciled to workbook")).to_be_visible()                                # every figure the workbook shows is reproduced
     pg.screenshot(path=SHOT + "import_old.png", full_page=True)
     pg.locator("aside").get_by_role("button", name="Tender Build-Up").click()
-    expect(pg.locator("tr", has_text="Siteworks tender excl. GST")).to_contain_text("$232,838.98")
+    expect(pg.locator("tr", has_text="Own works tender excl. GST")).to_contain_text("$232,838.98")
     pg.locator("aside").get_by_role("button", name="QS Takeoff").click()
     expect(pg.get_by_text("TC01").first).to_be_visible()                                            # the items below row 40 are there
     expect(pg.get_by_text("TC02").first).to_be_visible()
@@ -41,6 +41,6 @@ with sync_playwright() as p:
     expect(pg.get_by_text("Reconciled to workbook")).to_be_visible()
     expect(pg.get_by_text("held a formula")).to_be_visible()
     pg.locator("aside").get_by_role("button", name="Tender Build-Up").click()
-    expect(pg.locator("tr", has_text="Siteworks tender excl. GST")).to_contain_text("$1,622,010.25")
+    expect(pg.locator("tr", has_text="Own works tender excl. GST")).to_contain_text("$1,622,010.25")
     pg.screenshot(path=SHOT + "import_bridle.png", full_page=True)
     print("OK old workbook import | errors:", errs[:3]); b.close()

@@ -15,18 +15,18 @@ with sync_playwright() as p:
     row = pg.locator("tr", has_text="CA21")
     expect(row).to_contain_text("GST")                                                           # the GST line is on the page
     expect(row).to_contain_text("Off")
-    expect(pg.locator("tr", has_text="Siteworks tender incl. GST")).to_contain_text("$614,700.22")   # off: incl. = excl.
+    expect(pg.locator("tr", has_text="Own works tender incl. GST")).to_contain_text("$614,700.22")   # off: incl. = excl.
     pg.get_by_role("button", name="Edit", exact=True).click()
     pg.get_by_label("CA21 included").check()                                                      # the switch
     pg.wait_for_timeout(1500)
     expect(pg.locator("tr", has_text="CA21")).to_contain_text("$92,205.03")                       # 15% of 614,700.22
-    expect(pg.locator("tr", has_text="Siteworks tender incl. GST")).to_contain_text("$706,905.26")
-    expect(pg.locator("tr", has_text="Siteworks tender excl. GST")).to_contain_text("$614,700.22")  # excl. unchanged
+    expect(pg.locator("tr", has_text="Own works tender incl. GST")).to_contain_text("$706,905.26")
+    expect(pg.locator("tr", has_text="Own works tender excl. GST")).to_contain_text("$614,700.22")  # excl. unchanged
     bar = pg.locator("div.fixed.bottom-0").inner_text()
     assert "$1,226,916.81" in bar and "(+$0.00)" in bar, bar                                       # the all-in package is excl. GST: no movement
     pg.get_by_label("CA21 percentage").fill("10"); pg.wait_for_timeout(1500)
-    expect(pg.locator("tr", has_text="Siteworks tender incl. GST")).to_contain_text("$676,170.25")
+    expect(pg.locator("tr", has_text="Own works tender incl. GST")).to_contain_text("$676,170.25")
     pg.screenshot(path=SHOT + "gst_on.png", full_page=True)
     pg.get_by_label("CA21 included").uncheck(); pg.wait_for_timeout(1500)
-    expect(pg.locator("tr", has_text="Siteworks tender incl. GST")).to_contain_text("$614,700.22")
+    expect(pg.locator("tr", has_text="Own works tender incl. GST")).to_contain_text("$614,700.22")
     print("OK gst switch | errors:", errs[:3]); b.close()

@@ -7,11 +7,10 @@ import type { TenderPage } from "../components/Shell";
 export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => void }) {
   const s = est.summary, c = est.consolidated, ct = est.controls;
   const parts = [
-    { name: "Siteworks pre-commercial (incl. Management Reserve)", v: c.own_works, shade: "bg-primary" },
+    { name: "Own works pre-commercial (incl. Management Reserve)", v: c.own_works, shade: "bg-primary" },
     ...c.overlays.reduce<{ name: string; v: number; shade: string }[]>((acc, o) => {
-      const key = o.name.startsWith("Allied") ? "Allied drainage subcontract" : o.name.startsWith("Coast") ? "Coast Concrete subcontract" : o.name;
-      const hit = acc.find((a) => a.name === key);
-      if (hit) hit.v += o.amount; else acc.push({ name: key, v: o.amount, shade: key.startsWith("Coast") ? "bg-foreground/60" : "bg-foreground/30" });
+      const hit = acc.find((a) => a.name === o.name);
+      if (hit) hit.v += o.amount; else acc.push({ name: o.name, v: o.amount, shade: acc.length % 2 === 1 ? "bg-foreground/60" : "bg-foreground/30" });
       return acc;
     }, []),
   ];
@@ -50,7 +49,7 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
               <div className="label">Working all-in tender</div>
               <div className="num !text-left font-mono text-3xl font-semibold leading-none sm:text-4xl">{fmtMoney(s.all_in)}</div>
               <p className="mt-3 text-sm text-muted-foreground">
-                {est.meta.commercial ? `${est.meta.commercial}. Supplier and material costs inside Siteworks are already in its cost chain; Coast and Allied are separate subcontract overlays added once.` : "Your own works plus any subcontract packages, with overhead and margin applied once. Supplier and material costs are already inside the build-up."}
+                {est.meta.commercial ? `${est.meta.commercial}. Supplier and material costs inside your own works are already in its cost chain; subcontract packages are separate overlays added once.` : "Your own works plus any subcontract packages, with overhead and margin applied once. Supplier and material costs are already inside the build-up."}
               </p>
             </div>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-4">
@@ -106,7 +105,7 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
       )}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Panel title="Siteworks cost chain" flush action={<button className="btn btn-ghost !py-1" onClick={() => go("tender")}>Open</button>}>
+        <Panel title="Own works cost chain" flush action={<button className="btn btn-ghost !py-1" onClick={() => go("tender")}>Open</button>}>
           <table className="grid-table">
             <tbody>
               {[
@@ -118,7 +117,7 @@ export function Overview({ est, go }: { est: Estimate; go: (p: TenderPage) => vo
               ].map(([k, v]) => (
                 <tr key={String(k)}><td>{k}</td><td className="num"><Money v={v as number} /></td></tr>
               ))}
-              <tr className="total-row"><td>Siteworks tender</td><td className="num"><Money v={est.tender.total_excl_gst} /></td></tr>
+              <tr className="total-row"><td>Own works tender</td><td className="num"><Money v={est.tender.total_excl_gst} /></td></tr>
             </tbody>
           </table>
         </Panel>

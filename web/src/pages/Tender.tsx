@@ -40,7 +40,7 @@ export function Tender({ est }: { est: Estimate }) {
   const com = est.commercial.filter((c) => c.stage === "commercial");
   return (
     <>
-      <PageHeader title="Tender build-up" sub="Siteworks only. Base direct cost flows from the QS Takeoff. Press Edit to switch commercial lines on or off and change their percentages and amounts, including GST at the bottom. The lines themselves (names, notes, extra allowances) are set up on the Commercial page." />
+      <PageHeader title="Tender build-up" sub="Your own works only (subcontract packages are added on the Consolidated Package). Base direct cost flows from the QS Takeoff. Press Edit to switch commercial lines on or off and change their percentages and amounts, including GST at the bottom. The lines themselves (names, notes, extra allowances) are set up on the Commercial page." />
       <Panel flush>
         <div className="grid-scroll">
           <table className="grid-table min-w-[36rem]">
@@ -71,7 +71,7 @@ export function Tender({ est }: { est: Estimate }) {
                   <td className="num"><Money v={c.include ? c.amount : null} dash0 /></td>
                 </tr>
               ))}
-              <tr className="total-row"><td colSpan={2}>Siteworks tender excl. GST</td><td className="num"><Money v={t.total_excl_gst} /></td></tr>
+              <tr className="total-row"><td colSpan={2}>Own works tender excl. GST</td><td className="num"><Money v={t.total_excl_gst} /></td></tr>
               {gst && (
                 <tr className={gst.include ? "" : "text-muted-foreground"}>
                   <td><span className="font-mono text-xs">{gst.ref}</span> {gst.name}</td>
@@ -79,7 +79,7 @@ export function Tender({ est }: { est: Estimate }) {
                   <td className="num"><Money v={gst.include ? t.gst : null} dash0 /></td>
                 </tr>
               )}
-              <tr className="total-row"><td colSpan={2}>Siteworks tender incl. GST{gst && !gst.include ? " (GST off, same as excl. GST)" : ""}</td><td className="num"><Money v={t.total_incl_gst} /></td></tr>
+              <tr className="total-row"><td colSpan={2}>Own works tender incl. GST{gst && !gst.include ? " (GST off, same as excl. GST)" : ""}</td><td className="num"><Money v={t.total_incl_gst} /></td></tr>
             </tbody>
           </table>
         </div>

@@ -193,7 +193,7 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
     engine_totals = {
         "Base direct estimate": qs.total_direct, "Pre-margin additions": tender.pre_margin_total,
         "Subtotal before commercial adjustments": tender.subtotal, "Company overhead (CA17)": tender.overhead,
-        "Contractor profit (CA18)": tender.profit, "Siteworks tender excl. GST": tender.tender_excl_gst,
+        "Contractor profit (CA18)": tender.profit, "Own works tender excl. GST": tender.tender_excl_gst,
         "Weather allowance (CA10)": weather.allowance, "Gross known package": cons.gross_known_package,
         "Working all-in tender excl. GST": cons.all_in_tender,
     }

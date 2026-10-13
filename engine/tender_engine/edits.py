@@ -780,7 +780,7 @@ def _net_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, rows: list[_R
     _reserve_changes(a, b, add)
     _programme_changes(a, b, add)
     add("setting", "weather", "recovery_allowance", "Weather recovery allowance", D(a.recovery), D(b.recovery))
-    add("setting", "consolidated", "confirmed_overlap", "Confirmed Siteworks / Coast overlap", D(a.overlap), D(b.overlap))
+    add("setting", "consolidated", "confirmed_overlap", "Confirmed overlap between own works and subcontract packages", D(a.overlap), D(b.overlap))
     return out
 
 

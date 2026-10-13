@@ -18,12 +18,12 @@ export function Consolidated({ est }: { est: Estimate }) {
   );
   return (
     <>
-      <PageHeader title="Consolidated package" sub="Siteworks plus subcontract overlays and the commercial layer. This is the controlling all-in package view. Each subcontract quote is added once." />
+      <PageHeader title="Consolidated package" sub="Your own works plus subcontract overlays and the commercial layer. This is the controlling all-in package view. Each subcontract quote is added once." />
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="Package build" flush>
           <table className="grid-table">
             <tbody>
-              {row("Siteworks pre-commercial package", c.own_works, false, "Includes Management Reserve")}
+              {row("Own works pre-commercial package", c.own_works, false, "Includes Management Reserve")}
               {c.overlays.map((o) => (
                 <tr key={o.name}>
                   <td>{o.name}<div className="mt-0.5"><Chip tone="neutral">{o.kind.toLowerCase()}</Chip></div></td>
@@ -34,7 +34,7 @@ export function Consolidated({ est }: { est: Estimate }) {
               {c.overlays.length === 0 && <tr><td colSpan={2} className="text-sm text-muted-foreground">No subcontract packages yet.{editing ? "" : " Switch to Edit to add one."}</td></tr>}
               {editing && <tr><td colSpan={2}><button className="btn btn-solid !py-1.5" onClick={() => setAdding(true)}>Add subcontract package</button></td></tr>}
               {row("Gross current known package", c.gross_known_package, true)}
-              {row("Confirmed Siteworks / Coast overlap", -c.confirmed_overlap, false, c.confirmed_overlap === 0 ? "Interface closed: no overlap remains" : undefined)}
+              {row("Confirmed overlap between own works and subcontract packages", -c.confirmed_overlap, false, c.confirmed_overlap === 0 ? "Interface closed: no overlap remains" : undefined)}
               {row("Known package after overlap", c.known_after_overlap, true)}
             </tbody>
           </table>

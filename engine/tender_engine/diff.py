@@ -9,7 +9,7 @@ from typing import Any
 
 HEADLINE = [
     ("all_in", "Working all-in tender"),
-    ("siteworks_tender", "Siteworks tender"),
+    ("siteworks_tender", "Own works tender"),
     ("known_cost", "Known cost before OH/profit"),
     ("base_direct", "Base direct estimate"),
     ("management_reserve", "Management Reserve"),
