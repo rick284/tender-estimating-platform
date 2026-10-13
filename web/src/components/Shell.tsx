@@ -5,11 +5,11 @@ import type { User } from "../lib/types";
 
 export const TENDER_NAV = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "consolidated", label: "Consolidated Package", icon: Package },
-  { id: "commercial", label: "Commercial", icon: Percent },
-  { id: "tender", label: "Tender Build-Up", icon: Calculator },
   { id: "qs", label: "QS Takeoff", icon: ListTree },
   { id: "buildup", label: "Resource Build-Up", icon: Layers },
+  { id: "commercial", label: "Commercial", icon: Percent },
+  { id: "tender", label: "Tender Build-Up", icon: Calculator },
+  { id: "consolidated", label: "Consolidated Package", icon: Package },
   { id: "programme", label: "Programme", icon: CalendarRange },
   { id: "gantt", label: "Programme Gantt", icon: GanttChart },
   { id: "weather", label: "Weather Risk", icon: CloudRain },
