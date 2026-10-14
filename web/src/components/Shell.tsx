@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { BarChart3, Calculator, CalendarRange, GanttChart, ClipboardList, CloudRain, FileText, Handshake, FolderOpen, GitCompare, Layers, LayoutDashboard, Library, ListTree, LogOut, Menu, Package, Percent, Ruler, Scale, ShieldAlert, Sparkles, X } from "lucide-react";
+import { BarChart3, Calculator, CalendarRange, Clock, GanttChart, ClipboardList, CloudRain, FileText, Handshake, FolderOpen, GitCompare, Layers, LayoutDashboard, Library, ListTree, LogOut, Menu, Package, Percent, Ruler, Scale, ShieldAlert, Sparkles, X } from "lucide-react";
 import { go, type Route } from "../lib/route";
 import type { User } from "../lib/types";
 
@@ -59,6 +59,9 @@ export function Shell({ user, route, tenderName, onLogout, children }: { user: U
         <nav aria-label="Main" className="space-y-0.5 p-3">
           <button className={itemCls(route.name === "tenders")} aria-current={route.name === "tenders" ? "page" : undefined} onClick={() => nav({ name: "tenders" })}>
             <FolderOpen size={16} strokeWidth={1.75} aria-hidden /> All tenders
+          </button>
+          <button className={itemCls(route.name === "timesheet")} aria-current={route.name === "timesheet" ? "page" : undefined} onClick={() => nav({ name: "timesheet" })}>
+            <Clock size={16} strokeWidth={1.75} aria-hidden /> Timesheet
           </button>
         </nav>
         {inTender && route.name === "tender" && (

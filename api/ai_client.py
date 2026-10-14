@@ -94,6 +94,9 @@ class AnthropicProvider:
             raise AIError("The AI's answer could not be read. Nothing was drafted; try again.")
         if not isinstance(data, dict) or not isinstance(data.get(shape_key), list):
             raise AIError("The AI's answer was not in the expected shape. Nothing was drafted; try again.")
+        u = getattr(resp, "usage", None)
+        if u is not None:                           # for the timesheet's AI cost line; the caller pops it
+            data["_usage"] = {"input": int(getattr(u, "input_tokens", 0) or 0), "output": int(getattr(u, "output_tokens", 0) or 0)}
         return data
 
 

@@ -12,6 +12,7 @@ import config
 import drive_client
 from db import get_db
 from security import current_user
+from routes_time import timed_ai
 from services import audit, new_id, now
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -225,7 +226,7 @@ async def draft(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Dep
     existing = await _existing(db, user, t, est)
     user_msg = ai_draft.build_user_message(meta, docs, existing)
     try:
-        data = await run_in_threadpool(prov.draft_json, key, model, ai_draft.SYSTEM, user_msg, ai_draft.SCHEMA)
+        data = await timed_ai(user, t["_id"], "drafting", model, prov.draft_json, key, model, ai_draft.SYSTEM, user_msg, ai_draft.SCHEMA)
     except ai_client.AIError as e:
         await audit(db, user, "ai.draft_failed", t["_id"], str(e)[:200])
         raise HTTPException(502, str(e))

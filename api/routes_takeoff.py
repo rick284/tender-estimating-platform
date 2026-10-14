@@ -17,6 +17,7 @@ from db import get_db
 from routes_ai import _org, _ready, _tender
 from routes_drive import _token
 from security import current_user
+from routes_time import timed_ai
 from services import audit, new_id, now
 
 router = APIRouter(prefix="/api/takeoff", tags=["takeoff"])
@@ -94,7 +95,7 @@ async def run(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Depen
     existing = [{"description": p["description"], "quantity": p["quantity"], "unit": p["unit"]} for p in prior if (p.get("decision") or {}).get("decision") != "rejected" and p["status"] != "unverified"]
     user_msg = ai_takeoff.build_user_message(t["name"], docs, existing)
     try:
-        data = await run_in_threadpool(prov.draft_json, key, model, ai_takeoff.SYSTEM, user_msg, ai_takeoff.SCHEMA, images)
+        data = await timed_ai(user, t["_id"], "takeoff", model, prov.draft_json, key, model, ai_takeoff.SYSTEM, user_msg, ai_takeoff.SCHEMA, images)
     except ai_client.AIError as e:
         await audit(db, user, "takeoff.failed", t["_id"], str(e)[:200])
         raise HTTPException(502, str(e))

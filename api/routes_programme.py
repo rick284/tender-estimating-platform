@@ -19,6 +19,7 @@ from db import get_db
 from programme_build import BadProgramme, clean_tasks, tasks_from_estimate
 from routes_ai import _org, _ready
 from security import current_user
+from routes_time import timed_ai
 from services import audit, new_id, now
 
 router = APIRouter(prefix="/api/tenders/{tender_id}/programmes", tags=["programmes"])
@@ -234,7 +235,7 @@ async def ai_propose(tender_id: str, pid: str, user: dict[str, Any] = Depends(cu
     msg = programme_ai.build_user_message(t["name"], tasks, await _register_context(user, t))
     db = get_db()
     try:
-        data = await run_in_threadpool(prov.draft_json, key, model, programme_ai.SYSTEM, msg, programme_ai.SCHEMA, None, "links")
+        data = await timed_ai(user, t["_id"], "programme logic", model, prov.draft_json, key, model, programme_ai.SYSTEM, msg, programme_ai.SCHEMA, None, "links")
     except ai_client.AIError as e:
         await audit(db, user, "programme.ai_failed", tender_id, str(e)[:200])
         raise HTTPException(502, str(e))

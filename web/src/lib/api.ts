@@ -73,6 +73,20 @@ async function download(path: string): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+export interface TimeEntry {
+  kind: "session" | "manual"; id: string; date: string; tender_id: string; tender_name: string; start: string; end: string; elapsed_seconds: number; active_seconds: number; note: string; summary: string[]; open: boolean;
+}
+export interface TimeGroup {
+  date: string; tender_id: string; tender_name: string; active_seconds: number; elapsed_seconds: number; sessions: number; work: string[]; billable_minutes: number;
+  ai: { seconds: number; runs: number; input_tokens: number; output_tokens: number };
+}
+export interface Timesheet {
+  round_minutes: number; start: string; end: string; groups: TimeGroup[]; entries: TimeEntry[];
+  totals: { active_seconds: number; elapsed_seconds: number; billable_minutes: number; ai_seconds: number; ai_runs: number };
+}
+export interface TimePing { session_id: string; tender_id: string; page: string; active_seconds: number; draft_edits: number; end: boolean }
+const tq = (o: Record<string, string>) => new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString();
+
 export interface DriveStatus { configured: boolean; connected: boolean; account: string; connected_at: string | null; read_only: boolean; standard_folders: string[] }
 export interface DriveFile { id: string; name: string; path: string; mime: string; is_folder: boolean; modified: string; size: number | null; link: string; revision: string | null; latest: boolean | null; superseded_by: string | null; in_archive: boolean; ambiguous?: boolean; read: DriveRead | null }
 export interface DriveRead { status: "ok" | "partial" | "needs_ocr" | "unsupported" | "failed"; read_at: string; pages: number; chars: number; stale: boolean; warnings: string[] }
@@ -182,6 +196,19 @@ export const api = {
   register: (b: { email: string; password: string; name: string; company: string }) => request<{ token: string; user: User }>("/api/auth/register", { method: "POST", body: JSON.stringify(b) }),
   me: () => request<User>("/api/auth/me"),
   tenders: () => request<TenderList>("/api/tenders"),
+  timePing: (b: TimePing) => {
+    const t = tokenStore.get();      // keepalive lets the last ping leave while the tab is closing; a failed ping is simply reported back to the caller
+    return fetch(`${BASE}/api/time/ping`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) }, body: JSON.stringify(b) }).then((r) => r.ok);
+  },
+  timesheet: (start: string, end: string, tenderId: string) => request<Timesheet>(`/api/time/timesheet?${tq({ start, end, tender_id: tenderId })}`),
+  timesheetCsv: (start: string, end: string, tenderId: string, detail: boolean) => download(`/api/time/timesheet.csv?${tq({ start, end, tender_id: tenderId, detail: detail ? "true" : "" })}`),
+  timeSettings: () => request<{ round_minutes: number; choices: number[]; can_change: boolean }>("/api/time/settings"),
+  timeSetRound: (m: number) => request<{ round_minutes: number }>("/api/time/settings", { method: "PUT", body: JSON.stringify({ round_minutes: m }) }),
+  timeAddEntry: (b: { date: string; minutes: number; note: string; tender_id: string }) => request<{ id: string }>("/api/time/entries", { method: "POST", body: JSON.stringify(b) }),
+  timeEditEntry: (id: string, b: { date: string; minutes: number; note: string; tender_id: string }) => request<{ ok: boolean }>(`/api/time/entries/${id}`, { method: "PUT", body: JSON.stringify(b) }),
+  timeDeleteEntry: (id: string) => request<{ ok: boolean }>(`/api/time/entries/${id}`, { method: "DELETE" }),
+  timeSessionNote: (id: string, note: string) => request<{ ok: boolean }>(`/api/time/sessions/${id}`, { method: "PUT", body: JSON.stringify({ note }) }),
+  timeSessionDelete: (id: string) => request<{ ok: boolean }>(`/api/time/sessions/${id}`, { method: "DELETE" }),
   createTender: (file: File, client: string) => request<Tender>("/api/tenders", { method: "POST", body: form({ file, client }) }),
   createBlankTender: (name: string, intake: Record<string, string>, templateId: string | null) =>
     request<Tender>("/api/tenders/blank", { method: "POST", body: JSON.stringify({ name, intake, template_tender_id: templateId }) }),

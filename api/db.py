@@ -35,4 +35,7 @@ async def ensure_indexes(db: Any) -> None:
     await db.audit.create_index([("org_id", 1), ("ts", -1)])
     await db.ai_proposals.create_index([("org_id", 1), ("tender_id", 1), ("created_at", -1)])
     await db.programme_docs.create_index([("org_id", 1), ("tender_id", 1), ("updated_at", -1)])
+    await db.time_sessions.create_index([("org_id", 1), ("user_id", 1), ("started_at", -1)])
+    await db.ai_runs.create_index([("org_id", 1), ("user_id", 1), ("started_at", -1)])
+    await db.time_entries.create_index([("org_id", 1), ("user_id", 1), ("date", -1)])
     await db.doc_texts.create_index([("org_id", 1), ("tender_id", 1)])
