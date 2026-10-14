@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import { api } from "./api";
 
-const ACTIVE_WINDOW = 120_000;      // counts as working while there was keyboard, mouse, touch or scroll input in the last 2 minutes
-const NEW_SESSION_AFTER = 600_000;  // no input for 10 minutes ends the session; the next input starts a new one
+const ACTIVE_WINDOW = 300_000;      // counts as working while there was keyboard, mouse, touch or scroll input in the last 5 minutes (reading and reviewing is work too)
+const NEW_SESSION_AFTER = 900_000;  // no input for 15 minutes ends the session; the next input starts a new one
 const PING_EVERY = 30_000;
 const sid = () => { const a = new Uint8Array(9); crypto.getRandomValues(a); return "S" + Array.from(a, (b) => b.toString(36).padStart(2, "0")).join(""); };
 

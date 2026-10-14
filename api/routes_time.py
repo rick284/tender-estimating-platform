@@ -130,6 +130,9 @@ async def _summary(db: Any, user: dict[str, Any], s: dict[str, Any], runs: list[
     mine = [r for r in runs if a <= _utc(r["started_at"]) <= b and r["tender_id"] == s["tender_id"]]
     if mine:
         lines.append(f"AI worked {_fmt_span(sum(r['seconds'] for r in mine))} across {len(mine)} run{'s' if len(mine) != 1 else ''}")
+    saved = any(r.get("changes") is not None and r.get("note") for r in revs)
+    if not saved and not s.get("draft_edits") and s["active_seconds"] >= 60:
+        lines.append("Review only: read and looked through the estimate, no changes made")
     if s.get("draft_edits"):
         lines.append(f"Edit draft reached {s['draft_edits']} change{'s' if s['draft_edits'] != 1 else ''}" + ("" if any(r.get("note") for r in revs) else " (not saved in this session)"))
     return lines

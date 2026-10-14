@@ -101,3 +101,17 @@ def test_other_companies_cannot_see_or_add_time(client, auth, monkeypatch):
     assert ping(client, h2, tid).status_code == 404
     d = client.get(f"/api/time/timesheet?start={_day()}&end={_day()}", headers=h2).json()
     assert d["totals"]["active_seconds"] == 0 and d["entries"] == []
+
+
+def test_a_read_only_session_is_recorded_as_review(client, auth):
+    tid = tender(client, auth)
+    db = dbmod.get_db()
+    async def seed():
+        u = await db.users.find_one({})
+        base = now() - dt.timedelta(minutes=30)
+        await db.time_sessions.insert_one({"_id": "seed-review-001", "org_id": u["org_id"], "user_id": u["_id"], "tender_id": tid, "tender_name": "T", "started_at": base,
+                                           "last_seen": base + dt.timedelta(minutes=12), "active_seconds": 700, "pages": {"quotes": 700}, "draft_edits": 0, "ended": True, "note": ""})
+    client.portal.call(seed)
+    d = client.get(f"/api/time/timesheet?start={_day()}&end={_day()}", headers=auth).json()
+    e = next(x for x in d["entries"] if x["id"] == "seed-review-001")
+    assert "Time in: Quotes (12m)" in e["summary"] and any(l.startswith("Review only") for l in e["summary"]) and e["active_seconds"] == 700
