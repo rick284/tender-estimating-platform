@@ -28,6 +28,7 @@ import { Programme } from "./Programme";
 import { ProgrammeEditor } from "./ProgrammeEditor";
 import { Scope } from "./Scope";
 import { Brief } from "./Brief";
+import { clearDraft, loadDraft, saveDraft, useOnline, type SavedDraft } from "../lib/offline";
 import { useTimekeeper } from "../lib/useTimekeeper";
 import { Commercial } from "./Commercial";
 import { Revisions } from "./Revisions";
@@ -219,6 +220,12 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
   useEffect(() => { exitEdit(); }, [id, rev, exitEdit]);
 
   const editList = useMemo(() => Object.values(edits).map(toApi), [edits]);
+  // Offline support: unsaved edits are kept on this device; the totals refresh by themselves when the connection comes back.
+  const online = useOnline();
+  const [pending, setPending] = useState<SavedDraft | null>(null);
+  useEffect(() => { setPending(wanted === null || editing ? null : loadDraft(id, wanted)); }, [id, wanted, editing]);
+  useEffect(() => { if (editing && wanted !== null) saveDraft(id, wanted, edits); }, [editing, edits, id, wanted]);
+  const beginEdit = useCallback(() => { setEditing(true); if (pending) setEdits(pending.edits); }, [pending]);
   useEffect(() => {
     if (!editing || wanted === null) return;
     if (editList.length === 0) { setDraft(null); setChanges([]); setEditErr(""); setCalculating(false); return; }
@@ -231,7 +238,7 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
         .finally(() => { if (live) setCalculating(false); });
     }, 350);
     return () => { live = false; clearTimeout(t); };
-  }, [editing, editList, id, wanted]);
+  }, [editing, editList, id, wanted, online]);
   useEffect(() => {
     if (!editing || editList.length === 0) return;
     const f = (e: BeforeUnloadEvent) => { e.preventDefault(); };
@@ -250,7 +257,7 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
       editing, edits,
       canEdit: !!est && !!curInfo?.has_inputs,
       editHint: curInfo && !curInfo.has_inputs ? "This revision was saved before editing was available. Open New revision at the top and upload the same workbook again; it switches this revision on for editing." : "",
-      startEdit: () => setEditing(true),
+      startEdit: beginEdit,
       set: (e) => setEdits((p) => ({ ...p, [editKey(e.target, e.key, e.field)]: e })),
       reset: (t, k, f) => setEdits((p) => { const n = { ...p }; delete n[editKey(t, k, f)]; return n; }),
       add: (target, key, payload) => setEdits((p) => {
@@ -293,7 +300,7 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
         return n;
       }),
     };
-  }, [editing, edits, est, curInfo?.has_inputs]);
+  }, [editing, edits, est, curInfo?.has_inputs, beginEdit]);
   const shown = editing && draft ? draft : est;
 
   const view = (p: TenderPage) => go({ name: "tender", id, page: p, rev });
@@ -323,7 +330,7 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
               {editing
                 ? <Chip bar tone="solid">Editing</Chip>
                 : <>
-                    <button className="btn btn-solid h-9 !py-0" disabled={!est || !curInfo?.has_inputs} onClick={() => setEditing(true)}
+                    <button className="btn btn-solid h-9 !py-0" disabled={!est || !curInfo?.has_inputs} onClick={beginEdit}
                       title={curInfo && !curInfo.has_inputs ? "This revision was saved before editing was available. Upload the workbook again to edit it." : "Change quantities, rates and settings and recalculate"}>Edit</button>
                     <button className="btn btn-ghost h-9 !py-0" onClick={() => setUpload(true)}>New revision</button>
                   </>}
@@ -331,6 +338,20 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
           )}
         </div>
       </div>
+      {!online && (
+        <div role="status" className="border-b border-amber-line bg-amber-bg">
+          <div className="px-3 py-2 text-sm text-amber-fg sm:px-4"><strong>You're offline.</strong> What's on screen still works{editing ? ", and your changes are kept on this device. Totals and saving come back when you're online again" : ", but nothing new can be loaded or saved until you're back online"}.</div>
+        </div>
+      )}
+      {pending && !editing && wanted !== null && (
+        <div className="border-b border-primary bg-background">
+          <div className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm sm:px-4">
+            <span>You have <strong>{Object.keys(pending.edits).length} unsaved change{Object.keys(pending.edits).length === 1 ? "" : "s"}</strong> on {label || "this revision"}, kept on this device since {new Date(pending.savedAt).toLocaleString("en-NZ", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}.</span>
+            <button className="btn btn-solid h-8 !py-0" onClick={beginEdit}>Continue editing</button>
+            <button className="btn btn-ghost h-8 !py-0" onClick={() => { if (window.confirm("Throw these unsaved changes away?")) { clearDraft(id, wanted); setPending(null); } }}>Discard</button>
+          </div>
+        </div>
+      )}
       {stale && detail && (
         <div className="border-b border-amber-line bg-amber-bg">
           <div className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm text-amber-fg sm:px-4">
@@ -381,18 +402,18 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
                 <span className="ml-2">({(() => { const d = Math.round(shown.summary.all_in * 100) / 100 - Math.round(est.summary.all_in * 100) / 100; return `${d >= 0 ? "+" : "-"}${fmtMoney(Math.abs(Math.round(d * 100) / 100))}`; })()})</span>
               </div>
             )}
-            {editErr && !calculating && <div role="alert" className="min-w-0 flex-1 text-sm text-red-fg">{editErr}</div>}
+            {editErr && !calculating && online && <div role="alert" className="min-w-0 flex-1 text-sm text-red-fg">{editErr}</div>}
             <div className="ml-auto flex gap-2">
               {editList.length > 0 && <button className="btn btn-ghost" onClick={() => setChangesOpen(true)}>View changes</button>}
-              <button className="btn btn-ghost" onClick={() => { if (editList.length === 0 || window.confirm("Discard your changes?")) exitEdit(); }}>{editList.length === 0 ? "Cancel" : "Discard"}</button>
-              <button className="btn btn-solid" disabled={changes.length === 0 || !!editErr || calculating} onClick={() => setSaveOpen(true)}>Review &amp; save</button>
+              <button className="btn btn-ghost" onClick={() => { if (editList.length === 0 || window.confirm("Discard your changes?")) { if (wanted !== null) clearDraft(id, wanted); exitEdit(); } }}>{editList.length === 0 ? "Cancel" : "Discard"}</button>
+              <button className="btn btn-solid" disabled={changes.length === 0 || !!editErr || calculating || !online} title={online ? undefined : "Saving needs a connection. Your changes are kept on this device."} onClick={() => setSaveOpen(true)}>Review &amp; save</button>
             </div>
           </div>
         </div>
       )}
       <ChangesDialog open={changesOpen} onClose={() => setChangesOpen(false)} changes={changes} edits={edits} undoKey={ctx.undoKey} />
       <SaveEdits open={saveOpen} onClose={() => setSaveOpen(false)} changes={changes} defaultLabel={`${label}-ed${(detail?.latest_rev ?? 0) + 1}`}
-        onSave={async (lab, note) => { await api.saveEdits(id, cur, editList, lab, note); exitEdit(); go({ name: "tender", id, page: "revisions", rev: null }); await loadDetail(); }} />
+        onSave={async (lab, note) => { await api.saveEdits(id, cur, editList, lab, note); clearDraft(id, cur); exitEdit(); go({ name: "tender", id, page: "revisions", rev: null }); await loadDetail(); }} />
       <UploadRevision open={upload} onClose={() => setUpload(false)} tenderId={id}
         onDone={() => { setUpload(false); go({ name: "tender", id, page: "revisions", rev: null }); loadDetail(); }} />
     </Shell>
