@@ -415,3 +415,41 @@ def test_click_to_source_finds_the_quote_on_the_page_serves_the_page_and_caches_
     assert [p["page"] for p in sh["pages"]] == [1, 2] and sh["scale"]["1"] == "1:200@A3"
     assert drive["downloads"] == 1                                                                   # the same PDF is not downloaded again for every click
     assert client.get(f"/api/takeoff/tenders/{ai}/files/NOPE/pages/1/image", headers=auth).status_code == 404       # only documents read for this tender
+
+
+def scope_item(title="Temporary retaining to the cut face", **kw):
+    base = {"title": title, "detail": "Retaining walls are limited to 1.5m.", "group": "Temporary works", "owner": "OWN WORKS", "treatment": "UNRESOLVED",
+            "impact": "Confirm method and who designs it.", "rag": "AMBER", "basis": "quoted",
+            "evidence": [{"file_id": "F-civil", "page": 2, "quote": "Retaining walls maximum height 1.5m (Civil DWG301)"}]}
+    base.update(kw)
+    return base
+
+
+def run_scope(client, auth, tid, fake):
+    ai_client.CLIENT = fake
+    try:
+        return client.post(f"/api/ai/tenders/{tid}/draft", headers=auth, json={"file_ids": ["F-civil"], "mode": "scope"})
+    finally:
+        ai_client.CLIENT = None
+
+
+def test_scope_drafting_checks_quotes_never_prices_and_hands_back_a_scope_edit(client, auth, ai):
+    on(client, auth)
+    fake = FakeClient([scope_item(), scope_item("Invented requirement", evidence=[{"file_id": "F-civil", "page": 2, "quote": "Retaining walls maximum height 9.9m (Civil DWG301)"}])])
+    r = run_scope(client, auth, ai, fake)
+    assert r.status_code == 200, r.text
+    sent = fake.calls[0]
+    assert "SCOPE REQUIREMENTS" in json.dumps(sent) and "PROJECT BRIEF" in json.dumps(sent)
+    ps = {p["title"]: p for p in r.json()["proposals"]}
+    good, bad = ps["Temporary retaining to the cut face"], ps["Invented requirement"]
+    assert good["kind"] == "scope" and good["status"] == "verified" and good["group"] == "Temporary works" and good["owner"] == "OWN WORKS"
+    assert bad["status"] == "unverified"
+    assert client.post(f"/api/ai/proposals/{bad['id']}/decision", headers=auth, json={"decision": "accepted"}).status_code == 409
+    a = client.post(f"/api/ai/proposals/{good['id']}/decision", headers=auth, json={"decision": "accepted"}).json()["edit"]
+    assert a["target"] == "scope" and a["key"].startswith("C-") and a["value"]["treatment"] == "UNRESOLVED" and "Civil Drawings Rev C.pdf p.2" in a["value"]["source"]
+    pv = client.post(f"/api/tenders/{ai}/revisions/1/preview", headers=auth, json={"edits": [a]})
+    assert pv.status_code == 200 and any(x["title"] == good["title"] for x in pv.json()["estimate"]["scope"]["items"])
+    # a second run does not repeat it; register drafting is not confused by scope proposals
+    again = run_scope(client, auth, ai, FakeClient([scope_item()])).json()["proposals"]
+    assert again[0]["status"] == "duplicate"
+    assert run(client, auth, ai, FakeClient([item(title="Something else")])).json()["proposals"][0]["status"] == "verified"

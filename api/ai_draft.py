@@ -52,6 +52,74 @@ Non-negotiable rules:
 12. Respond with JSON only, matching the schema. `coverage_notes` says in a sentence or two which documents you read and anything you could not read (scanned pages, drawings without text)."""
 
 
+# ---- scope drafting -------------------------------------------------------------------------------------------------
+SCOPE_KINDS = ("scope",)
+SCOPE_EXTRA = ("group", "owner", "treatment")
+SCOPE_PROMPT_VERSION = "scope-v1"
+SCOPE_GROUPS = ("Permanent works", "Enabling works", "Access and site establishment", "Temporary works", "Testing and inspection", "Reinstatement and handover",
+                "Preliminaries and management", "Interface with others", "Other")
+SCOPE_OWNERS = ("OWN WORKS", "SUBCONTRACT", "CLIENT", "OTHERS", "SHARED", "TBC")
+SCOPE_TREATMENTS = ("EXCLUDED", "BY OTHERS", "UNRESOLVED")      # the AI never says a thing is PRICED, an allowance or a PC sum: pricing is the estimator's decision
+
+SCOPE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "items": {"type": "array", "items": {"type": "object", "properties": {
+            "title": {"type": "string"},
+            "detail": {"type": "string"},
+            "group": {"type": "string", "enum": list(SCOPE_GROUPS)},
+            "owner": {"type": "string", "enum": list(SCOPE_OWNERS)},
+            "treatment": {"type": "string", "enum": list(SCOPE_TREATMENTS)},
+            "impact": {"type": "string"},
+            "rag": {"type": "string", "enum": ["AMBER", "RED"]},
+            "basis": {"type": "string", "enum": ["quoted", "gap"]},
+            "evidence": {"type": "array", "items": {"type": "object", "properties": {
+                "file_id": {"type": "string"}, "page": {"type": "integer"}, "quote": {"type": "string"}},
+                "required": ["file_id", "page", "quote"], "additionalProperties": False}},
+        }, "required": ["title", "detail", "group", "owner", "treatment", "impact", "rag", "basis", "evidence"], "additionalProperties": False}},
+        "coverage_notes": {"type": "string"},
+    },
+    "required": ["items", "coverage_notes"], "additionalProperties": False,
+}
+
+SCOPE_SYSTEM = """You are assisting a senior NZ civil and commercial estimator. You are DRAFTING ONLY. The estimator reviews and approves everything you propose.
+
+Your job: read the document extracts and list the SCOPE REQUIREMENTS of the job: every thing the work needs, so nothing is missed when the price is built. Cover permanent works, enabling works (demolition, clearance, services), access and site establishment, temporary works, testing and inspection, reinstatement and handover, preliminaries and management, and interfaces with other parties.
+
+Non-negotiable rules:
+1. One requirement per line, in plain practical language (for example "Temporary retaining to the cut face", "Producer statements and as-builts at completion"). Do not copy whole paragraphs.
+2. You do not price, measure or choose a pricing treatment. `treatment` is only "EXCLUDED" or "BY OTHERS" when the documents say so in so many words, otherwise "UNRESOLVED". The estimator decides how each requirement is priced.
+3. `owner` is who delivers it according to the documents: OWN WORKS (the contractor pricing), SUBCONTRACT, CLIENT, OTHERS (another party), SHARED, or TBC when the documents do not say. Never guess an owner: use TBC.
+4. Every requirement that comes from the documents (`basis` = "quoted") must carry `evidence`: the `file_id` exactly as given, the `page` number, and a `quote` copied EXACTLY, word for word, from that page (one to three sentences). If you cannot quote it, you cannot propose it that way.
+5. Use `basis` = "gap" only for a requirement you expect the job to have that the documents do not mention (for example testing that is normally required). Say in `detail` where you expected it to be mentioned and why you think it applies, and start that sentence with "Inferred:". Put what the estimator should confirm in `impact`. `evidence` may be empty for a gap.
+6. Quoted facts and your own inferences are different: never present an inference as a quotation. If documents contradict each other on a requirement, do not resolve it: say so in `detail`, quote both sides, and set `rag` to RED.
+7. `rag`: AMBER by default. RED only where a conflict or missing information blocks a responsible price. Never GREEN.
+8. Do not repeat requirements already in the scope schedule (listed below) or ones already proposed. Prefer fewer, sharper lines to many vague ones.
+9. Respond with JSON only, matching the schema. `coverage_notes` says in a sentence or two which documents you read and anything you could not read (scanned pages, drawings without text)."""
+
+
+def build_scope_message(meta: dict[str, str], docs: list[dict[str, Any]], existing: list[dict[str, Any]]) -> str:
+    """Like build_user_message, with the project brief as context and the existing scope lines (ref, title) in place of the register."""
+    lines = ["PROJECT BRIEF"]
+    for k in ("project", "job_summary", "scope", "location", "client", "owner", "consultants", "contract_type", "pricing_basis", "known", "unknown", "site_constraints", "programme"):
+        if meta.get(k):
+            lines.append(f"{k.replace('_', ' ').capitalize()}: {meta[k]}")
+    lines += ["", "ALREADY IN THE SCOPE SCHEDULE (do not repeat)"]
+    lines += [f"- {x['ref']}: {x['title']}" for x in existing[:300]] or ["- (nothing yet)"]
+    body = build_user_message({}, docs, [])
+    return "\n".join(lines) + "\n\n" + body.split("ALREADY IN THE REGISTER (do not repeat)\n- (nothing yet)\n\n", 1)[-1]
+
+
+def to_scope_edit(item: dict[str, Any], key: str) -> dict[str, Any]:
+    """The scope edit that accepting this proposal would add to the estimator's draft. Quotes travel in `source`/`basis` so provenance is kept."""
+    src = "; ".join(f"{e['file']} p.{e['page']}" for e in item["evidence"] if e["verified"])
+    quotes = "\n".join(f"- {e['file']} p.{e['page']}: “{e['quote'].strip()}”" for e in item["evidence"] if e["verified"])
+    note = "AI-drafted from the documents; verified quotes:\n" + quotes if quotes else "AI-drafted: no source quote (inferred; not stated in the documents supplied)."
+    return {"target": "scope", "op": "add", "key": key, "value": {
+        "title": item["title"][:300], "detail": item["detail"].strip()[:3000], "group": item.get("group") or "Other", "owner": item.get("owner") or "TBC",
+        "treatment": item.get("treatment") or "UNRESOLVED", "source": src[:500], "basis": note[:3000], "action": item["impact"].strip()[:3000]}}
+
+
 def _compact(s: str) -> str:
     return re.sub(r"[\W_]+", "", s or "", flags=re.UNICODE).lower()
 
@@ -99,7 +167,7 @@ def plan_batches(docs: list[dict[str, Any]], budget: int, max_files: int) -> lis
     return batches
 
 
-def verify(items: list[dict[str, Any]], docs: list[dict[str, Any]], existing: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def verify(items: list[dict[str, Any]], docs: list[dict[str, Any]], existing: list[dict[str, Any]], *, kinds: tuple[str, ...] = KINDS) -> list[dict[str, Any]]:
     """Check the AI's output. Adds to each item: evidence[i].verified, status (verified | gap | unverified | duplicate), problems[]."""
     pages = {d["file_id"]: {p["n"]: _compact(p["text"]) for p in d["pages"]} for d in docs}
     names = {d["file_id"]: d["name"] for d in docs}
@@ -107,7 +175,10 @@ def verify(items: list[dict[str, Any]], docs: list[dict[str, Any]], existing: li
     out, seen = [], set()
     for raw in items:
         it = {k: raw.get(k, "") for k in ("kind", "title", "detail", "impact", "rag", "basis")}
-        it["kind"] = it["kind"] if it["kind"] in KINDS else "rfi"
+        it["kind"] = it["kind"] if it["kind"] in kinds else kinds[0] if kinds == SCOPE_KINDS else "rfi"
+        for extra in SCOPE_EXTRA:
+            if extra in raw:
+                it[extra] = str(raw.get(extra) or "")
         it["rag"] = "RED" if it["rag"] == "RED" else "AMBER"
         it["title"] = str(it["title"]).strip()[:300]
         problems, ev_out = [], []

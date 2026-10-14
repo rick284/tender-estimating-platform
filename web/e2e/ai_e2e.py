@@ -27,6 +27,9 @@ def route(r):
     if path.endswith("/intake/plan"):
         part = lambda i: {"file_id": "F1", "name": "Civil Drawings Rev C.pdf", "page_from": 1, "page_to": 2}
         return j({"batches": [{"index": 0, "chars": 9000, "parts": [part(0)]}, {"index": 1, "chars": 3000, "parts": [part(1)]}], "skipped": [{"name": "Site photo.jpg", "reason": "File type not supported yet."}], "total_chars": 12000, "files": 1, "max_batches": 10})
+    if path.startswith("ai/tenders/") and path.endswith("/draft") and json.loads(r.request.post_data).get("mode") == "scope":
+        state["props"] = [{**P("s1", "Temporary retaining to the cut face", "verified", True), "kind": "scope", "group": "Temporary works", "owner": "OWN WORKS", "treatment": "UNRESOLVED", "rag": "AMBER"}]
+        return j({"batch": "b2", "coverage_notes": "Read one document.", "proposals": [], "files_sent": ["Civil Drawings Rev C.pdf"]})
     if path.startswith("ai/tenders/") and path.endswith("/draft"):
         state["props"] = [P("p1", "Retaining height conflict", "verified", True), P("p2", "Rock excavation allowance", "unverified", False)]
         return j({"batch": "b1", "coverage_notes": "Read one document.", "proposals": [], "files_sent": ["Civil Drawings Rev C.pdf"]})
@@ -35,6 +38,9 @@ def route(r):
     if path.startswith("ai/proposals/"):
         body = json.loads(r.request.post_data); pid = path.split("/")[2]
         if body["decision"] == "rejected": state["decided"][pid] = {"decision": "rejected", "reason": body["reason"]}; return j({"decision": "rejected"})
+        if pid == "s1":
+            state["decided"][pid] = {"decision": "accepted", "edit_key": "C-e2e00001"}
+            return j({"decision": "accepted", "edit": {"target": "scope", "op": "add", "key": "C-e2e00001", "value": {"title": "Temporary retaining to the cut face", "group": "Temporary works", "owner": "OWN WORKS", "treatment": "UNRESOLVED", "source": "Civil Drawings Rev C.pdf p.2", "basis": "AI-drafted", "action": "Confirm method"}}})
         state["decided"][pid] = {"decision": "accepted", "edit_key": "R-e2e00001"}
         return j({"decision": "accepted", "edit": {"target": "register", "op": "add", "key": "R-e2e00001", "value": {"kind": "rfi", "title": "Retaining height conflict", "detail": "Civil and architectural drawings disagree.\n\nAI-drafted from the documents; verified quotes:\n- Civil Drawings Rev C.pdf p.2: “Retaining walls maximum height 1.5m (Civil DWG301)”", "action": "Allowance or exclusion needed until resolved.", "rag": "RED", "status": "OPEN"}}})
     return j({"detail": "unexpected " + path}, 500)
@@ -92,4 +98,17 @@ with sync_playwright() as p:
     pg.locator("aside").get_by_role("button", name="Register").click()
     expect(pg.get_by_role("tab", name="RFIs 19")).to_be_visible(timeout=10000)
     pg.screenshot(path=SHOT + "ai_2.png", full_page=True)
+    # scope drafting: switch the mode, draft, accept into the scope schedule
+    pg.locator("aside").get_by_role("button", name="AI Drafting").click()
+    pg.get_by_role("button", name="Scope requirements").click()
+    pg.get_by_label("Select Civil Drawings Rev C.pdf").check()
+    pg.get_by_role("button", name="Draft scope requirements (1)").click()
+    expect(pg.get_by_text("Temporary retaining to the cut face")).to_be_visible(timeout=10000)
+    expect(pg.get_by_text("Scope requirement", exact=True)).to_be_visible()
+    pg.locator("div.border.bg-background.p-4").first.get_by_role("button", name="Accept into my draft").click()
+    pg.wait_for_timeout(1500)
+    pg.locator("aside").get_by_role("button", name="Scope Coverage").click()
+    expect(pg.get_by_test_id("scope-row")).to_have_count(1, timeout=10000)
+    expect(pg.get_by_test_id("scope-row").first).to_contain_text("Temporary retaining")
+    pg.screenshot(path=SHOT + "ai_3_scope.png", full_page=True)
     print("OK ai drafting | errors:", errs[:3]); b.close()

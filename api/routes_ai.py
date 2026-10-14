@@ -136,7 +136,7 @@ async def _tender(user, tender_id):
 
 
 def _public(p: dict[str, Any]) -> dict[str, Any]:
-    return {"id": p["_id"], "batch": p["batch"], "kind": p["kind"], "title": p["title"], "detail": p["detail"], "impact": p["impact"], "rag": p["rag"], "basis": p["basis"],
+    return {"id": p["_id"], "batch": p["batch"], "kind": p["kind"], "group": p.get("group", ""), "owner": p.get("owner", ""), "treatment": p.get("treatment", ""), "title": p["title"], "detail": p["detail"], "impact": p["impact"], "rag": p["rag"], "basis": p["basis"],
             "evidence": p["evidence"], "status": p["status"], "problems": p["problems"], "decision": p.get("decision"), "created_at": p["created_at"].isoformat()}
 
 
@@ -157,10 +157,19 @@ def _chars(docs) -> int:
     return sum(len(p["text"]) for d in docs for p in d["pages"])
 
 
+async def _existing_scope(db, user, t, est) -> list[dict[str, Any]]:
+    """Scope lines already in the estimate plus scope proposals not rejected, so repeats come back as duplicates."""
+    out = [{"kind": "scope", "ref": x.get("ref", ""), "title": x.get("title", "")} for x in (est.get("scope") or {}).get("items", [])]
+    async for p in db.ai_proposals.find({"org_id": user["org_id"], "tender_id": t["_id"], "kind": "scope"}):
+        if (p.get("decision") or {}).get("decision") != "rejected" and p["status"] in ("verified", "gap"):
+            out.append({"kind": "scope", "ref": "AI", "title": p["title"]})
+    return out
+
+
 async def _existing(db, user, t, est) -> list[dict[str, Any]]:
     """Register items plus proposals already made for this tender (not rejected) so a later part of a run does not repeat an earlier one."""
     out = list(est.get("register") or [])
-    async for p in db.ai_proposals.find({"org_id": user["org_id"], "tender_id": t["_id"]}):
+    async for p in db.ai_proposals.find({"org_id": user["org_id"], "tender_id": t["_id"], "kind": {"$ne": "scope"}}):
         if (p.get("decision") or {}).get("decision") != "rejected" and p["status"] in ("verified", "gap"):
             out.append({"kind": p["kind"], "ref": "AI", "title": p["title"]})
     return out
@@ -223,26 +232,33 @@ async def draft(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Dep
     last = await db.revisions.find_one({"tender_id": t["_id"], "org_id": user["org_id"]}, sort=[("n", -1)])
     est = (last or {}).get("estimate", {})
     meta = {**{k: v for k, v in (est.get("meta") or {}).items() if isinstance(v, str)}, "project": t["name"], "client": t.get("client", ""), "location": t.get("location", "")}
-    existing = await _existing(db, user, t, est)
-    user_msg = ai_draft.build_user_message(meta, docs, existing)
+    scope_mode = body.get("mode") == "scope"
+    if scope_mode:
+        existing = await _existing_scope(db, user, t, est)
+        user_msg = ai_draft.build_scope_message(meta, docs, existing)
+        system, schema, version = ai_draft.SCOPE_SYSTEM, ai_draft.SCOPE_SCHEMA, ai_draft.SCOPE_PROMPT_VERSION
+    else:
+        existing = await _existing(db, user, t, est)
+        user_msg = ai_draft.build_user_message(meta, docs, existing)
+        system, schema, version = ai_draft.SYSTEM, ai_draft.SCHEMA, ai_draft.PROMPT_VERSION
     try:
-        data = await timed_ai(user, t["_id"], "drafting", model, prov.draft_json, key, model, ai_draft.SYSTEM, user_msg, ai_draft.SCHEMA)
+        data = await timed_ai(user, t["_id"], "scope drafting" if scope_mode else "drafting", model, prov.draft_json, key, model, system, user_msg, schema)
     except ai_client.AIError as e:
         await audit(db, user, "ai.draft_failed", t["_id"], str(e)[:200])
         raise HTTPException(502, str(e))
-    items = ai_draft.verify(data["items"][:60], docs, existing)
+    items = ai_draft.verify(data["items"][:60], docs, existing, **({"kinds": ai_draft.SCOPE_KINDS} if scope_mode else {}))
     batch = str(body.get("run") or "")[:40] or uuid.uuid4().hex
     stamp = now()
     docs_out = []
     for it in items:
         doc = {"_id": new_id(), "org_id": user["org_id"], "tender_id": t["_id"], "batch": batch, "created_at": stamp, "created_by": user["_id"], "model": model, "provider": prov.id,
-               "prompt_version": ai_draft.PROMPT_VERSION, "file_ids": [d["file_id"] for d in docs], **{k: it[k] for k in ("kind", "title", "detail", "impact", "rag", "basis", "evidence", "status", "problems")},
-               "decision": None}
+               "prompt_version": version, "file_ids": [d["file_id"] for d in docs], **{k: it[k] for k in ("kind", "title", "detail", "impact", "rag", "basis", "evidence", "status", "problems")},
+               **({k: it.get(k, "") for k in ai_draft.SCOPE_EXTRA} if scope_mode else {}), "decision": None}
         docs_out.append(doc)
     if docs_out:
         await db.ai_proposals.insert_many(docs_out)
     await db.ai_batches.insert_one({"_id": new_id(), "run": batch, "org_id": user["org_id"], "tender_id": t["_id"], "created_at": stamp, "created_by": user["_id"], "model": model, "provider": prov.id,
-                                    "prompt_version": ai_draft.PROMPT_VERSION, "file_ids": [d["file_id"] for d in docs], "chars": chars,
+                                    "prompt_version": version, "mode": "scope" if scope_mode else "register", "file_ids": [d["file_id"] for d in docs], "chars": chars,
                                     "coverage_notes": str(data.get("coverage_notes", ""))[:2000], "counts": {s: sum(1 for i in items if i["status"] == s) for s in ("verified", "gap", "unverified", "duplicate")}})
     await audit(db, user, "ai.draft", t["_id"], f"{len(docs)} files, {chars} chars, {len(items)} proposals")
     return {"batch": batch, "coverage_notes": str(data.get("coverage_notes", "")), "proposals": [_public(p) for p in docs_out], "files_sent": [d["name"] for d in docs]}
@@ -276,9 +292,10 @@ async def decide(pid: str, body: dict[str, Any], user: dict[str, Any] = Depends(
         return {"decision": "rejected"}
     if p["status"] not in ("verified", "gap"):
         raise HTTPException(409, "This proposal can't be accepted: its source quotes could not be verified against the documents." if p["status"] == "unverified"
-                            else "This proposal repeats something already in the register.")
-    key = (p.get("decision") or {}).get("edit_key") or "R-" + uuid.uuid4().hex[:8]
+                            else "This proposal repeats something already recorded.")
+    is_scope = p["kind"] == "scope"
+    key = (p.get("decision") or {}).get("edit_key") or ("C-" if is_scope else "R-") + uuid.uuid4().hex[:8]
     if not p.get("decision"):
         await db.ai_proposals.update_one({"_id": pid}, {"$set": {"decision": {"decision": "accepted", "edit_key": key, "by": user["_id"], "at": now()}}})
         await audit(db, user, "ai.accept", p["tender_id"], f"{p['kind']}: {p['title'][:80]}")
-    return {"decision": "accepted", "edit": ai_draft.to_edit(p, key)}
+    return {"decision": "accepted", "edit": ai_draft.to_scope_edit(p, key) if is_scope else ai_draft.to_edit(p, key)}

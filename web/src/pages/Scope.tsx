@@ -76,7 +76,7 @@ export function Scope({ est, goQs }: { est: Estimate; goQs: () => void }) {
           <p className="mt-3 text-sm">QS items with a cost that no requirement refers to: {sc.unhomed_qs.map((c) => <Chip key={c} tone="amber">{c}</Chip>)} <button className="underline underline-offset-4" onClick={goQs}>Open QS Takeoff</button></p>
         )}
       </Panel>
-      {sc.items.length === 0 ? <Empty title="No scope requirements recorded yet" body={editing ? "Use Add requirement, or let the AI draft them from the documents (coming next)." : "Press Edit to record what the job needs and how each part is treated."} /> : (
+      {sc.items.length === 0 ? <Empty title="No scope requirements recorded yet" body={editing ? "Use Add requirement, or draft them from the documents on AI Drafting (choose “Scope requirements”)." : "Press Edit to record what the job needs and how each part is treated."} /> : (
         <Panel flush>
           <div className="grid-scroll">
             <table className="grid-table min-w-[72rem]">

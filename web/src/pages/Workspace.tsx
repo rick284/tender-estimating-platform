@@ -27,6 +27,7 @@ import { Takeoff } from "./Takeoff";
 import { Programme } from "./Programme";
 import { ProgrammeEditor } from "./ProgrammeEditor";
 import { Scope } from "./Scope";
+import { Brief } from "./Brief";
 import { useTimekeeper } from "../lib/useTimekeeper";
 import { Commercial } from "./Commercial";
 import { Revisions } from "./Revisions";
@@ -357,6 +358,7 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
         {!err && shown && pg === "programme" && <Programme est={shown} />}
         {!err && shown && pg === "gantt" && <ProgrammeEditor tenderId={id} est={shown} rev={cur} sub={sub} />}
         {!err && shown && pg === "quotes" && <Quotes est={shown} />}
+        {!err && shown && pg === "brief" && <Brief est={shown} />}
         {!err && shown && pg === "scope" && <Scope est={shown} goQs={() => view("qs")} />}
         {!err && pg === "ai" && <AiDraft tenderId={id} />}
         {!err && shown && pg === "takeoff" && <Takeoff est={shown} tenderId={id} goQs={() => view("qs")} />}

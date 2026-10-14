@@ -77,3 +77,21 @@ def test_overlay_add_delete_rules(template):
     m3, changes = apply_edits(m, [{"target": "overlay", "op": "add", "key": "Other", "value": {"amount": "10"}},
                                   {"target": "overlay", "op": "delete", "key": "Other"}])
     assert changes == []                                                            # add then delete nets to nothing
+
+
+def test_brief_fields_edit_and_round_trip(template):
+    base = blank_from_template(template, "Job", {})
+    m, changes = apply_edits(base, [
+        {"target": "brief", "field": "owner", "value": " Acme Developments "},
+        {"target": "brief", "field": "known", "value": "Site is flat."},
+        {"target": "brief", "field": "tender_level", "value": "Tender"},
+    ])
+    assert m.meta["owner"] == "Acme Developments" and "owner" not in base.meta
+    assert {c["field"] for c in changes if c["target"] == "brief"} == {"owner", "known", "tender_level"}
+    assert from_json(to_json(m)).meta["known"] == "Site is flat."
+    m2, _ = apply_edits(m, [{"target": "brief", "field": "owner", "value": ""}])
+    assert "owner" not in m2.meta
+    with pytest.raises(EditError):
+        apply_edits(base, [{"target": "brief", "field": "tender_level", "value": "Huge"}])
+    with pytest.raises(EditError):
+        apply_edits(base, [{"target": "brief", "field": "nope", "value": "x"}])

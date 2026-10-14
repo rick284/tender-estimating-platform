@@ -102,7 +102,7 @@ export interface AiProviderInfo { id: string; label: string; available: boolean;
 export interface AiStatus { configured: boolean; enabled: boolean; provider: string; model: string; key_source: "own" | "platform" | null; key_last4: string; providers: AiProviderInfo[]; can_change: boolean; acknowledged_at: string | null; max_files: number; max_pictures: number }
 export interface AiEvidence { file_id: string; file: string; page: number; quote: string; verified: boolean }
 export interface AiProposal {
-  id: string; batch: string; kind: "document" | "rfi" | "assumption" | "exclusion" | "inclusion" | "risk"; title: string; detail: string; impact: string; rag: "RED" | "AMBER";
+  id: string; batch: string; kind: "document" | "rfi" | "assumption" | "exclusion" | "inclusion" | "risk" | "scope"; group?: string; owner?: string; treatment?: string; title: string; detail: string; impact: string; rag: "RED" | "AMBER";
   basis: "quoted" | "gap"; evidence: AiEvidence[]; status: "verified" | "gap" | "unverified" | "duplicate"; problems: string[];
   decision: { decision: "accepted" | "rejected"; reason?: string; edit_key?: string } | null; created_at: string;
 }
@@ -171,12 +171,12 @@ export const api = {
   takeoffAccept: (lid: string, commit: boolean) => request<{ decision: "accepted" | "pending"; qs: TakeoffQs }>(`/api/takeoff/lines/${lid}/decision`, { method: "POST", body: JSON.stringify({ decision: "accepted", commit }) }),
   takeoffReject: (lid: string, reason: string) => request<{ decision: "rejected" }>(`/api/takeoff/lines/${lid}/decision`, { method: "POST", body: JSON.stringify({ decision: "rejected", reason }) }),
   aiIntakePlan: (id: string) => request<IntakePlan>(`/api/ai/tenders/${id}/intake/plan`),
-  aiDraftParts: (id: string, parts: IntakePart[], run: string) => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ parts, run }) }, LONG),
+  aiDraftParts: (id: string, parts: IntakePart[], run: string, mode: "register" | "scope" = "register") => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ parts, run, mode }) }, LONG),
   driveTexts: (id: string) => request<{ texts: DriveTextSummary[] }>(`/api/drive/tenders/${id}/texts`),
   aiStatus: () => request<AiStatus>("/api/ai/status"),
   aiSettings: (b: { provider?: string; model?: string; api_key?: string; clear_key?: boolean; enabled?: boolean; acknowledged?: boolean }) => request<AiStatus>("/api/ai/settings", { method: "PUT", body: JSON.stringify(b) }),
   aiTest: () => request<{ ok: boolean; model: string }>("/api/ai/test", { method: "POST" }),
-  aiDraft: (id: string, fileIds: string[]) => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ file_ids: fileIds }) }, LONG),
+  aiDraft: (id: string, fileIds: string[], mode: "register" | "scope" = "register") => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ file_ids: fileIds, mode }) }, LONG),
   aiProposals: (id: string) => request<{ proposals: AiProposal[] }>(`/api/ai/tenders/${id}/proposals`),
   aiAccept: (pid: string) => request<{ decision: "accepted"; edit: { target: string; op: "add"; key: string; value: Record<string, unknown> } }>(`/api/ai/proposals/${pid}/decision`, { method: "POST", body: JSON.stringify({ decision: "accepted" }) }),
   aiReject: (pid: string, reason: string) => request<{ decision: "rejected" }>(`/api/ai/proposals/${pid}/decision`, { method: "POST", body: JSON.stringify({ decision: "rejected", reason }) }),

@@ -35,6 +35,7 @@ An edit is {"target", "key", "field", "value"} (set a value) or {"target", "op":
   scope      add    key = new id ("C-xxxxxx")  value: group / title / owner / treatment / cost_refs / ... (see scope.FIELDS)   (scope coverage and interface schedule)
              set    key = id   field: any of scope.FIELDS
              delete key = id
+  brief      set    field: any of brief.FIELDS   (what the job is, who owns it, what we know; stored in meta)
   exposure   add    key = new id ("X-xxxxxx")  value: risk_id / consequence / mode / ... (see risk_truth.FIELDS)   (Risk Truth exposure)
              set    key = id   field: any of risk_truth.FIELDS
              delete key = id
@@ -74,6 +75,7 @@ from . import schedule as sch
 from . import register as reg
 from . import quotes as qt
 from . import scope as sc
+from . import brief as bf
 from . import risk_truth as rtm
 from . import management_reserve as mrm
 from . import programme as prg
@@ -176,6 +178,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     register = copy.deepcopy(base.register)
     quotes = copy.deepcopy(base.quotes)
     scope = copy.deepcopy(base.scope)
+    meta = dict(base.meta)
     exposures = copy.deepcopy(base.risk_truth)
     reserve = copy.deepcopy(base.management_reserve)
     programme = copy.deepcopy(base.programme)
@@ -565,6 +568,14 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
             except sc.ScopeError as ex:
                 raise EditError(str(ex))
 
+        elif target == "brief":
+            if op != "set":
+                raise EditError("Brief fields can only be set.")
+            try:
+                bf.set_field(meta, str(field), value)
+            except bf.BriefError as ex:
+                raise EditError(str(ex))
+
         elif target == "reserve":
             try:
                 if key == "setup":
@@ -726,6 +737,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     m.weather_links, m.weather_setup, m.schedule, m.register, m.quotes, m.programme = links, setup, sched, register, quotes, programme
     m.risk_truth = exposures
     m.scope = scope
+    m.meta = meta
     m.management_reserve = reserve
     m.reference = None            # no longer the workbook as received
     return m, _net_changes(base, m, rows, qs, new_library)
@@ -805,6 +817,7 @@ def _net_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, rows: list[_R
     _register_changes(a, b, add)
     _quote_changes(a, b, add)
     _scope_changes(a, b, add)
+    _brief_changes(a, b, add)
     _exposure_changes(a, b, add)
     _reserve_changes(a, b, add)
     _programme_changes(a, b, add)
@@ -905,6 +918,13 @@ def _scope_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> Non
     for sid, y in ib.items():
         if sid not in ia:
             add("scope", sid, "added", label(y), "", y["treatment"] or y["title"][:80])
+
+
+def _brief_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:
+    for f in bf.KEYS:
+        va, vb = str(a.meta.get(f, "")), str(b.meta.get(f, ""))
+        if va != vb:
+            add("brief", f, f, "Brief: " + bf.LABELS[f], va[:80], vb[:80])
 
 
 def _exposure_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:

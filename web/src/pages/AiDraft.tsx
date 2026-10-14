@@ -4,7 +4,7 @@ import { Chip, Empty, PageHeader, Panel } from "../components/ui";
 import { fmtNum } from "../lib/format";
 import { useEdit } from "../lib/edit";
 
-const KIND: Record<AiProposal["kind"], string> = { document: "Document", rfi: "RFI", assumption: "Assumption", exclusion: "Exclusion", inclusion: "Inclusion", risk: "Risk" };
+const KIND: Record<AiProposal["kind"], string> = { document: "Document", rfi: "RFI", assumption: "Assumption", exclusion: "Exclusion", inclusion: "Inclusion", risk: "Risk", scope: "Scope requirement" };
 const STATUS: Record<AiProposal["status"], { tone: "green" | "amber" | "red" | "neutral"; text: string }> = {
   verified: { tone: "green", text: "Quotes verified" }, gap: { tone: "amber", text: "Information gap" },
   unverified: { tone: "red", text: "Can't accept: quote not found" }, duplicate: { tone: "neutral", text: "Already in the register" },
@@ -19,6 +19,7 @@ function Card({ p, note, onAccept, onReject }: { p: AiProposal; note?: string; o
       <div className="flex flex-wrap items-center gap-2">
         <Chip tone="neutral">{KIND[p.kind]}</Chip><Chip tone={p.rag === "RED" ? "red" : "amber"}>{p.rag}</Chip><Chip tone={STATUS[p.status].tone}>{STATUS[p.status].text}</Chip>
         <Chip tone="neutral" title="Nothing the AI drafts is verified until you approve it">AI draft</Chip>
+        {p.kind === "scope" && <><Chip tone="neutral">{p.group || "Other"}</Chip><Chip tone="neutral" title="Who delivers it, as the documents say">{(p.owner || "TBC").toLowerCase()}</Chip>{p.treatment && p.treatment !== "UNRESOLVED" && <Chip tone="amber">{p.treatment.toLowerCase()}</Chip>}</>}
       </div>
       <h3 className="mt-2 text-base font-semibold normal-case">{p.title}</h3>
       <p className="mt-1 whitespace-pre-line text-sm">{p.detail}</p>
@@ -65,6 +66,7 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
   const [model, setModel] = useState("");
   const [key, setKey] = useState("");
   const [msg, setMsg] = useState("");
+  const [mode, setMode] = useState<"register" | "scope">("register");
   const [plan, setPlan] = useState<IntakePlan | null>(null);
   const [prog, setProg] = useState<{ done: number; total: number; notes: string[]; made: number } | null>(null);
 
@@ -82,7 +84,7 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
 
   const run = async () => {
     setErr(""); setNote(""); setBusy(true);
-    try { const r = await api.aiDraft(tenderId, [...sel]); setNote(r.coverage_notes); setProps((await api.aiProposals(tenderId)).proposals); }
+    try { const r = await api.aiDraft(tenderId, [...sel], mode); setNote(r.coverage_notes); setProps((await api.aiProposals(tenderId)).proposals); }
     catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -95,7 +97,7 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
     setProg({ done: 0, total: plan.batches.length, notes, made });
     try {
       for (const b of plan.batches) {
-        const r = await api.aiDraftParts(tenderId, b.parts, runId);
+        const r = await api.aiDraftParts(tenderId, b.parts, runId, mode);
         made += r.proposals.filter((p) => p.status === "verified" || p.status === "gap").length;
         if (r.coverage_notes) notes.push(`Part ${b.index + 1}: ${r.coverage_notes}`);
         setProg({ done: b.index + 1, total: plan.batches.length, notes: [...notes], made });
@@ -110,7 +112,7 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
       if (!canEdit) return setCardNote({ id: p.id, text: editHint || "This revision can't be edited, so nothing can be added to a draft. Open the latest revision and try again." });
       startEdit();                       // accepting needs edit mode: switch it on from here
     }
-    try { const r = await api.aiAccept(p.id); add("register", r.edit.key, r.edit.value); setProps((await api.aiProposals(tenderId)).proposals); }
+    try { const r = await api.aiAccept(p.id); add(r.edit.target, r.edit.key, r.edit.value); setProps((await api.aiProposals(tenderId)).proposals); }
     catch (e) { setErr((e as Error).message); }
   };
   const reject = async (p: AiProposal, reason: string) => {
@@ -121,8 +123,9 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
   const setOn = (on: boolean) => call(() => api.aiSettings({ enabled: on, acknowledged: on ? ack || !!status?.acknowledged_at : false }));
   const save = () => call(() => api.aiSettings({ provider, model: model.trim(), ...(key.trim() ? { api_key: key.trim() } : {}) }));
   const test = async () => { setErr(""); setMsg(""); try { const r = await api.aiTest(); setMsg(`Connected. Model found: ${r.model}.`); } catch (e) { setErr((e as Error).message); } };
-  const open = props.filter((p) => !p.decision);
-  const decided = props.filter((p) => p.decision);
+  const mine = props.filter((p) => (p.kind === "scope") === (mode === "scope"));
+  const open = mine.filter((p) => !p.decision);
+  const decided = mine.filter((p) => p.decision);
 
   return (
     <div>
@@ -166,6 +169,12 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
             <Chip tone="green">On</Chip><span>{status.providers.find((p) => p.id === status.provider)?.label} · model {status.model}</span>
             {status.can_change && <button className="underline underline-offset-4" onClick={() => setOn(false)}>Switch off</button>}
           </div>
+          <div className="mb-4 flex flex-wrap items-center gap-3 text-sm" role="group" aria-label="What to draft">
+            <span className="label">Draft</span>
+            <button className={`btn ${mode === "register" ? "btn-solid" : "btn-ghost"}`} aria-pressed={mode === "register"} onClick={() => { setMode("register"); setNote(""); }}>Register items</button>
+            <button className={`btn ${mode === "scope" ? "btn-solid" : "btn-ghost"}`} aria-pressed={mode === "scope"} onClick={() => { setMode("scope"); setNote(""); }}>Scope requirements</button>
+            <span className="text-muted-foreground">{mode === "scope" ? "Lists what the job needs (works, temporary works, testing, interfaces) for the Scope Coverage page. It never prices anything." : "RFIs, assumptions, exclusions, inclusions, documents and risks."}</span>
+          </div>
           <Panel title="Whole-folder intake" className="mb-4">
             <p className="mb-3 text-sm">One run over every document already read from the Drive folder: latest revisions only, archive and superseded files left out. It is sent to the AI in several parts. Each part is told what the earlier parts found, so the same item is not proposed twice.</p>
             <div className="flex flex-wrap items-center gap-3">
@@ -203,7 +212,7 @@ export function AiDraft({ tenderId }: { tenderId: string }) {
               </ul>
             )}
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button className="btn btn-solid" disabled={busy || sel.size === 0} onClick={run}>{busy ? "Drafting… this can take a minute" : `Draft register items (${sel.size})`}</button>
+              <button className="btn btn-solid" disabled={busy || sel.size === 0} onClick={run}>{busy ? "Drafting… this can take a minute" : `${mode === "scope" ? "Draft scope requirements" : "Draft register items"} (${sel.size})`}</button>
               <span className="text-xs text-muted-foreground">{sel.size > 0 ? `About ${fmtNum(chars)} characters will be sent to Anthropic.` : `Up to ${status.max_files} documents per run.`}</span>
             </div>
             {note && <p className="mt-3 text-sm text-muted-foreground">AI note: {note}</p>}
