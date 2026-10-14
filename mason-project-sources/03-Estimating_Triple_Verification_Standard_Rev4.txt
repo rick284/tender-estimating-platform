@@ -1,0 +1,114 @@
+ESTIMATING TRIPLE VERIFICATION STANDARD - REV4
+Effective: 15 August 2026
+
+PURPOSE
+Prevent unsupported rates, allowances, quantities, productivities, weather factors, durations, risk provisions and commercial inputs from being presented as verified or firm.
+
+ABSOLUTE TRUTH PRINCIPLE
+At all times estimating work must be accurate, thorough, particular, comprehensive and correct within the available evidence and our professional ability. The objective is neither the cheapest nor the most expensive outcome. It is the most truthful current view of what the work will take and what it will cost.
+
+Never alter a quantity, rate, productivity, duration, allowance, contingency or margin to reach a preferred total. Do not use false precision to conceal uncertainty. Where evidence is incomplete, classify and disclose the uncertainty, state its cost and programme impact, and assign the RFI, quotation or verification action needed to close it.
+
+MANDATORY CLASSIFICATION
+Every inserted number must be labelled as one of:
+- MEASURED: traceable to a drawing/specification reference and recorded measurement or count.
+- PROVIDED: supplied by the client, consultant, contractor or approved supplier, with source and date.
+- CALCULATED: derived from visible inputs and a reproducible formula.
+- ALLOWANCE / PC SUM: an explicit temporary budget pending evidence.
+- QUOTED: supported by a current project-specific written quotation and aligned scope.
+
+THREE CHECKS REQUIRED FOR GREEN STATUS
+1. Primary/current evidence: live project quote, current published supplier price, current company payroll/cost record, approved climate/source dataset, or the controlling drawing/specification.
+2. Independent check: second supplier, comparable current project, independent published price, separate measurement/review, or reviewed actual project record.
+3. First-principles check: quantity, productivity, unit conversion, waste, crew/plant composition, scope, arithmetic, cost-chain and programme reconciliation.
+
+SOURCE NORMALISATION
+Record the source date, region, currency, GST basis, delivery/haul, minimum charges, hire duration, wet/dry hire, operator, fuel, insurance, mobilisation, inclusions, exclusions, specification compliance, validity and revision. A comparison is invalid until unlike bases are normalised.
+
+RELEASE STATUS
+- GREEN: all three checks pass and the scope basis is aligned.
+- AMBER: a visible allowance, judgement factor or benchmark with one or more checks incomplete. May be issued only with the limitation disclosed and a firm-up action assigned.
+- RED: live quote, design, quantity, scope or material risk evidence is missing or contradictory. Must be replaced, excluded or formally accepted before contract award.
+
+NO-INVENTION RULE
+Do not invent a rate, allowance or quantity to make a total complete. If evidence is unavailable, leave the item unpriced or use an explicit AMBER/RED PC sum or allowance, state its basis, record the uncertainty, and raise the required RFI or quotation action.
+
+CHANGE CONTROL
+When an input changes, update its evidence and verification status, confirm that Resource Build-Up equals QS Takeoff, confirm that QS Takeoff equals Tender Build-Up, confirm that Summary and Cashflow reconcile, and regenerate the Microsoft Project import CSV if programme cost or duration changed.
+When a risk input, baseline or treatment changes, also update Risk Truth, recheck residual-distinct and overlap controls, confirm the cost is integrated exactly once, and rerun any affected specialist engine such as Weather or Programme Risk.
+
+REUSABLE LIBRARY CONTROL
+1. Keep useful rates, resources, crews, productivity records and weather factors for future jobs.
+2. Supersede obsolete entries with source, effective date, review date and change reason; do not delete evidence history.
+3. A live company rate must record actual cost basis, on-costs, region, GST, inclusions and exclusions.
+4. Company overhead recovery and contractor profit remain separate inputs.
+5. Preserve user-approved workbook formatting and the visible linked calculation chain.
+
+PROGRAMME AND COST RECONCILIATION
+1. Record working days, productive crew days and elapsed calendar days separately. They are not interchangeable.
+2. Record the working calendar, hours per day, days per week, known holidays, shutdowns and whether each duration is a working or elapsed duration.
+3. Derive programme logic from quantities, productivity, crew numbers, work fronts, access, hold points and real construction dependencies. Do not force a programme to match a prior allowance.
+4. Productive labour and plant are costed from resource hours or productive days. Supervision and working-day preliminaries are costed from verified site working days. Weekly/monthly hire and facilities are costed from elapsed hire time. Mobilisation and fixed one-off costs are not scaled solely because the programme span changes.
+5. Ordinary Microsoft Project days follow the selected working calendar. If start/finish dates span more calendar days because of weekends, holidays or shutdowns, state that elapsed span separately.
+6. A change in calendar span does not automatically change every direct cost. Only affected cost drivers are recalculated and each adjustment must show its basis.
+7. Before issue, reconcile critical-path working duration, elapsed calendar duration, time-related resource quantities, QS programme quantities and programme export. An unexplained mismatch is RED and blocks release.
+8. If the start date is unknown, use a stated tender working-day calendar and defer date-specific holidays and shutdowns until the contract programme is prepared.
+
+
+RISK TRUTH VERIFICATION
+1. Every material risk must record a priced tender baseline before an additional residual provision is considered.
+2. Record the Existing Cost Location / affected QS, Commercial Input or specialist-engine reference. If the existing treatment cannot be identified, the risk treatment is AMBER or RED.
+3. Record the Affected Driver: quantity, scope/rate, productivity, duration, fixed cost, methodology or responsibility.
+4. Record a Cost Treatment Owner where several risks touch one cost: Primary, Contributing or Reference Only.
+5. Use overlap groups where two or more risks may create the same cost consequence. Undeclared overlapping cost references are RED.
+6. Check whether normal variability or the risk response is already embedded in productivity, waste, preliminaries, temporary works, PC/provisional amounts, Weather Risk or another cost line.
+7. A positive residual Risk Truth provision requires Residual Distinct = Yes and a stated integration target. Otherwise it is RED.
+8. Quantifiable physical consequences must be integrated through Resource Build-Up / QS Takeoff. Once integrated, the separate residual provision must be removed unless a further distinct residual remains.
+9. Specialist-engine outputs remain in their specialist cost path. Risk Truth records the treatment but does not duplicate the cost.
+10. CA01 and CA02 are residual Risk Truth feeds only:
+   - CA01 = Design / Scope Residual Risk
+   - CA02 = Construction / Execution Residual Risk
+   Generic project-value contingency percentages are not a verified basis.
+11. Likelihood and impact ratings are prioritisation tools only. They do not create dollar values without an evidenced exposure model.
+12. Probability x Impact or weighted-scenario calculations are usable only where the probabilities/weights have a supportable basis. Unsupported probabilities are RED.
+13. RFI Hold means the residual cannot yet be responsibly quantified. Do not insert a balancing allowance merely to complete the total.
+14. The Risk Truth release gate must check:
+   - RED risk count
+   - RED exposure count
+   - duplicate-cost status
+   - programme/cost reconciliation
+   - integration completeness for positive provisions
+15. Any unexplained duplicate, broken cost path or unresolved material RED blocks final release. A working/tender-stage estimate may carry disclosed AMBER/RED items only in accordance with the RELEASE STATUS rules and approval basis.
+16. A risk provision resolved into direct measurable cost must not remain below the line as well. Becoming more certain must not automatically increase contingency.
+17. Retain tender baseline, residual provision and actual outcome separately after construction so estimate-v-actual calibration can occur without rewriting history.
+
+WEATHER RISK VERIFICATION
+1. Do not use a flat weather percentage based only on habit or intuition when an approved weather tool and programme dates are available.
+2. For NZ estimates, use the current approved NZ Weather Risk Estimating Tool. Retain the workbook version, NIWA location, source period, access date and output with the tender record.
+3. NIWA 1991-2020 wet-day and rainfall normals are GREEN source data when copied correctly from the official files. A wet day of 1 mm or more is climate evidence, not automatically a lost construction day.
+4. Task exposure, productivity loss, wet-ground carryover, recovery and wind sensitivity defaults are company judgement and remain AMBER until supported by reviewed actual project records and an independent check.
+5. A local station adjustment other than 1.00 requires a written site basis. Unsupported local factors are RED.
+6. Wind must be assessed separately. The Auckland gust-day proxy is AMBER and is only suitable where the task threshold is comparable. Material wind-sensitive work outside the available proxy requires threshold-aligned evidence, an explicit exclusion or a RED allowance.
+7. Separate direct productivity cost, equivalent lost working days, critical-path delay, time-related preliminaries, billed hire/facilities and project-specific recovery/remediation cost.
+8. Do not add programme delay across concurrent activities. Only the verified critical path drives project delay. Direct activity productivity costs may still be assessed separately.
+9. Do not duplicate weather impacts inside general contingency, dewatering, wet-ground remediation, temporary works, extended preliminaries or plant idle time.
+10. If the start date is unknown, use disclosed seasonal scenarios or a stated tender window. Rerun the model once the contract start date and calendar are known.
+11. Rerun the weather model whenever activity dates, working calendar, critical path, exposed costs or task factors change.
+12. Weather allowance is an estimating cost view, not proof of contractual EOT or compensation entitlement. Verify the contract clauses separately.
+13. After award, record planned hours, rain loss, wet-ground loss, wind loss, recovery/resequencing, programme delay and cost impact in the Weather Log.
+14. Do not promote a task factor to GREEN by record count alone. Review project comparability, outliers, cause, crew composition, recovery, season, location and independent evidence.
+15. For long-duration or highly exposed work, consider a separate disclosed abnormal/extreme-weather risk scenario. Do not hide climate-change or extreme-event risk inside the normal-day factor.
+
+MINIMUM TENDER RECORD
+Retain:
+1. Quotation or source link/file
+2. Source and issue date
+3. Reviewer
+4. Scope comparison
+5. Arithmetic and first-principles check
+6. Assumptions and exclusions
+7. Expiry/validity
+8. Required closeout action
+9. Weather tool version and output where applicable
+10. Programme/cost reconciliation evidence
+11. Risk Truth register/output, tender baseline, residual-risk treatment, duplication status and release-gate evidence

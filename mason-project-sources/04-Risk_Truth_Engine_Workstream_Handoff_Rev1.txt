@@ -1,0 +1,120 @@
+WORKSTREAM HANDOFF
+
+Workstream:
+Risk Truth Engine
+
+Status:
+APPROVED
+
+Objective:
+Replace unsupported generic project-value risk percentages with an evidence-based risk treatment and reconciliation engine integrated into the single Master Estimate Workbook.
+
+What was completed:
+- Audited the existing linked estimating architecture and Clevedon test estimate.
+- Identified that legacy CA01 2% + CA02 3% generated $77,378.59 pre-margin / $85,976.21 tender effect without knowing what was already priced.
+- Built and red-teamed the Risk Truth methodology against real project risks, PCs, provisional quantities, Weather Risk and programme assumptions.
+- Integrated and dynamically tested Risk Truth in development revisions.
+- Repaired full-row Resource Build-Up linked formulas and Programme Export compatibility/cost-check propagation.
+- Promoted the validated module into Master_Estimate_Workbook_Rev1_RiskTruth.xlsx.
+- Updated the Master Prompt and Triple Verification Standard to Rev4.
+- Intake Rev3 was reviewed and requires no change for this workstream.
+
+Methodology agreed:
+Risk Truth is a control/reconciliation layer, not a second direct-cost estimate. Every risk records its existing tender baseline and cost location before residual exposure is considered. Quantifiable physical consequences return to Resource Build-Up/QS. Specialist-engine exposures remain in their specialist pathways. CA01/CA02 contain only distinct residual cross-cutting risk and are not generic percentages.
+
+Key decisions made:
+- CA01 = Design / Scope Residual Risk.
+- CA02 = Construction / Execution Residual Risk.
+- Likelihood/Impact does not automatically create dollars.
+- Positive residual additions require a distinct basis, integration target and duplication check.
+- One cost may have several contributing risks but must be costed once.
+- Weather remains Weather Risk -> CA10.
+- RED duplication or programme reconciliation blocks final release.
+- Historic tender assumptions and actual outcomes are retained separately.
+
+Files created or modified:
+- Master_Estimate_Workbook_Rev1_RiskTruth.xlsx - permanent master template candidate / approved workstream output.
+- Estimate_Master_Prompt_Rev4.txt - Risk Truth operating rules added.
+- Estimating_Triple_Verification_Standard_Rev4.txt - Risk Truth verification and release controls added.
+- Clevedon_Civil_Works_Tender_Estimate_Rev10_RiskTruth_ReleaseCandidate.xlsx - retained as test/audit record only.
+
+Current approved file:
+Master_Estimate_Workbook_Rev1_RiskTruth.xlsx
+
+Current approved Master Estimate Workbook:
+Master_Estimate_Workbook_Rev1_RiskTruth.xlsx
+
+Permanent Project Files that need updating:
+- Replace Estimate_Master_Prompt_Rev3.txt with Estimate_Master_Prompt_Rev4.txt.
+- Replace Estimating_Triple_Verification_Standard_Rev3.txt with Estimating_Triple_Verification_Standard_Rev4.txt.
+- Add/promote Master_Estimate_Workbook_Rev1_RiskTruth.xlsx as the controlling Master Estimate Workbook.
+- Retain Estimate_Intake_Block_Rev3.txt unchanged.
+- Retain NZ_Weather_Risk_Estimating_Tool_Rev2.xlsx unchanged.
+
+Source data used:
+- Master New Chat Starter & Recovery Protocol Rev2
+- Estimate Intake Block Rev3
+- Estimate Master Prompt Rev3
+- Estimating Triple Verification Standard Rev3
+- NZ Weather Risk Estimating Tool Rev2
+- Clevedon Civil Works Tender Estimate Rev7-Rev10 development/test lineage
+
+GREEN items:
+- Risk baseline vs residual methodology
+- Direct-cost routing back to Resource Build-Up/QS
+- Specialist-engine separation
+- CA01/CA02 residual-risk architecture
+- Duplicate-cost blocker
+- Full-row Resource Build-Up formula propagation
+- Programme Export AGGREGATE duration compatibility
+- Programme cost reconciliation formulas
+- Blank-master single-source rate propagation test
+- Master workbook project-identifier cleanup
+
+AMBER items:
+- Weather task sensitivity defaults remain AMBER until calibrated by reviewed actual project records.
+- Future specialist Risk Truth engines (Ground, Programme Risk, Escalation, Temporary Works, etc.) remain separate workstreams.
+
+RED / unresolved items:
+None for the Risk Truth methodology or master-template integration itself. Individual projects may and should contain RED risks until project evidence closes them.
+
+Known defects / limitations:
+- The current Master Estimate Workbook WBS and cashflow allocation remain based on the existing civil linked-model architecture. Broader structural redesign belongs to a separate approved workstream, not Risk Truth.
+- Risk Truth does not invent probability distributions; unsupported probabilities remain RED.
+
+Testing completed:
+- Real-estimate risk mapping and double-count red-team.
+- Legacy CA01/CA02 comparison.
+- Resource rate change propagation.
+- QS quantity propagation.
+- Residual-risk CA02 propagation.
+- Duplicate-cost RED blocker.
+- Commercial/margin parity.
+- Programme productivity/duration propagation.
+- Programme Export compatibility repair.
+- Blank-master new-job rate propagation test.
+- Formula-error and legacy-project-token scans.
+
+Test results:
+PASS. Blank-master test changed one library labour rate from $38/hr to $40/hr and the test item flowed $380 -> $400 through Resource Build-Up -> QS Takeoff -> Tender Build-Up -> Summary. Programme Export cost check remained OK. Master formula-error scan returned zero matched errors.
+
+Master Workbook integration status:
+COMPLETE
+
+Master Prompt changes required:
+YES - completed in Rev4.
+
+Triple Verification changes required:
+YES - completed in Rev4.
+
+Workbook/template changes required:
+YES - completed in Master_Estimate_Workbook_Rev1_RiskTruth.xlsx.
+
+Central library/source changes required:
+NO for this workstream.
+
+Next exact action:
+Upload/promote the three Stage 8 outputs into permanent Project Files, then start Workstream 2 in a new chat using the Master New Chat Starter and this handoff.
+
+Important instructions for next chat:
+Do not rebuild Risk Truth. Audit the current permanent files first. Preserve the single Master Estimate Workbook. Risk Truth is now the controlling risk-reconciliation method; generic CA01/CA02 percentages are no longer the default methodology.
