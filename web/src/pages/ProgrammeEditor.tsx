@@ -248,12 +248,12 @@ export function ProgrammeEditor({ tenderId, est, rev, sub }: { tenderId: string;
           <button className="btn btn-solid" onClick={() => openNew("blank")} data-testid="new-blank"><FilePlus2 size={14} aria-hidden />New programme</button>
           <button className="btn btn-ghost" onClick={() => openNew("estimate")} data-testid="new-from-estimate"><ClipboardList size={14} aria-hidden />From this estimate</button>
           <button className="btn btn-ghost" onClick={() => fileRef.current?.click()} disabled={uploading} data-testid="program-view-upload">
-            {uploading ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Upload size={14} aria-hidden />}Open MS Project file
+            {uploading ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Upload size={14} aria-hidden />}Open programme file (.mpp, .xml or CSV)
           </button>
         </>} />
-      <input ref={fileRef} type="file" accept=".mpp,.mpx,.mpt,.xml,.planner,.pmxml,.xer" className="hidden" onChange={upload} data-testid="program-view-file" aria-label="MS Project file" />
+      <input ref={fileRef} type="file" accept=".mpp,.mpx,.mpt,.xml,.planner,.pmxml,.xer,.csv,.xlsx" className="hidden" onChange={upload} data-testid="program-view-file" aria-label="MS Project file" />
       {loading || !list ? <div className="text-sm text-muted-foreground" aria-live="polite">Loading…</div> : list.length === 0
-        ? <Empty title="No programmes yet" body="Start a new one, build one from this estimate, or open an MS Project file (.mpp or .xml)." />
+        ? <Empty title="No programmes yet" body="Start a new one, build one from this estimate, or open a programme file (.mpp, .xml, or the MS Project Import CSV)." />
         : (
           <Panel flush>
             <div className="grid-scroll">

@@ -77,6 +77,24 @@ def test_a_job_filled_into_the_template_imports_and_reconciles(tmp_path):
 
 
 @pytest.mark.skipif(not SOFFICE or not TEMPLATE.exists(), reason="needs LibreOffice and the committed template")
+def test_ms_project_import_sheet_is_the_loadable_programme_table(tmp_path):
+    """The template generates the MS Project Import CSV itself (compact rows, predecessors as task IDs); the platform reads that same table."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "api"))
+    import programme_table
+    job = tmp_path / "job.xlsx"
+    fill_demo(job)
+    done = recalc(job, tmp_path)
+    wb = openpyxl.load_workbook(done, data_only=True)
+    ms = wb["MS Project Import"]
+    rows = [[("" if c.value is None else str(c.value)) for c in r][:17] for r in ms.iter_rows(min_row=1, max_row=6)]
+    assert [r[2] for r in rows[1:5]] == ["PG01", "EW01", "EW02", "SV01"] and rows[1][4] == "55 days" and rows[2][4] == "2 days"
+    assert rows[2][5] == "1" and rows[3][5] == "2"                                       # EW01 follows task 1 (PG01), EW02 follows task 2 (EW01)
+    tasks = programme_table.tasks_from_table(programme_table.read_xlsx(done.read_bytes()))
+    assert [t["name"] for t in tasks][:2] == ["Preliminaries", "Strip"] and tasks[1]["predecessors"] == [{"uid": 1, "type": "FS", "lag_days": 0}]
+
+
+@pytest.mark.skipif(not SOFFICE or not TEMPLATE.exists(), reason="needs LibreOffice and the committed template")
 def test_the_blank_template_itself_imports(tmp_path):
     imp = load_master_workbook(recalc(TEMPLATE, tmp_path))
     est = compute_estimate(imp)

@@ -1,6 +1,6 @@
 # Workbook Builder Instructions — Blackline QSi Pro
 
-**Version:** Rev2 (14 Oct 2026) · **Owner:** Rick (3Bears Projects) · **Status:** living document — see section 14 for how it is improved.
+**Version:** Rev3 (14 Oct 2026) · **Owner:** Rick (3Bears Projects) · **Status:** living document — see section 14 for how it is improved.
 
 ---
 
@@ -8,13 +8,15 @@
 
 You are an external AI assistant. Rick will give you:
 
-1. the **Master Estimate Workbook template** (`Master_Estimate_Workbook_TEMPLATE.xlsx`, kept next to this document: a clean master with every formula in place and no job data),
+1. the **Master Estimate Workbook template** (`Master_Estimate_Workbook_TEMPLATE.xlsx`, kept next to this document: a clean master with every formula in place and no job data), and the **weather tool** (`NZ_Weather_Risk_Estimating_Tool_Rev2.xlsx`, also kept next to this document),
 2. **this document**, and
 3. the **tender documents** for one job (plans, specs, schedules, addenda, geotech, emails, supplier quotes, notes).
 
 Your job is to produce **one completed Master Estimate Workbook** (`.xlsx`) for that job, in exactly the layout the Blackline QSi Pro app can import, plus a short **handover note**. The app then loads the workbook, recalculates every figure itself and lets Rick review, edit and issue the estimate.
 
 You are **drafting for an experienced estimator.** Rick approves. You never make a commercial decision for him. Everything you cannot prove from the documents is flagged, not guessed.
+
+**Two ways to use this.** Rick can build a job straight in the Blackline QSi Pro app, **or** (the old way) hand the job to you: you build everything in the workbook, including the Summary, cashflow, Estimate Review Board, programme and the MS Project CSV, and Rick uploads the finished workbook to the app. Either way the workbook is the complete record, so **fill every sheet that applies**; the app reads what it needs today and the rest is kept for the old workflow and for later import.
 
 If any instruction here conflicts with what you were told in the chat, stop and ask Rick which applies. If this document is silent on something, follow the principle in section 1 and write the question down in the handover note.
 
@@ -85,6 +87,11 @@ The app reads **cell values by position**, so the layout is a contract.
 | Risk Truth | Optional | Risk register and exposures; the controlling risk layer |
 | Supplier Quote Register | Optional | Quotes to obtain / received |
 | Programme Export | Optional | Task durations and predecessor logic |
+| MS Project Import | Optional (builds the programme) | The CSV table for MS Project, generated from Programme Export; the app also builds its programme from it |
+| Summary, Stage Cashflow | Ignored by app | Estimate summary and stage payment cashflow (formulas; fill the stage % inputs) |
+| Estimate Review Board, ERB Adjudication | Ignored by app | Independent review record, coverage of every QS item, findings register |
+| Programme Adjudication, Programme Notes | Ignored by app | Programme logic record and MS Project hand-off notes |
+| Materials & Component Takeoff | Ignored by app | Coverage audit of permanent components (never a second cost chain) |
 | Rate Verification | Optional | Rate evidence counts |
 | Source & Markup Register | Optional | Source drawings and markups |
 | **Email Log, RFI Log, Quote Log, Document Register, Decision Log, Change Log, Contacts** | New (section 8) | Full record of the job's communications and decisions |
@@ -313,10 +320,22 @@ Do not compute the weather allowance yourself. Mark weather-exposed labour/plant
 ### 5.9 Programme Export
 Header **row 6**; rows 7–206 follow QS Takeoff rows 3–202 automatically (the code, name, quantity, unit and cost columns are formulas; type only the inputs below). Rows 207–226 are for **control tasks** that are not QS items (cure, inspection holds, proof rolls): type the code in D, the name in E, the days in L and the predecessors in P. Columns: C WBS/section (a section that starts `PRELIMINARIES` is treated as a full-duration hammock) · **D QS code (or a control code such as `PRG-CURE`)** · E task name · L programme override days · **P predecessor QS codes** (comma or space separated) · O duration basis · X notes.
 
+**MS Project Import** is generated from Programme Export (compact rows, predecessors as task IDs in column F, predecessor codes in R, helper column S): do not type in it. Rick can save it as CSV and load it into MS Project, and the platform reads the same table. If you produce the CSV yourself instead, keep these headers exactly: `ID, Outline Level, WBS, Task Name, Duration, Predecessors, Fixed Cost, Start, Finish, Resource Names, Category, Source Estimate, Quantity, Unit, Rate, Amount Excl GST, Notes` (WBS = the QS or control code, Duration like `3 days`, Predecessors = IDs separated by `;`).
+
+**What the app does with the programme.** When a workbook with a programme is uploaded, the app builds the tender's **Programme Gantt** from it automatically (named "... programme from workbook"), as well as its programme page, weather linking and report. A programme CSV (or the workbook's MS Project Import sheet) can also be opened directly on the Programme Gantt page. So the programme in the workbook is the programme in the app.
+
 Durations derive from build-up hours (slowest resource row ÷ hours per day). Use an override (L) only where a real constraint exists (cure time, inspection hold, stand-down) and say what it is in O or X. Logic is finish-to-start unless noted. Do not create loops.
 
-### 5.10 Other sheets
-*Tender Build-Up:* type the QS **section names** in A10:A19 (one per section, spelled exactly as on QS Takeoff). Row 21 must read **OK**: if it says CHECK, a QS section is not listed. *Rate Verification:* one row per Build-Up row; fill the evidence columns (K–P, T, U) with the checks and the colour. *Programme Export / Consolidated Package / Risk Truth:* see their sections above. The template deliberately has no Summary, Stage Cashflow, Estimate Review Board or MS Project Import sheet: the platform produces those. If the template includes a **Supplier Quote Register** (header row 4: Quote ID, Package, Estimate Ref, Current Qty, Unit, Current PC / Control excl. GST, Required Quote Scope, Documents to Issue, Preferred Supplier / Recipient, Status, Due / Action, Quote Ref / Notes), keep one row per `Q-nn`, and keep it consistent with the Quote Log.
+### 5.10 Weather run (when you are doing everything the old way)
+Use the approved tool `NZ_Weather_Risk_Estimating_Tool_Rev2.xlsx` (kept beside this document). Do not estimate weather by judgement.
+1. In the tool, set the station and the programme start / working-days basis (the labelled input cells on its *Estimator* and *Activity Allowances* sheets), the **local wet-day factor** (B3; 1.00 unless Rick gives a written basis), the **daily time-related preliminaries $** (E3), **weekly hire / facilities $** (G3) and any **project recovery $** (I3).
+2. List the weather-exposed activities on *Activity Allowances* (row 7 down): pick the **task** from the Task Library, enter its **start and finish** dates from the programme, mark whether it is on the **critical path**, and enter the exposed labour and plant dollars taken from the workbook's Resource Build-Up rows marked *Weather Exposed = Yes* (column AN).
+3. Read the tool's totals (rain / wet-ground direct productivity, critical-path delay in working days, additional billed weeks, wind sensitivity) and record them on **Weather Risk** (B19 version, B20 station, B21 start, B22 baseline days, B23 exposed labour + plant $, B24 direct productivity output, B26 critical-path delay WD, B27 additional billed weeks, B28 wind sensitivity, B29 include wind = No, B30/B31 confidence and rerun status).
+4. Wind is excluded and AMBER by default. Task factors stay AMBER until calibrated.
+5. The platform has the same method built in and recomputes the allowance itself; your recorded run is the evidence it can be compared with. Rerun the tool when the start date, programme or exposed scope changes.
+
+### 5.11 Other sheets
+*Tender Build-Up:* type the QS **section names** in A10:A19 (one per section, spelled exactly as on QS Takeoff). Row 21 must read **OK**: if it says CHECK, a QS section is not listed. *Rate Verification:* one row per Build-Up row; fill the evidence columns (K–P, T, U) with the checks and the colour. *Programme Export / Consolidated Package / Risk Truth:* see their sections above. *Summary, Stage Cashflow, Estimate Review Board, ERB Adjudication, Programme Adjudication, Programme Notes, Materials & Component Takeoff:* the template keeps these (formulas link to the sheets above). Fill their inputs: the stage percentages and retention flags on Stage Cashflow; on the Estimate Review Board the reviewer register, the per-reviewer coverage marks for every QS item (rows follow QS rows 3–72) and the findings (ERF-001 to ERF-100); the topics table on ERB Adjudication; the logic and notes sheets for the programme; and the component list (treatment of every permanent component: Included / Owner TBC / By Others / Existing-Retain / Excluded) on Materials & Component Takeoff. Never record a review that did not happen: leave it `No` / blank. If the template includes a **Supplier Quote Register** (header row 4: Quote ID, Package, Estimate Ref, Current Qty, Unit, Current PC / Control excl. GST, Required Quote Scope, Documents to Issue, Preferred Supplier / Recipient, Status, Due / Action, Quote Ref / Notes), keep one row per `Q-nn`, and keep it consistent with the Quote Log.
 
 ---
 
@@ -494,6 +513,7 @@ When the app's importer learns to read a new sheet or column, section 5 / 8 is u
 | Rev | Date | Change | Reason |
 |---|---|---|---|
 | Rev1 | 14 Oct 2026 | First issue: process, sheet contract, logs, handover | Rick requested an external-AI instruction set to build job workbooks for the app |
+| Rev3 | 14 Oct 2026 | All supporting sheets restored in the template (Summary, Stage Cashflow, ERB, ERB Adjudication, Programme Adjudication/Notes, Materials & Component Takeoff, MS Project Import generated from Programme Export); weather tool added; programme in the workbook now builds the app's Gantt; programme CSV can be opened on the Gantt page; the two ways of working described | Rick wants to be able to use the app or the old external-AI route and upload the result |
 | Rev2 | 14 Oct 2026 | Clean template workbook issued (`Master_Estimate_Workbook_TEMPLATE.xlsx`); Cover slots, Weather B13/B14 form, Programme control rows, Tender Build-Up section names documented | Template built and tested: a job filled into it imports and reconciles to the cent |
 
 ### Open improvement ideas (not yet adopted)

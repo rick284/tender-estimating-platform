@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 import ai_client
 import programme_ai
+import programme_table
 import programme_mpxj as mp
 from db import get_db
 from programme_build import BadProgramme, clean_tasks, tasks_from_estimate
@@ -23,7 +24,8 @@ from routes_time import timed_ai
 from services import audit, new_id, now
 
 router = APIRouter(prefix="/api/tenders/{tender_id}/programmes", tags=["programmes"])
-ALLOWED = {".mpp", ".mpx", ".mpt", ".xml", ".planner", ".pmxml", ".xer"}
+TABLES = {".csv", ".xlsx"}                                    # the MS Project Import table (CSV, or a workbook with an "MS Project Import" sheet)
+ALLOWED = {".mpp", ".mpx", ".mpt", ".xml", ".planner", ".pmxml", ".xer"} | TABLES
 MAX_UPLOAD = 25 * 1024 * 1024
 WEEK = [True, True, True, True, True, False, False]
 
@@ -80,16 +82,23 @@ async def upload(tender_id: str, file: UploadFile = File(...), user: dict[str, A
     data = await file.read()
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "That file is too large (25 MB maximum).")
-    fd, path = tempfile.mkstemp(suffix=ext)
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(data)
-        parsed = await run_in_threadpool(mp.parse_in_worker, path)
-    except mp.WorkerError as e:
-        raise HTTPException(400, str(e))
-    finally:
-        if os.path.exists(path):
-            os.unlink(path)
+    if ext in TABLES:
+        try:
+            rows = programme_table.read_csv(data) if ext == ".csv" else programme_table.read_xlsx(data)
+            parsed = {"name": "Programme", "tasks": programme_table.tasks_from_table(rows)}
+        except programme_table.BadTable as e:
+            raise HTTPException(400, str(e))
+    else:
+        fd, path = tempfile.mkstemp(suffix=ext)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+            parsed = await run_in_threadpool(mp.parse_in_worker, path)
+        except mp.WorkerError as e:
+            raise HTTPException(400, str(e))
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
     try:
         parsed["tasks"] = clean_tasks(parsed.get("tasks", []))
     except BadProgramme as e:
@@ -98,7 +107,7 @@ async def upload(tender_id: str, file: UploadFile = File(...), user: dict[str, A
         parsed["name"] = os.path.splitext(file.filename or "Programme")[0][:200]
     doc = _base(user, tender_id, parsed["name"], "", "upload", parsed["tasks"], filename=file.filename)
     doc.update({k: parsed[k] for k in ("start", "finish", "status_date", "author", "company", "working_days", "non_working_dates", "hours_per_day") if k in parsed})
-    doc["needs_schedule"] = False
+    doc["needs_schedule"] = ext in TABLES                       # a table has no dates: the editor schedules it from the links
     doc["task_count"] = len(doc["tasks"])
     db = get_db()
     await db.programme_docs.insert_one(doc)
@@ -296,3 +305,22 @@ async def ai_decision(tender_id: str, pid: str, body: dict[str, Any], user: dict
         await db.ai_programme_proposals.update_one({"_id": i}, {"$set": {"decision": {"decision": "rejected", "reason": reason[:300], "by": user["_id"], "at": stamp}}})
     await audit(db, user, "programme.ai_decision", tender_id, f"{pid}: {len(acc_ids)} accepted, {len(rej)} rejected")
     return {"accepted": out, "rejected": len(rej)}
+
+
+async def create_from_workbook(db: Any, user: dict[str, Any], tender: dict[str, Any], revision: dict[str, Any]) -> str | None:
+    """When an uploaded workbook carries a programme (Programme Export, or the MS Project Import table), build the Gantt programme from it too, so it is there as soon as
+    the workbook is. One per workbook revision; returns the new programme id (None when the workbook has no programme or one was already made)."""
+    est = revision.get("estimate") or {}
+    prog = est.get("programme") or {}
+    if not (prog.get("set_up") and prog.get("tasks")):
+        return None
+    if await db.programme_docs.find_one({"tender_id": tender["_id"], "org_id": user["org_id"], "source": "workbook", "revision": revision["n"]}):
+        return None
+    tasks = tasks_from_estimate(est)
+    if not tasks:
+        return None
+    start = ((revision.get("inputs") or {}).get("programme") or {}).get("start") or (est.get("weather") or {}).get("start") or ""
+    doc = _base(user, tender["_id"], f"{tender['name']} - programme from workbook {revision.get('label', '')}".strip(), str(start)[:10], "workbook", tasks, revision=revision["n"])
+    await db.programme_docs.insert_one(doc)
+    await audit(db, user, "programme.create", tender["_id"], f"from the uploaded workbook {revision.get('label', '')}: {len(tasks)} rows")
+    return doc["_id"]

@@ -5,12 +5,13 @@ This folder holds the documents that tell an outside AI how to produce estimates
 | File | Purpose |
 |---|---|
 | `Master_Estimate_Workbook_TEMPLATE.xlsx` | The clean master workbook: every formula in place, no job data, the logs added. Upload this with the instructions. |
+| `NZ_Weather_Risk_Estimating_Tool_Rev2.xlsx` | The approved NZ weather tool (NIWA normals). Upload it as well when the AI is to do the weather run. |
 | `Workbook_Builder_Instructions.md` | The full instruction set: rules, process, the exact sheet/column contract the app reads, the logs (email, RFI, quotes, documents, decisions), a self-check and a handover template. |
 
 ## How to use it (Rick)
 
 1. Open a new chat with the external AI (one job per chat).
-2. Upload: **(a)** `Master_Estimate_Workbook_TEMPLATE.xlsx`, **(b)** `Workbook_Builder_Instructions.md` (or give it the GitHub link if it can read the repository), **(c)** the job's tender documents and emails.
+2. Upload: **(a)** `Master_Estimate_Workbook_TEMPLATE.xlsx` (and `NZ_Weather_Risk_Estimating_Tool_Rev2.xlsx` if it is to run the weather), **(b)** `Workbook_Builder_Instructions.md` (or give it the GitHub link if it can read the repository), **(c)** the job's tender documents and emails.
 3. Paste the starter prompt from section 13 of the instructions.
 4. When it delivers the completed `.xlsx` and handover note, upload the workbook in the app (Tenders → New tender → Upload a workbook).
 5. The app tells you what it could not read (Overview → "Imported from the workbook"). Note anything the AI got wrong and add it to the handover section "Problems with these instructions" — that is how the document improves.

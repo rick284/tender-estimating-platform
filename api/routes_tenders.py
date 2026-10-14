@@ -67,7 +67,17 @@ async def create_tender(file: UploadFile = File(...), name: str = Form(""), clie
     rev = revision_doc(t, 1, lab, est, user, file.filename or "", sha256(data), inputs=inputs)
     await db.revisions.insert_one(rev)
     await audit(db, user, "tender.create", t["_id"], project)
+    await _programme_from_workbook(db, user, t, rev)
     return _out(t)
+
+
+async def _programme_from_workbook(db: Any, user: dict[str, Any], t: dict[str, Any], rev: dict[str, Any]) -> None:
+    """A programme in the uploaded workbook becomes the tender's Gantt programme too. Never stops the upload."""
+    try:
+        from routes_programme import create_from_workbook
+        await create_from_workbook(db, user, t, rev)
+    except Exception:                                               # noqa: BLE001
+        log.exception("could not build the programme from the workbook")
 
 
 class BlankIn(BaseModel):
@@ -196,6 +206,7 @@ async def add_revision(tender_id: str, file: UploadFile = File(...), label: str 
     await db.tenders.update_one({"_id": t["_id"], "org_id": user["org_id"]},
                                 {"$set": {"latest_rev": n, "summary": summarise(est, lab), "updated_at": now()}})
     await audit(db, user, "revision.create", t["_id"], f"{lab} (n={n})")
+    await _programme_from_workbook(db, user, t, rev)
     return _rev_out(rev)
 
 

@@ -247,6 +247,55 @@ def _programme_from_sheet(ws, qs_codes: set[str], start: str, days_per_week: int
     return {"start": start, "days_per_week": days_per_week, "hours_per_day": 8, "tasks": tasks}
 
 
+def _duration_days(text: Any) -> int | None:
+    """'55 days', '3d', '2 wks', '16 hrs' or a bare number of days -> whole working days (None when unreadable)."""
+    t = _s(text).lower()
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(days?|d|wks?|weeks?|w|hrs?|hours?|h)?", t)
+    if not m:
+        return None
+    n, unit = float(m.group(1)), (m.group(2) or "d")
+    if unit.startswith("w"):
+        n *= 5
+    elif unit.startswith("h"):
+        n /= 8
+    return int(-(-n // 1))
+
+
+def _programme_from_ms_import(ws, qs_codes: set[str], start: str, days_per_week: int) -> dict | None:
+    """MS Project Import sheet (the CSV the estimator loads into MS Project): ID, Outline Level, WBS (code), Task Name, Duration, Predecessors (task IDs, ; separated).
+    Used when the workbook has no usable Programme Export, so a programme given only as that CSV still builds the platform programme."""
+    if ws is None:
+        return None
+    head = {_s(c.value).lower(): c.column - 1 for c in ws[1] if c.value}
+    need = ("id", "task name", "duration")
+    if not all(k in head for k in need):
+        return None
+    g = lambda row, k: row[head[k]].value if k in head and head[k] < len(row) else None      # noqa: E731
+    rows = [r for r in ws.iter_rows(min_row=2, max_row=ws.max_row) if _s(g(r, "id"))]
+    code_of: dict[str, str] = {}
+    for r in rows:
+        code = _s(g(r, "wbs"))
+        if code and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,19}", code):
+            code_of[_s(g(r, "id"))] = code
+    tasks: list[dict] = []
+    for r in rows:
+        rid, code = _s(g(r, "id")), code_of.get(_s(g(r, "id")))
+        name = _s(g(r, "task name"))
+        if not code or not name:
+            continue
+        days = _duration_days(g(r, "duration"))
+        preds = []
+        for tok in re.split(r"[;,\s]+", _s(g(r, "predecessors"))):
+            m_ = re.match(r"\d+", tok)                       # "4", "4FS", "4SS+2d": the task ID is the leading number (the platform keeps finish-to-start)
+            if m_ and m_.group(0) in code_of and code_of[m_.group(0)] not in preds and m_.group(0) != rid:
+                preds.append(code_of[m_.group(0)])
+        tasks.append({"id": f"P-{len(tasks) + 1:05d}", "code": code, "name": name[:200], "qs_code": code if code in qs_codes else "", "override_days": str(days) if days is not None else None,
+                      "predecessors": preds, "hammock": _s(g(r, "category")).upper().startswith("PRELIMINARIES"), "basis": "From MS Project Import sheet", "note": _s(g(r, "notes"))[:500]})
+    if not tasks:
+        return None
+    return {"start": start, "days_per_week": days_per_week, "hours_per_day": 8, "tasks": tasks}
+
+
 def _reserve_from_commercial(commercial: list[dict], ws=None) -> dict | None:
     """A workbook whose CA16 Management Reserve is an included fixed amount becomes an adjudication block whose selected reserve is that amount
     (total unchanged). The workbook's own "MANAGEMENT RESERVE - ADJUDICATION BASIS" block on Commercial Inputs supplies the unresolved items (its
@@ -601,5 +650,7 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
         risk_truth=_risks_and_exposures_from_risk_truth(v["Risk Truth"])[1] if "Risk Truth" in v.sheetnames else [],
         management_reserve=_reserve_from_commercial(commercial, v["Commercial Inputs"]),
         quotes=_quotes_from_sheet(v["Supplier Quote Register"]) if "Supplier Quote Register" in v.sheetnames else [],
-        programme=_programme_from_sheet(v["Programme Export"] if "Programme Export" in v.sheetnames else None, {q.code for q in qs}, weather_meta.get("start", ""),
-                                        int(weather_meta["wd_per_week"]) if str(weather_meta.get("wd_per_week", "")).isdigit() else 5), cached=v)
+        programme=(_programme_from_sheet(v["Programme Export"] if "Programme Export" in v.sheetnames else None, {q.code for q in qs}, weather_meta.get("start", ""),
+                                         int(weather_meta["wd_per_week"]) if str(weather_meta.get("wd_per_week", "")).isdigit() else 5)
+                   or _programme_from_ms_import(v["MS Project Import"] if "MS Project Import" in v.sheetnames else None, {q.code for q in qs}, weather_meta.get("start", ""),
+                                                int(weather_meta["wd_per_week"]) if str(weather_meta.get("wd_per_week", "")).isdigit() else 5)), cached=v)

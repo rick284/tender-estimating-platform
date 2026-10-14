@@ -20,8 +20,9 @@ from openpyxl.formatting.rule import FormulaRule
 
 VERSION = "Rev1 (14 Oct 2026)"
 QS_LAST, BU_LAST, LIB_LAST, PE_LAST, RV_LAST = 202, 306, 200, 206, 306
-KEEP = ["Cover & Instructions", "Consolidated Package", "Tender Build-Up", "Commercial Inputs", "QS Takeoff", "Resource Build-Up", "Resource Rate Library", "Rate Verification",
-        "Programme Export", "Weather Risk", "Risk Truth", "Supplier Quote Register", "Source & Markup Register"]
+KEEP = ["Cover & Instructions", "Summary", "Consolidated Package", "Tender Build-Up", "Commercial Inputs", "QS Takeoff", "Resource Build-Up", "Resource Rate Library", "Rate Verification",
+        "Programme Export", "MS Project Import", "Programme Adjudication", "Programme Notes", "Weather Risk", "Risk Truth", "Estimate Review Board", "ERB Adjudication",
+        "Stage Cashflow", "Materials & Component Takeoff", "Supplier Quote Register", "Source & Markup Register"]
 
 
 def isf(v) -> bool:
@@ -118,7 +119,8 @@ def build(donor: str, out: str) -> None:
                 if isf(c.value):
                     v = c.value
                     v = re.sub(r"('Resource Rate Library'!\$[A-Z]+\$5:\$[A-Z]+\$)85", rf"\g<1>{LIB_LAST}", v)
-                    v = re.sub(r"('QS Takeoff'!\$[A-Z]+\$3:\$[A-Z]+\$)(?:194|73|109|137)\b", rf"\g<1>{QS_LAST}", v)
+                    v = re.sub(r"('QS Takeoff'!\$[A-Z]+\$3:\$[A-Z]+\$)(?:194|73|109|137|40)\b", rf"\g<1>{QS_LAST}", v)
+                    v = re.sub(r"('QS Takeoff'!\$G\$)41\b", rf"\g<1>{QS_LAST + 1}", v)
                     c.value = v
     for ws in wb:
         widen(ws)
@@ -167,10 +169,15 @@ def build(donor: str, out: str) -> None:
                 pe.cell(r, c).value = f"=IF('QS Takeoff'!$B{q}=\"\",\"\",'QS Takeoff'!{col}{q})"
         for c, f in src_formulas.items():
             pe.cell(r, c).value = tr(f, pe.cell(8, c).coordinate, pe.cell(r, c).coordinate)
+        pe.cell(r, 10).value = f"=IFERROR(_xlfn.MAXIFS('Resource Build-Up'!$M$7:$M$306,'Resource Build-Up'!$B$7:$B$306,D{r}),0)"      # longest linked row; works in Excel 2019+ and LibreOffice
+        pe.cell(r, 25).value = f'=IF($D{r}="","",COUNTIF($D$7:$D{r},"?*"))'
+        style_like(pe.cell(r, 25), pe.cell(r, 24))
         pe.cell(r, 20).value = f'=IF($D{r}="","",I{r}-N(H{r}))'
         pe.cell(r, 21).value = f'=IF($D{r}="","",IF(ABS(T{r})<0.01,"OK","CHECK"))'
         for c, v in plain.items():
             pe.cell(r, c).value = v
+    put(pe, "Y6", "Task sequence (helper)")
+    style_like(pe["Y6"], pe["X6"])
     put(pe, "A1", "PROGRAMME BUILD-UP & MICROSOFT PROJECT EXPORT - MASTER ESTIMATE WORKBOOK")
     put(pe, "A5", "PROGRAMME RECONCILIATION: J takes the largest linked Resource Build-Up applied duration for each QS code; K converts hours to working days; M uses the override in L when one is entered. Rows 7-206 follow QS Takeoff rows 3-202. Control tasks that are not QS items (cure, inspection holds, proof rolls) go in rows 207-226: type the code in D, the name in E, the days in L and predecessor codes in P.")
     # ------------------------------------------------------------------ Risk Truth
@@ -314,6 +321,7 @@ def build(donor: str, out: str) -> None:
     S("F56", "=D56+E56", num_style); S("G56", "=F56-B56", num_style)
     # ------------------------------------------------------------------ Cover & Instructions (rebuilt generic)
     build_cover(wb)
+    restore_sheets(wb)
     # ------------------------------------------------------------------ logs and guide
     add_logs(wb)
     add_guide(wb)
@@ -321,6 +329,150 @@ def build(donor: str, out: str) -> None:
     wb._sheets = [wb[n] for n in order]
     wb.active = 0
     wb.save(out)
+
+
+def restore_sheets(wb) -> None:
+    """The supporting sheets of the full master workbook, made generic (job values removed, links to the generic sheets, capacity extended)."""
+    # ---- Summary
+    sm = wb["Summary"]
+    put(sm, "A1", "ESTIMATE SUMMARY - MASTER ESTIMATE WORKBOOK")
+    put(sm, "A5", '="Company OH, "&TEXT(\'Commercial Inputs\'!D21,"0.0%")')
+    put(sm, "A6", '="Profit, "&TEXT(\'Commercial Inputs\'!D22,"0.0%")&" true margin"')
+    put(sm, "A8", "Subcontract packages (known)"); put(sm, "B8", "=SUM('Consolidated Package'!B6:B11)")
+    put(sm, "A9", None); put(sm, "B9", None)
+    put(sm, "B10", "='Risk Truth'!B15")
+    for a, f in {"E4": "='Cover & Instructions'!B38", "E5": "='Cover & Instructions'!E39", "E6": "='Cover & Instructions'!B41", "E9": "='Cover & Instructions'!E40", "E10": None}.items():
+        put(sm, a, f)
+    wipe(sm, 13, 20, 1, 5)
+    for r in range(23, 33):
+        put(sm, f"A{r}", f"=IF('Tender Build-Up'!A{r - 13}=\"\",\"\",{r - 22}&\" \"&'Tender Build-Up'!A{r - 13})")
+    for r in range(34, 39):
+        put(sm, f"B{r}", None)
+    put(sm, "A55", None)
+    for a in ("D71", "D72", "D73", "A11"):
+        if a != "A11":
+            put(sm, a, None)
+    put(sm, "A11", "Supplier/material costs within the own-works estimate are already included in the Resource Build-Up; subcontract packages are added once in the Consolidated Package.")
+    for a in ("B72", "C72", "B73", "C73"):
+        put(sm, a, None)
+    put(sm, "B71", '=IF(OR(C69="RED",LEFT(B74,4)<>"PASS"),"RED - release blocked","AMBER - review before release")'); put(sm, "C71", '=IF(LEFT(B71,3)="RED","RED","AMBER")')
+    for a in ("B82", "C82", "B85", "C85", "B86", "C86", "B91", "C91", "C83", "C84", "C88", "C89", "C90"):
+        put(sm, a, None)
+    put(sm, "B83", "='Weather Risk'!B8"); put(sm, "B84", 0); put(sm, "B88", "='Weather Risk'!B7"); put(sm, "B89", "='Weather Risk'!B10")
+    put(sm, "B90", '=IF(OR(B88="",B89=""),"",B89-B88+1)')
+    put(sm, "A93", "CONSOLIDATED PACKAGE REVIEW - NOT FINAL TENDER UNTIL RELEASED")
+    rows = [("Own works current pre-commercial", "='Tender Build-Up'!B40", "LINKED"), ("Subcontract packages (known)", "=SUM('Consolidated Package'!B6:B11)", "QUOTED"),
+            ("Gross current known package", "=B94+B95", "CALCULATED"), ("Confirmed overlap with own works", "='Consolidated Package'!B13", "CLOSED"),
+            ("Current known package after reconciliation", "=B96-B97", "CALCULATED"), ("Company O/H", "='Commercial Inputs'!D21", "PROVIDED"),
+            ("Contractor profit", "='Commercial Inputs'!D22", "PROVIDED"), ("Tender adjudication status", "='Risk Truth'!B15", "")]
+    wipe(sm, 94, 105, 1, 5, formulas=True)
+    for i, (a, f, c) in enumerate(rows):
+        put(sm, f"A{94 + i}", a); put(sm, f"B{94 + i}", f); put(sm, f"C{94 + i}", c or None)
+    sm["B99"].number_format = sm["B100"].number_format = "0.0%"
+    # ---- Stage Cashflow
+    sc = wb["Stage Cashflow"]
+    put(sc, "A1", "STAGE PAYMENT & CASHFLOW - MASTER ESTIMATE WORKBOOK")
+    for r, lab in zip(range(6, 12), ["Stage 1 - summary sections 1-2", "Stage 2 - summary section 3", "Stage 3 - summary sections 4-5", "Stage 4 - summary sections 6-7", "Stage 5 - summary section 8", "Stage 6 - summary sections 9-10"]):
+        put(sc, f"A{r}", lab); put(sc, f"B{r}", None)
+    put(sc, "B12", None)
+    put(sc, "A12", "Included pre-margin provisions / Management Reserve")
+    for r in range(1, sc.max_row + 1):
+        v = sc[f"P{r}"].value
+        if isinstance(v, str) and not isf(v) and re.search(r"Rev\d|Siteworks|Hobson", v):
+            sc[f"P{r}"].value = None
+    # ---- Estimate Review Board
+    eb = wb["Estimate Review Board"]
+    cov = {c: eb.cell(40, c).value for c in range(1, 18) if isf(eb.cell(40, c).value)}
+    prow = {c: eb.cell(41, c).value for c in range(1, 18) if isf(eb.cell(41, c).value)}
+    find = {c: eb.cell(216, c).value for c in range(1, 25) if isf(eb.cell(216, c).value)}
+    put(eb, "A1", "INDEPENDENT ESTIMATE VERIFICATION BOARD - MASTER ESTIMATE WORKBOOK")
+    for r in (9, 10, 11, 12, 13, 14, 15, 17):
+        put(eb, f"B{r}", 0)
+    put(eb, "B18", "NOT STARTED"); put(eb, "B19", "HOLD - Review Board not started")
+    for r in range(24, 34):
+        for col in "EFGHI":
+            put(eb, f"{col}{r}", None)
+        put(eb, f"G{r}", "No")
+    put(eb, "A34", "INTERNAL PRE-RELEASE RED-TEAM NOTE"); put(eb, "A35", None)
+    for r in range(24, 34):
+        put(eb, f"K{r}", None)
+    wipe(eb, 40, 110, 1, 17, formulas=True)
+    for r in range(40, 110):
+        q = r - 37
+        for c, f in cov.items():
+            eb.cell(r, c).value = tr(f, eb.cell(40, c).coordinate, eb.cell(r, c).coordinate) if c < 16 else None
+        eb.cell(r, 16).value = f'=IF(A{r}="","",IF(COUNTIF(G{r}:O{r},"CHALLENGE*")>0,"CHALLENGED","REVIEWED"))' if not isf(prow.get(16)) else tr(prow[16], "P41", f"P{r}")
+    wipe(eb, 117, 216, 1, 24, formulas=True)
+    for r in range(117, 217):
+        eb.cell(r, 1).value = f"ERF-{r - 116:03d}"
+        for c, f in find.items():
+            eb.cell(r, c).value = tr(f, eb.cell(216, c).coordinate, eb.cell(r, c).coordinate)
+    put(eb, "A36", "QS ITEM VERIFICATION COVERAGE - EVERY ACTIVE QS ITEM (rows follow QS Takeoff rows 3-72; for a longer job copy the last row down)")
+    # ---- ERB Adjudication / Programme Adjudication / Programme Notes
+    ea = wb["ERB Adjudication"]
+    put(ea, "A1", "FORMAL ERB ADJUDICATION")
+    labels = {3: "Frozen pre-Board primary", 4: "Frozen primary tender excl GST", 5: "Clean-room whole estimates", 6: "Board rule", 7: "Dry tender programme", 8: "Weather status", 9: "Release status"}
+    for r in range(3, 28):
+        put(ea, f"B{r}", None); put(ea, f"C{r}", None)
+        if r in labels:
+            put(ea, f"A{r}", labels[r])
+        elif r > 11:
+            put(ea, f"A{r}", None)
+    put(ea, "B6", "No averaging / no voting; strongest aligned evidence governs.")
+    put(ea, "B11", "Frozen primary"); put(ea, "C11", "Board evidence")
+    for a in ("D27", "E27"):
+        put(ea, a, None)
+    pa = wb["Programme Adjudication"]
+    put(pa, "A1", "BOARD-ADJUDICATED PROGRAMME LOGIC")
+    wipe(pa, 4, 24, 1, 8)
+    pn = wb["Programme Notes"]
+    put(pn, "A1", "MICROSOFT PROJECT HANDOFF / PROGRAMME NOTES")
+    wipe(pn, 2, 10, 1, 2)
+    for r, lab in zip(range(2, 8), ["Dry tender baseline", "Weather", "Calendar / start date", "Key interfaces", "Procurement lead times", "Holds"]):
+        put(pn, f"A{r}", lab)
+    # ---- Materials & Component Takeoff
+    mc = wb["Materials & Component Takeoff"]
+    put(mc, "A1", "MATERIALS & COMPONENT TAKEOFF / COVER")
+    wipe(mc, 5, 24, 1, 15)
+    for r in range(5, 5 + 60):
+        for c in range(1, 16):
+            if r > 24:
+                style_like(mc.cell(r, c), mc.cell(24, c))
+        put(mc, f"A{r}", f"MC-{r - 4:03d}")
+    # ---- MS Project Import: the CSV the estimator loads into MS Project, generated from Programme Export (compact rows, predecessors as task IDs)
+    ms = wb["MS Project Import"]
+    heads = [ms.cell(1, c).value for c in range(1, 18)]
+    sty = {c: copy.copy(ms.cell(2, c)._style) for c in range(1, 19)}
+    wipe(ms, 2, 60, 1, 17, formulas=True)
+    PE = "'Programme Export'!"
+    put(ms, "R1", "Predecessor codes"); put(ms, "S1", "Source row (helper)")
+    for c in (18, 19):
+        ms.cell(1, c)._style = copy.copy(ms.cell(1, 17)._style)
+    from openpyxl.worksheet.formula import ArrayFormula
+    for k in range(2, 202):
+        n = k - 1
+        for c in range(1, 20):
+            if c <= 18:
+                ms.cell(k, c)._style = copy.copy(sty.get(c, sty[17]))
+        idx = lambda col, text=False: f'=IF($S{k}="","",INDEX({PE}${col}$7:${col}${PE_LAST + 20},$S{k}){"&\"\"" if text else ""})'      # noqa: E731
+        ms[f"S{k}"] = f'=IFERROR(MATCH({n},{PE}$Y$7:$Y${PE_LAST + 20},0),"")'
+        ms[f"A{k}"] = f'=IF($S{k}="","",{n})'
+        ms[f"B{k}"] = f'=IF($S{k}="","",1)'
+        ms[f"C{k}"] = idx("D", True); ms[f"D{k}"] = idx("E", True); ms[f"E{k}"] = idx("N", True)
+        ms[f"G{k}"] = idx("H"); ms[f"J{k}"] = idx("R", True); ms[f"K{k}"] = idx("C", True)
+        ms[f"L{k}"] = f'=IF($S{k}="","",\'Cover & Instructions\'!$B$38)'
+        ms[f"M{k}"] = idx("F"); ms[f"N{k}"] = idx("G", True); ms[f"P{k}"] = idx("H")
+        ms[f"O{k}"] = f'=IF($S{k}="","",IFERROR(P{k}/M{k},0))'
+        ms[f"Q{k}"] = idx("X", True); ms[f"R{k}"] = idx("P", True)
+        seg = f'TRIM(MID(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(R{k},",",";")," ",";"),";",REPT(" ",60)),(ROW($1:$10)-1)*60+1,60))'
+        ms[f"F{k}"] = ArrayFormula(f"F{k}", f'=IF(R{k}="","",_xlfn.TEXTJOIN(";",TRUE,IFERROR(IF({seg}="","",MATCH({seg},$C$2:$C$201,0)),"")))')
+    ms.column_dimensions["R"].width = 22; ms.column_dimensions["S"].width = 12
+    # references that were pinned to the donor job
+    for ws in wb:
+        for row in ws.iter_rows():
+            for c in row:
+                if isf(c.value) and "Summary!" in c.value and ws.title == "Weather Risk":
+                    c.value = "='Cover & Instructions'!E38"
 
 
 def build_cover(wb) -> None:
@@ -502,7 +654,10 @@ def add_guide(wb) -> None:
         ("Weather Risk", "B13 and B14 are set to =0 in the template. Point them at the Build-Up rows that carry daily time-related preliminaries and weekly hire, e.g. B13 ='Resource Build-Up'!Y22*8 and B14 ='Resource Build-Up'!Y48+'Resource Build-Up'!Y60."),
         ("", ""),
         ("COMPANY DEFAULTS KEPT", "Overhead 10% (markup) and profit 15% (true margin) on Commercial Inputs CA17/CA18 are the company's current settings; confirm per job. All other allowances are OFF and zero."),
-        ("NOT IN THIS TEMPLATE", "Summary, Stage Cashflow, Estimate Review Board, Materials & Component Takeoff and MS Project Import sheets: the platform produces summaries and the programme export itself."),
+        ("FULL MASTER", "All the supporting sheets are present (Summary, Stage Cashflow, Estimate Review Board, ERB Adjudication, Programme Adjudication, Programme Notes, Materials & Component Takeoff, MS Project Import). The app reads what it needs and ignores the rest; they stay for the old workflow and future import."),
+        ("MS Project Import", "Generated from Programme Export: compact rows, predecessors as task IDs (column F), predecessor codes (R) and a helper column (S). Save as CSV (or copy the filled rows) to load into MS Project; the platform reads the same table and builds its programme from it."),
+        ("Estimate Review Board", "Coverage rows follow QS Takeoff rows 3-72; findings register ERF-001 to ERF-100."),
+        ("WEATHER TOOL", "NZ_Weather_Risk_Estimating_Tool_Rev2.xlsx (kept beside this template) is the approved weather tool: run it, then record its outputs in Weather Risk B19:B31 and link B13/B14."),
         ("LOGS", "Email Log, RFI Log, Quote Log, Document Register, Decision Log, Contacts, Change Log: headers are fixed (instructions section 8)."),
         ("RECALCULATE", "After editing, recalculate and save so formulas hold values (LibreOffice: soffice --headless --convert-to xlsx --outdir out file.xlsx)."),
     ]
