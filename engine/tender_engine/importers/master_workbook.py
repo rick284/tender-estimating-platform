@@ -67,7 +67,10 @@ def _cover_meta(v) -> dict[str, str]:
         cells = [(c.column, c.value) for c in row if c.value not in (None, "")]
         for i, (_, val) in enumerate(cells):
             if isinstance(val, str) and val in wanted and wanted[val] not in meta and i + 1 < len(cells):
-                meta[wanted[val]] = _s(cells[i + 1][1])
+                nxt = cells[i + 1][1]
+                if isinstance(nxt, str) and nxt in wanted:          # the value cell is empty and the next filled cell is another label
+                    continue
+                meta[wanted[val]] = _s(nxt)
     snap = _s(ws["A2"].value)
     if snap:
         meta["snapshot"] = snap

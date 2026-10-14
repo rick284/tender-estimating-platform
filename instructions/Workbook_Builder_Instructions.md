@@ -1,6 +1,6 @@
 # Workbook Builder Instructions — Blackline QSi Pro
 
-**Version:** Rev1 (14 Oct 2026) · **Owner:** Rick (3Bears Projects) · **Status:** living document — see section 14 for how it is improved.
+**Version:** Rev2 (14 Oct 2026) · **Owner:** Rick (3Bears Projects) · **Status:** living document — see section 14 for how it is improved.
 
 ---
 
@@ -8,7 +8,7 @@
 
 You are an external AI assistant. Rick will give you:
 
-1. the **Master Estimate Workbook** (an `.xlsx` template, normally the latest issued job workbook with its job data cleared, or a blank master),
+1. the **Master Estimate Workbook template** (`Master_Estimate_Workbook_TEMPLATE.xlsx`, kept next to this document: a clean master with every formula in place and no job data),
 2. **this document**, and
 3. the **tender documents** for one job (plans, specs, schedules, addenda, geotech, emails, supplier quotes, notes).
 
@@ -55,7 +55,7 @@ Do not deliver anything else unless Rick asks.
 The app reads **cell values by position**, so the layout is a contract.
 
 **Do**
-- Start from the template Rick supplied. Keep every sheet name, every header row, every column position and every formula exactly as they are.
+- Start from the template Rick supplied. Open its **Template Guide** sheet first: it lists how many rows each sheet holds and what is pre-filled. Keep every sheet name, every header row, every column position and every formula exactly as they are.
 - Add rows by **copying a complete existing row** (so its formulas come with it) and inserting it inside the existing block.
 - Put **numbers in number cells** as true numbers (`1250.5`, not `"$1,250.50"`, not `"approx 1250"`). Percentages as decimals or % formatted cells (`0.1` or `10%`).
 - Use one code per item, no spaces: letters + digits (`EW01`, `PG01`, `SW-12`).
@@ -73,6 +73,7 @@ The app reads **cell values by position**, so the layout is a contract.
 
 | Sheet | Needed by app? | Purpose |
 |---|---|---|
+| Template Guide | Ignored by app | Capacity, defaults and notes for this template |
 | Resource Rate Library | **Essential** | Every rate the estimate can use |
 | QS Takeoff | **Essential** | Scope items with quantities and provenance |
 | Resource Build-Up | **Essential** | How each QS item is built: labour, plant, materials, subcontract |
@@ -108,6 +109,8 @@ List every document you were given on **Document Register** (section 8.4): title
 Write the scope as the documents define it. Record **assumptions**, **exclusions**, **interfaces / by others** and **inclusions** on *Cover & Instructions* (section 6). Each assumption carries a reference (`A1`, `A2` …), each exclusion `EX-01` …
 
 ### Step 4 — Quantities (QS Takeoff)
+When the sections are known, type their names into **Tender Build-Up A10:A19**.
+
 One row per priced item. Take quantities from the documents. Read printed dimensions and schedules; **do not scale off drawings unless you state the scale and mark the line `CALCULATED` / AMBER**. Show your arithmetic in the *Quantity Basis* column (for example `2 × 14.5 m × 3.2 m`). Where documents conflict, create separate lines or an RFI — never average.
 
 ### Step 5 — Build-Up
@@ -219,11 +222,11 @@ Header on **row 6**; rows from **row 7** down. Columns the app **reads as inputs
 Rules: one row per resource (a crew = one row per labour type, one for each plant item). Include operators with plant only when the library rate says *Operator Included = Yes* (otherwise add the operator as labour). Never include the same cost on two rows (QA column AI records the check). Preliminaries and general are itemised here too (not as a bare lump sum).
 
 ### 5.3 QS Takeoff
-Header on **row 2**; items from **row 3**.
+Header on **row 2**; items from **row 3** to row 202 (total on row 203). Formula columns F, G, L–O and R are pre-filled and locked: do not type in them.
 
 | Col | Header | Rule |
 |---|---|---|
-| A | Civil Scope / WBS | Section name (repeat on each row) |
+| A | Civil Scope / WBS | Section name (repeat on each row; the **same spelling** goes in Tender Build-Up A10:A19) |
 | **B** | **Code** | Unique item code |
 | C | Description | What is being priced |
 | **D** | **Unit** | `m`, `m2`, `m3`, `t`, `ea`, `LS`, `hr`, `week` … |
@@ -262,9 +265,9 @@ Rules:
 - A PC Sum line must name what it covers in column I and must not duplicate anything already in the build-up or in Risk Truth.
 
 ### 5.5 Cover & Instructions
-Keep the template's layout. The app reads:
+Keep the template's layout. The template has pre-numbered slots: **9** document categories, assumptions **A1–A15**, exclusions **EX-01–EX-08**, RFIs **RFI-01–RFI-30** and **15** risk lines linked from Risk Truth. Fill the value beside each reference; leave unused slots empty (empty slots are ignored). To add more, copy a whole row inside the block. The app reads:
 
-- **Job details** (label in one cell, value in the next cell to its right): `Project`, `Location`, `Current drawings`, `Issue date`, `Scope`, `GST`, `Programme`, `Weather`, `Price status`, `Commercial`.
+- **Job details** (rows 38–42: the label in one cell, the value in the cell to its right; the template shows `NOT PROVIDED` until you replace it): `Project` (B38), `Location` (E38), `Current drawings`, `Issue date`, `Scope`, `GST`, `Programme`, `Weather`, `Price status`, `Commercial`.
 - **DRAWING / DOCUMENT REGISTER** section: one row per document — A title, B reference/revision, C detail.
 - **ASSUMPTIONS / QUALIFICATIONS / RFIs** section: assumptions `A1`, `A2` … and exclusions `EX-01`, `EX-02` … — A reference, B the full wording.
 - **PRICING QUALIFICATIONS / RFIs** section: `RFI-01`, `RFI-02` … — A reference, B text that **begins** with the status in capitals: `OPEN RED`, `OPEN`, or `CLOSED`, then the RFI (what is missing, where expected, why it matters, decision impact).
@@ -298,17 +301,22 @@ Rules:
 **Management reserve items.** For each item that cannot realistically be closed before the price goes in, record: title, source (RFI / risk ref), adverse consequence as a **cost delta** against the priced baseline (not sell), whether quantified / proxy / unquantified, and any evidenced probability range. Put them in the Notes column of *Commercial Inputs* CA16 or the Decision Log. Rick adjudicates the selected amount.
 
 ### 5.8 Weather Risk
-Fill **project inputs** only: B6 station / representative location · B7 assumed construction start (date) · B8 baseline working days · B9 working days per week · B16 project-specific recovery allowance. B13 (daily time-related preliminaries) and B14 (weekly billed hire) are formulas pointing at the build-up rows that carry daily preliminaries and weekly hire (for example `=Y584*8`, `=Y295+Y330`) — **keep them pointing at the correct rows** if you add or move rows, or the app cannot link weather costs.
+Fill **project inputs** only: B6 station / representative location · B7 assumed construction start (date) · B8 baseline working days · B9 working days per week · B16 project-specific recovery allowance. B13 (daily time-related preliminaries) and B14 (weekly billed hire) are formulas pointing at the build-up rows that carry daily preliminaries and weekly hire — **keep them pointing at the correct rows** if you add or move rows, or the app cannot link weather costs.
+
+The template sets **B13 and B14 to `=0`**, which the app reads as "not linked". Set them once the preliminaries rows exist, in exactly this form:
+`B13  ='Resource Build-Up'!Y22*8`  (Y of the supervision row, times hours per day)
+`B14  ='Resource Build-Up'!Y48+'Resource Build-Up'!Y60`  (Y of each weekly hire / facilities row, added)
+using the real row numbers on your Build-Up sheet. Until you do, the app says the weather costs are not linked.
 
 Do not compute the weather allowance yourself. Mark weather-exposed labour/plant rows on the build-up (columns AK/AL). Wind is excluded by default and stays AMBER. Record which weather tool version and station the run used if Rick gives you a run.
 
 ### 5.9 Programme Export
-Header **row 6**; tasks from **row 7**: C WBS/section (a section that starts `PRELIMINARIES` is treated as a full-duration hammock) · **D QS code (or a control code such as `PRG-CURE`)** · E task name · L programme override days · **P predecessor QS codes** (comma or space separated) · O duration basis · X notes.
+Header **row 6**; rows 7–206 follow QS Takeoff rows 3–202 automatically (the code, name, quantity, unit and cost columns are formulas; type only the inputs below). Rows 207–226 are for **control tasks** that are not QS items (cure, inspection holds, proof rolls): type the code in D, the name in E, the days in L and the predecessors in P. Columns: C WBS/section (a section that starts `PRELIMINARIES` is treated as a full-duration hammock) · **D QS code (or a control code such as `PRG-CURE`)** · E task name · L programme override days · **P predecessor QS codes** (comma or space separated) · O duration basis · X notes.
 
 Durations derive from build-up hours (slowest resource row ÷ hours per day). Use an override (L) only where a real constraint exists (cure time, inspection hold, stand-down) and say what it is in O or X. Logic is finish-to-start unless noted. Do not create loops.
 
 ### 5.10 Other sheets
-*Tender Build-Up, Summary, Stage Cashflow, Rate Verification, Estimate Review Board:* keep the template's formulas; do not type over them. If the template includes a **Supplier Quote Register** (header row 4: Quote ID, Package, Estimate Ref, Current Qty, Unit, Current PC / Control excl. GST, Required Quote Scope, Documents to Issue, Preferred Supplier / Recipient, Status, Due / Action, Quote Ref / Notes), keep one row per `Q-nn`, and keep it consistent with the Quote Log.
+*Tender Build-Up:* type the QS **section names** in A10:A19 (one per section, spelled exactly as on QS Takeoff). Row 21 must read **OK**: if it says CHECK, a QS section is not listed. *Rate Verification:* one row per Build-Up row; fill the evidence columns (K–P, T, U) with the checks and the colour. *Programme Export / Consolidated Package / Risk Truth:* see their sections above. The template deliberately has no Summary, Stage Cashflow, Estimate Review Board or MS Project Import sheet: the platform produces those. If the template includes a **Supplier Quote Register** (header row 4: Quote ID, Package, Estimate Ref, Current Qty, Unit, Current PC / Control excl. GST, Required Quote Scope, Documents to Issue, Preferred Supplier / Recipient, Status, Due / Action, Quote Ref / Notes), keep one row per `Q-nn`, and keep it consistent with the Quote Log.
 
 ---
 
@@ -486,6 +494,7 @@ When the app's importer learns to read a new sheet or column, section 5 / 8 is u
 | Rev | Date | Change | Reason |
 |---|---|---|---|
 | Rev1 | 14 Oct 2026 | First issue: process, sheet contract, logs, handover | Rick requested an external-AI instruction set to build job workbooks for the app |
+| Rev2 | 14 Oct 2026 | Clean template workbook issued (`Master_Estimate_Workbook_TEMPLATE.xlsx`); Cover slots, Weather B13/B14 form, Programme control rows, Tender Build-Up section names documented | Template built and tested: a job filled into it imports and reconciles to the cent |
 
 ### Open improvement ideas (not yet adopted)
 - Add a Productivity & Crew Library sheet and rules once Rick confirms it exists (Starter workstream 3).
