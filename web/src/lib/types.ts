@@ -25,6 +25,7 @@ export interface Estimate {
   register: RegisterItem[];
   register_summary: { rfis: number; open_rfis: number; open_red_rfis: number; red_risks: number };
   quotes: QuoteItem[];
+  scope?: ScopeOut;
   programme: ProgrammeData;
   risk_truth: RiskTruth;
   management_reserve: ManagementReserve | null;
@@ -98,6 +99,14 @@ export type RegisterKind = "rfi" | "risk" | "assumption" | "exclusion" | "inclus
 export interface RegisterItem {
   id: string; kind: RegisterKind; ref: string; title: string; detail: string; action: string; status: string; rag: string;
   owner: string; likelihood: string; impact: string; rating: string;
+}
+
+export interface ScopeItem {
+  id: string; ref: string; group: string; title: string; detail: string; source: string; owner: string; treatment: string; cost_refs: string; register_refs: string; quote_refs: string;
+  basis: string; action: string; status?: "COMPLETE" | "CHECK" | "MISSING"; problems?: string[];
+}
+export interface ScopeOut {
+  items: ScopeItem[]; counts: { COMPLETE: number; CHECK: number; MISSING: number; total: number }; by_treatment: Record<string, number>; unhomed_qs: string[]; gate: string;
 }
 
 export interface QuoteItem {

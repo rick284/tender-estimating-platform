@@ -209,6 +209,19 @@ def report_pdf(est: dict[str, Any], ctx: OutputContext, intake: dict[str, str] |
         sec("Exclusions and By Others")
         story += _bullets([x["detail"] or x["title"] for x in of("exclusion")])
 
+    scope_items = (est.get("scope") or {}).get("items") or []
+    if scope_items:
+        sec("Scope Coverage and Interfaces")
+        story.append(Paragraph(_esc("Every requirement of the work, who delivers it and how the price treats it. Items excluded or by others are shown, not left out."), BASE))
+        rows = [["Ref", "Requirement", "Owner", "Treatment", "Priced in"]]
+        for x in sorted(scope_items, key=lambda i: (i["group"], i["ref"])):
+            rows.append([x["ref"], x["title"] + (f" ({x['group']})" if x["group"] else ""), x["owner"].title(), x["treatment"].title(), x["cost_refs"] or "-"])
+        story.append(_table(rows, [18 * mm, W - 18 * mm - 26 * mm - 26 * mm - 34 * mm, 26 * mm, 26 * mm, 34 * mm]))
+        open_items = [x for x in scope_items if x["status"] != "COMPLETE"]
+        if open_items:
+            story.append(Paragraph("Still to confirm", H3))
+            story += _bullets([f"{x['ref']} {x['title']}: {x['problems'][0]}" for x in open_items[:25]])
+
     # 3 pricing basis
     sec("Pricing Basis and Summary")
     story.append(Paragraph(_esc("The price is built from the linked Resource Build-Up, QS Takeoff, Tender Build-Up and Consolidated Package. Material and supplier costs "

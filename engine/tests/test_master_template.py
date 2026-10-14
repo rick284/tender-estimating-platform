@@ -56,6 +56,17 @@ def fill_demo(path: Path) -> None:
         rt[f"{col}41"] = v
     pe = wb["Programme Export"]
     pe["P8"], pe["P9"], pe["L7"] = "PG01", "EW01", 55
+    sc = wb["Scope Coverage"]
+    for r, row in zip((2, 3, 4), [("Site strip and earthworks", "Permanent works", "OWN WORKS", "PRICED", "EW01, EW02", "", "", "Measured from sheet C1"),
+                                  ("Building structure", "Interface with others", "OTHERS", "EXCLUDED", "", "EX-01", "", "Excluded by the tender documents"),
+                                  ("Retaining height", "Permanent works", "TBC", "UNRESOLVED", "", "RFI-01", "", "")]):
+        sc[f"C{r}"], sc[f"B{r}"], sc[f"F{r}"], sc[f"G{r}"], sc[f"H{r}"], sc[f"I{r}"], sc[f"J{r}"], sc[f"K{r}"] = row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7]
+    cv = wb["Cover & Instructions"]
+    for r in range(48, 140):
+        if cv[f"A{r}"].value == "EX-01":
+            cv[f"B{r}"] = "Exclude building structure."
+        if cv[f"A{r}"].value == "RFI-01":
+            cv[f"B{r}"] = "OPEN RED - Retaining height missing. Decision impact: cost."
     wb.save(path)
 
 
@@ -72,6 +83,9 @@ def test_a_job_filled_into_the_template_imports_and_reconciles(tmp_path):
     assert est["reconciled"] is True                                   # the platform's totals equal the workbook's own formulas
     assert imp.meta["project"] == "Demo job"
     assert [o.name for o in imp.overlays] == ["Package A"]
+    assert [(x["ref"], x["treatment"], x["owner"]) for x in imp.scope] == [("SC-001", "PRICED", "OWN WORKS"), ("SC-002", "EXCLUDED", "OTHERS"), ("SC-003", "UNRESOLVED", "TBC")]
+    scope = est["scope"]
+    assert [x["status"] for x in scope["items"]] == ["COMPLETE", "COMPLETE", "CHECK"] and scope["unhomed_qs"] == ["PG01", "SV01"] and scope["gate"].startswith("HOLD")
     assert [q["ref"] for q in imp.quotes] == ["Q-01"] and [e["ref"] for e in imp.risk_truth] == ["RT01-001"]
     assert [(t["code"], t["predecessors"]) for t in imp.programme["tasks"]][:3] == [("PG01", []), ("EW01", ["PG01"]), ("EW02", ["EW01"])]
 

@@ -32,6 +32,9 @@ An edit is {"target", "key", "field", "value"} (set a value) or {"target", "op":
   quote      add    key = new id ("S-xxxxxx")  value: package / supplier / amount / ... (see quotes.FIELDS)
              set    key = id   field: any of quotes.FIELDS
              delete key = id
+  scope      add    key = new id ("C-xxxxxx")  value: group / title / owner / treatment / cost_refs / ... (see scope.FIELDS)   (scope coverage and interface schedule)
+             set    key = id   field: any of scope.FIELDS
+             delete key = id
   exposure   add    key = new id ("X-xxxxxx")  value: risk_id / consequence / mode / ... (see risk_truth.FIELDS)   (Risk Truth exposure)
              set    key = id   field: any of risk_truth.FIELDS
              delete key = id
@@ -70,6 +73,7 @@ from . import weather_setup as wx
 from . import schedule as sch
 from . import register as reg
 from . import quotes as qt
+from . import scope as sc
 from . import risk_truth as rtm
 from . import management_reserve as mrm
 from . import programme as prg
@@ -171,6 +175,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     sched = copy.deepcopy(base.schedule)
     register = copy.deepcopy(base.register)
     quotes = copy.deepcopy(base.quotes)
+    scope = copy.deepcopy(base.scope)
     exposures = copy.deepcopy(base.risk_truth)
     reserve = copy.deepcopy(base.management_reserve)
     programme = copy.deepcopy(base.programme)
@@ -538,6 +543,28 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
             except qt.QuoteError as ex:
                 raise EditError(str(ex))
 
+        elif target == "scope":
+            try:
+                if op == "add":
+                    sid = str(key or "")
+                    if not sc.ITEM_ID.match(sid) or any(x["id"] == sid for x in scope):
+                        raise EditError("That new scope item's identity is invalid or already used.")
+                    if len(scope) >= sc.MAX_ITEMS:
+                        raise EditError(f"The scope schedule can hold at most {sc.MAX_ITEMS} items.")
+                    scope.append(sc.build_item(sid, value if isinstance(value, dict) else {}, scope))
+                else:
+                    item = next((x for x in scope if x["id"] == str(key)), None)
+                    if item is None:
+                        raise EditError(f"Unknown scope item {key!r}.")
+                    if op == "delete":
+                        scope.remove(item)
+                    else:
+                        sc.set_field(item, str(field), value)
+                        if item["ref"] and sum(1 for x in scope if x["ref"] == item["ref"]) > 1:
+                            raise EditError(f"{item['ref']} is already used.")
+            except sc.ScopeError as ex:
+                raise EditError(str(ex))
+
         elif target == "reserve":
             try:
                 if key == "setup":
@@ -698,6 +725,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
             t["predecessors"] = [c for c in t["predecessors"] if c not in gone]
     m.weather_links, m.weather_setup, m.schedule, m.register, m.quotes, m.programme = links, setup, sched, register, quotes, programme
     m.risk_truth = exposures
+    m.scope = scope
     m.management_reserve = reserve
     m.reference = None            # no longer the workbook as received
     return m, _net_changes(base, m, rows, qs, new_library)
@@ -776,6 +804,7 @@ def _net_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, rows: list[_R
     _schedule_changes(a, b, add)
     _register_changes(a, b, add)
     _quote_changes(a, b, add)
+    _scope_changes(a, b, add)
     _exposure_changes(a, b, add)
     _reserve_changes(a, b, add)
     _programme_changes(a, b, add)
@@ -862,6 +891,20 @@ def _quote_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> Non
     for qid, y in ib.items():
         if qid not in ia:
             add("quote", qid, "added", label(y), "", y["package"][:80] or y["supplier"][:80])
+
+
+def _scope_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:
+    ia, ib = {x["id"]: x for x in a.scope}, {x["id"]: x for x in b.scope}
+    label = lambda x: f"Scope {x['ref']} {x['title']}".strip()[:120]
+    for sid, x in ia.items():
+        if sid not in ib:
+            add("scope", sid, "removed", label(x), x["treatment"], "")
+        else:
+            for f in sc.FIELDS:
+                add("scope", sid, f, label(x), x[f], ib[sid][f])
+    for sid, y in ib.items():
+        if sid not in ia:
+            add("scope", sid, "added", label(y), "", y["treatment"] or y["title"][:80])
 
 
 def _exposure_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:

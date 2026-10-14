@@ -50,6 +50,7 @@ class MasterWorkbookImport:
     schedule: dict | None = None                 # client price schedule format + mapping (tender_engine.schedule); None = automatic
     register: list = field(default_factory=list)  # tender register items (tender_engine.register)
     quotes: list = field(default_factory=list)    # supplier / subcontractor quote register (tender_engine.quotes)
+    scope: list = field(default_factory=list)     # scope coverage and interface schedule (tender_engine.scope)
     risk_truth: list = field(default_factory=list)  # Risk Truth exposures (tender_engine.risk_truth)
     management_reserve: dict | None = None         # Management Reserve adjudication (tender_engine.management_reserve); None = CA16 stays a plain line
     programme: dict | None = None                # programme tasks, predecessors and calendar (tender_engine.programme); None = not set up
@@ -245,6 +246,36 @@ def _programme_from_sheet(ws, qs_codes: set[str], start: str, days_per_week: int
     if not tasks:
         return None
     return {"start": start, "days_per_week": days_per_week, "hours_per_day": 8, "tasks": tasks}
+
+
+def _scope_from_sheet(ws) -> list[dict]:
+    """Scope Coverage sheet: header row 1 (Scope ID, Group, Requirement, Detail, Source, Owner, Treatment, Cost refs, Register refs, Quote refs, Basis, Action)."""
+    from .. import scope as sc
+    head = {_s(c.value).lower(): c.column - 1 for c in ws[1] if c.value}
+    pick = {"ref": "scope id", "group": "group", "title": "requirement", "detail": "detail", "source": "source", "owner": "owner", "treatment": "treatment", "cost_refs": "cost refs",
+            "register_refs": "register refs", "quote_refs": "quote refs", "basis": "basis", "action": "action"}
+    for want in list(pick.values()):                                   # headers may carry a hint in brackets: "Cost refs (QS codes / CA lines)"
+        if want not in head:
+            hit = next((k for k in head if k.startswith(want)), None)
+            if hit:
+                head[want] = head[hit]
+    if "requirement" not in head:
+        return []
+    out: list[dict] = []
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+        v = {k: _s(row[head[h]].value) if h in head and head[h] < len(row) else "" for k, h in pick.items()}
+        if not v["title"]:
+            continue
+        try:
+            out.append(sc.build_item(f"C-wb{len(out) + 1:04d}", v, out))
+        except sc.ScopeError:                                           # an item the workbook typed badly is kept as text, to be corrected on screen
+            for f in ("group", "owner", "treatment"):
+                v[f] = ""
+            try:
+                out.append(sc.build_item(f"C-wb{len(out) + 1:04d}", v, out))
+            except sc.ScopeError:
+                continue
+    return out
 
 
 def _duration_days(text: Any) -> int | None:
@@ -650,6 +681,7 @@ def load_master_workbook(source: str | Path | BinaryIO) -> MasterWorkbookImport:
         risk_truth=_risks_and_exposures_from_risk_truth(v["Risk Truth"])[1] if "Risk Truth" in v.sheetnames else [],
         management_reserve=_reserve_from_commercial(commercial, v["Commercial Inputs"]),
         quotes=_quotes_from_sheet(v["Supplier Quote Register"]) if "Supplier Quote Register" in v.sheetnames else [],
+        scope=_scope_from_sheet(v["Scope Coverage"]) if "Scope Coverage" in v.sheetnames else [],
         programme=(_programme_from_sheet(v["Programme Export"] if "Programme Export" in v.sheetnames else None, {q.code for q in qs}, weather_meta.get("start", ""),
                                          int(weather_meta["wd_per_week"]) if str(weather_meta.get("wd_per_week", "")).isdigit() else 5)
                    or _programme_from_ms_import(v["MS Project Import"] if "MS Project Import" in v.sheetnames else None, {q.code for q in qs}, weather_meta.get("start", ""),

@@ -226,11 +226,18 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
         "consolidated": consolidated_out, "tender": tender_out, "commercial": commercial_out,
         "qs": qs_out, "sections": sections, "buildup": buildup, "library": library, "weather": weather_out,
         "reconciliation": reconciliation, "qa_counts": flag_counts, "schedule": schedule_out,
-        "risk_truth": _risk_truth_out(m, rtr), "management_reserve": mr_out, "register": m.register, "register_summary": register_status_summary(m.register), "quotes": m.quotes, "programme": programme_out,
+        "risk_truth": _risk_truth_out(m, rtr), "management_reserve": mr_out, "register": m.register, "register_summary": register_status_summary(m.register), "quotes": m.quotes, "programme": programme_out, "scope": _scope_out(m, qs, tender),
         "reconciled": all(r["ok"] for r in reconciliation) if m.reference is not None else None,
         "edited": m.reference is None,
         "import_notes": list(m.notes),
     }
+
+
+def _scope_out(m, qs, tender) -> dict[str, Any]:
+    from . import scope as sc
+    costs: dict[str, Any] = {ln.code: ln.amount for ln in qs.lines}
+    costs.update({ref: amt for ref, amt in tender.additions.items()})
+    return sc.compute(m.scope, costs, m.register, {x["ref"].upper() for x in m.quotes if x.get("ref")})
 
 
 def _reserve_out(m, commercial, base_direct, tender, rtr) -> dict[str, Any] | None:

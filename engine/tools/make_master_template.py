@@ -10,7 +10,9 @@ from __future__ import annotations
 import copy
 import re
 import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import openpyxl
 from openpyxl.cell.cell import MergedCell
 from openpyxl.formula.translate import Translator
@@ -323,9 +325,10 @@ def build(donor: str, out: str) -> None:
     build_cover(wb)
     restore_sheets(wb)
     # ------------------------------------------------------------------ logs and guide
+    add_scope(wb)
     add_logs(wb)
     add_guide(wb)
-    order = ["Template Guide"] + KEEP + ["Email Log", "RFI Log", "Quote Log", "Document Register", "Decision Log", "Contacts", "Change Log"]
+    order = ["Template Guide", "Cover & Instructions", "Scope Coverage"] + [n for n in KEEP if n != "Cover & Instructions"] + ["Email Log", "RFI Log", "Quote Log", "Document Register", "Decision Log", "Contacts", "Change Log"]
     wb._sheets = [wb[n] for n in order]
     wb.active = 0
     wb.save(out)
@@ -623,6 +626,25 @@ LOGS = {
 }
 
 
+SCOPE_HEADS = ["Scope ID", "Group", "Requirement", "Detail", "Source (document / sheet / page)", "Owner", "Treatment", "Cost refs (QS codes / CA lines)", "Register refs (A#, EX-#, RFI-#)", "Quote refs", "Basis (what was priced and why)", "Action"]
+SCOPE_WIDTHS = [10, 26, 44, 44, 34, 16, 16, 24, 26, 14, 44, 30]
+
+
+def add_scope(wb) -> None:
+    from tender_engine import scope as sc          # the lists the app validates against
+    ws = wb.create_sheet("Scope Coverage")
+    hdr(ws, 1, SCOPE_HEADS, SCOPE_WIDTHS, wb["Resource Rate Library"]["A4"])
+    ws.row_dimensions[1].height = 45
+    for c in range(1, len(SCOPE_HEADS) + 1):
+        ws.cell(1, c).alignment = Alignment(wrap_text=True, vertical="center")
+    for r in range(2, 302):
+        ws.cell(r, 1).value = f"SC-{r - 1:03d}"
+    for col, items in (("B", sc.GROUPS), ("F", sc.OWNERS), ("G", sc.TREATMENTS)):
+        dv = DataValidation(type="list", formula1='"' + ",".join(items) + '"', allow_blank=True, showErrorMessage=True)
+        dv.add(f"{col}2:{col}301")
+        ws.add_data_validation(dv)
+
+
 def add_logs(wb) -> None:
     donor = wb["Resource Rate Library"]["A4"]
     for name, (heads, widths) in LOGS.items():
@@ -658,6 +680,7 @@ def add_guide(wb) -> None:
         ("MS Project Import", "Generated from Programme Export: compact rows, predecessors as task IDs (column F), predecessor codes (R) and a helper column (S). Save as CSV (or copy the filled rows) to load into MS Project; the platform reads the same table and builds its programme from it."),
         ("Estimate Review Board", "Coverage rows follow QS Takeoff rows 3-72; findings register ERF-001 to ERF-100."),
         ("WEATHER TOOL", "NZ_Weather_Risk_Estimating_Tool_Rev2.xlsx (kept beside this template) is the approved weather tool: run it, then record its outputs in Weather Risk B19:B31 and link B13/B14."),
+        ("Scope Coverage", "One row per requirement of the job (rows 2-301, IDs SC-001...). Group / Owner / Treatment are drop-down lists. The app reads this sheet and checks that every treatment is backed up (QS code carries a cost, exclusion or RFI recorded, quote linked). Fill it before pricing."),
         ("LOGS", "Email Log, RFI Log, Quote Log, Document Register, Decision Log, Contacts, Change Log: headers are fixed (instructions section 8)."),
         ("RECALCULATE", "After editing, recalculate and save so formulas hold values (LibreOffice: soffice --headless --convert-to xlsx --outdir out file.xlsx)."),
     ]

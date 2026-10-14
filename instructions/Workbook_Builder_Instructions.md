@@ -1,6 +1,6 @@
 # Workbook Builder Instructions — Blackline QSi Pro
 
-**Version:** Rev3 (14 Oct 2026) · **Owner:** Rick (3Bears Projects) · **Status:** living document — see section 14 for how it is improved.
+**Version:** Rev4 (15 Oct 2026) · **Owner:** Rick (3Bears Projects) · **Status:** living document — see section 14 for how it is improved.
 
 ---
 
@@ -80,6 +80,7 @@ The app reads **cell values by position**, so the layout is a contract.
 | QS Takeoff | **Essential** | Scope items with quantities and provenance |
 | Resource Build-Up | **Essential** | How each QS item is built: labour, plant, materials, subcontract |
 | Commercial Inputs | **Essential** | Allowances, overhead, margin, GST controls |
+| **Scope Coverage** | Optional (strongly wanted; the app checks it) | Every requirement of the job with an owner and a price treatment |
 | Cover & Instructions | Optional (strongly wanted) | Job details, document register, assumptions, exclusions, RFIs |
 | Tender Build-Up | Optional (strongly wanted) | The commercial stack; lets the app prove its totals match the workbook's |
 | Consolidated Package | Optional | Own works + subcontract packages = all-in price |
@@ -112,8 +113,8 @@ If a field is not in Rick's message or the documents, write `NOT PROVIDED` and a
 ### Step 2 — Document register
 List every document you were given on **Document Register** (section 8.4): title, reference/drawing number, revision, date, status (CURRENT / SUPERSEDED / UNCLEAR), where it came from (file name or Email ID). Decide which revision is current only from the documents themselves (revision tables, dates, addenda). If two revisions conflict and nothing says which governs, raise an RFI.
 
-### Step 3 — Scope and exclusions
-Write the scope as the documents define it. Record **assumptions**, **exclusions**, **interfaces / by others** and **inclusions** on *Cover & Instructions* (section 6). Each assumption carries a reference (`A1`, `A2` …), each exclusion `EX-01` …
+### Step 3 — Scope coverage, exclusions and interfaces
+Fill the **Scope Coverage** sheet (section 5.11) *before* pricing: list everything needed to deliver the work (permanent works, enabling works, access, temporary works, testing and inspection, reinstatement and handover, interfaces with others), give each an owner and a treatment, and link it to where it is priced. Write the scope as the documents define it. Record **assumptions**, **exclusions**, **interfaces / by others** and **inclusions** on *Cover & Instructions* (section 6). Each assumption carries a reference (`A1`, `A2` …), each exclusion `EX-01` …
 
 ### Step 4 — Quantities (QS Takeoff)
 When the sections are known, type their names into **Tender Build-Up A10:A19**.
@@ -334,7 +335,32 @@ Use the approved tool `NZ_Weather_Risk_Estimating_Tool_Rev2.xlsx` (kept beside t
 4. Wind is excluded and AMBER by default. Task factors stay AMBER until calibrated.
 5. The platform has the same method built in and recomputes the allowance itself; your recorded run is the evidence it can be compared with. Rerun the tool when the start date, programme or exposed scope changes.
 
-### 5.11 Other sheets
+### 5.11 Scope Coverage (the app checks this sheet)
+Header on **row 1**, one requirement per row from row 2 (IDs `SC-001`…). Drop-down lists on Group, Owner and Treatment.
+
+| Col | Header | Rule |
+|---|---|---|
+| A | Scope ID | `SC-001`, running |
+| B | Group | `Permanent works`, `Enabling works`, `Access and site establishment`, `Temporary works`, `Testing and inspection`, `Reinstatement and handover`, `Preliminaries and management`, `Interface with others`, `Other` |
+| **C** | **Requirement** | What the job needs, in a few words (required) |
+| D | Detail | Fuller description |
+| E | Source | Document, sheet, revision and page the requirement comes from |
+| **F** | **Owner** | `OWN WORKS`, `SUBCONTRACT`, `CLIENT`, `OTHERS`, `SHARED`, `TBC` |
+| **G** | **Treatment** | `PRICED`, `ALLOWANCE`, `PC SUM`, `EXCLUDED`, `BY OTHERS`, `UNRESOLVED` |
+| **H** | **Cost refs** | The QS code(s) and/or commercial line(s) (`CA09`) that carry the cost, comma separated |
+| **I** | **Register refs** | The assumption / exclusion / RFI references (`A3`, `EX-02`, `RFI-05`) that explain it |
+| J | Quote refs | Quote IDs (`Q-02`) supporting a subcontract or supplied item |
+| K | Basis | What was priced and why |
+| L | Action | What would close or firm it up |
+
+The app checks each treatment is **backed up** and shows the item COMPLETE, CHECK or MISSING:
+- `PRICED` needs a linked QS code that carries a cost. `ALLOWANCE` / `PC SUM` needs the QS item or commercial line carrying it, a stated basis, and the assumption or RFI that explains it (an allowance and an RFI can coexist: the allowance is what you priced, the RFI is the request to confirm it). A PC sum is used as the contract defines it; it is never a label for an invented number.
+- `EXCLUDED` needs the exclusion recorded on the Cover (`EX-nn`) and no cost linked. `BY OTHERS` needs an owner other than own works, the interface recorded (exclusion or assumption), and no cost linked.
+- `UNRESOLVED` needs an open RFI. Nothing may be left with no treatment: a blank treatment or owner is MISSING.
+- Subcontract items need a quote linked. Every QS code with a cost should appear on at least one scope row; the app lists the ones that don't ("priced, no scope home") and holds the scope gate.
+Excluded and by-others items are **shown** in the client report, not hidden: transparency is the point.
+
+### 5.12 Other sheets
 *Tender Build-Up:* type the QS **section names** in A10:A19 (one per section, spelled exactly as on QS Takeoff). Row 21 must read **OK**: if it says CHECK, a QS section is not listed. *Rate Verification:* one row per Build-Up row; fill the evidence columns (K–P, T, U) with the checks and the colour. *Programme Export / Consolidated Package / Risk Truth:* see their sections above. *Summary, Stage Cashflow, Estimate Review Board, ERB Adjudication, Programme Adjudication, Programme Notes, Materials & Component Takeoff:* the template keeps these (formulas link to the sheets above). Fill their inputs: the stage percentages and retention flags on Stage Cashflow; on the Estimate Review Board the reviewer register, the per-reviewer coverage marks for every QS item (rows follow QS rows 3–72) and the findings (ERF-001 to ERF-100); the topics table on ERB Adjudication; the logic and notes sheets for the programme; and the component list (treatment of every permanent component: Included / Owner TBC / By Others / Existing-Retain / Excluded) on Materials & Component Takeoff. Never record a review that did not happen: leave it `No` / blank. If the template includes a **Supplier Quote Register** (header row 4: Quote ID, Package, Estimate Ref, Current Qty, Unit, Current PC / Control excl. GST, Required Quote Scope, Documents to Issue, Preferred Supplier / Recipient, Status, Due / Action, Quote Ref / Notes), keep one row per `Q-nn`, and keep it consistent with the Quote Log.
 
 ---
@@ -449,6 +475,7 @@ Tick each; report failures in the handover note.
 - [ ] Commercial Inputs: only allowed methods; overhead and profit separate; CA16 not set by percentage.
 - [ ] Risk Truth: no invented probabilities; every provision has Primary owner, distinct = Yes, evidence not RED; weather is `Specialist Engine`.
 - [ ] Programme: every predecessor code exists; no loops; overrides explained.
+- [ ] Scope Coverage: every requirement has an owner and a treatment; no row is MISSING; every priced QS code appears on a scope row; every excluded / by-others row has its register reference.
 - [ ] Every Cover RFI exists in the RFI Log and vice versa; every quote on the Supplier Quote Register is on the Quote Log.
 - [ ] Email Log covers every email Rick provided; nothing was sent or replied to.
 - [ ] Document Register marks the current revision of every document; conflicts have RFIs.
@@ -513,6 +540,7 @@ When the app's importer learns to read a new sheet or column, section 5 / 8 is u
 | Rev | Date | Change | Reason |
 |---|---|---|---|
 | Rev1 | 14 Oct 2026 | First issue: process, sheet contract, logs, handover | Rick requested an external-AI instruction set to build job workbooks for the app |
+| Rev4 | 15 Oct 2026 | Scope Coverage sheet added to the template and the contract (the app reads it and checks every treatment is backed up); Step 3 now starts with it | Rick agreed the scope coverage and interface schedule is the next piece, with excluded and by-others items shown in the client report |
 | Rev3 | 14 Oct 2026 | All supporting sheets restored in the template (Summary, Stage Cashflow, ERB, ERB Adjudication, Programme Adjudication/Notes, Materials & Component Takeoff, MS Project Import generated from Programme Export); weather tool added; programme in the workbook now builds the app's Gantt; programme CSV can be opened on the Gantt page; the two ways of working described | Rick wants to be able to use the app or the old external-AI route and upload the result |
 | Rev2 | 14 Oct 2026 | Clean template workbook issued (`Master_Estimate_Workbook_TEMPLATE.xlsx`); Cover slots, Weather B13/B14 form, Programme control rows, Tender Build-Up section names documented | Template built and tested: a job filled into it imports and reconciles to the cent |
 
