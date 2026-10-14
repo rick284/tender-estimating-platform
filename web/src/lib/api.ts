@@ -87,7 +87,7 @@ export interface Timesheet {
 export interface TimePing { session_id: string; tender_id: string; page: string; active_seconds: number; draft_edits: number; end: boolean }
 const tq = (o: Record<string, string>) => new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString();
 
-export interface DriveStatus { configured: boolean; connected: boolean; account: string; connected_at: string | null; read_only: boolean; standard_folders: string[] }
+export interface DriveStatus { configured: boolean; connected: boolean; account: string; connected_at: string | null; read_only: boolean; can_write?: boolean; job_folders?: string[]; standard_folders: string[] }
 export interface DriveFile { id: string; name: string; path: string; mime: string; is_folder: boolean; modified: string; size: number | null; link: string; revision: string | null; latest: boolean | null; superseded_by: string | null; in_archive: boolean; ambiguous?: boolean; read: DriveRead | null }
 export interface DriveRead { status: "ok" | "partial" | "needs_ocr" | "unsupported" | "failed"; read_at: string; pages: number; chars: number; stale: boolean; warnings: string[] }
 export interface DriveReadResult { file_id: string; name: string; status: DriveRead["status"]; pages: number; warnings: string[] }
@@ -181,7 +181,9 @@ export const api = {
   aiAccept: (pid: string) => request<{ decision: "accepted"; edit: { target: string; op: "add"; key: string; value: Record<string, unknown> } }>(`/api/ai/proposals/${pid}/decision`, { method: "POST", body: JSON.stringify({ decision: "accepted" }) }),
   aiReject: (pid: string, reason: string) => request<{ decision: "rejected" }>(`/api/ai/proposals/${pid}/decision`, { method: "POST", body: JSON.stringify({ decision: "rejected", reason }) }),
   driveStatus: () => request<DriveStatus>("/api/drive/status"),
-  driveConnect: (tender: string) => request<{ url: string }>(`/api/drive/connect?tender=${encodeURIComponent(tender)}`),
+  driveConnect: (tender: string, write = false) => request<{ url: string }>(`/api/drive/connect?tender=${encodeURIComponent(tender)}${write ? "&write=1" : ""}`),
+  driveFolderPlan: (id: string) => request<{ folder: { id: string; name: string }; plan: { number: string; name: string; action: "create" | "exists" | "number_taken"; actual: string | null }[]; can_write: boolean }>(`/api/drive/tenders/${id}/folder-plan`),
+  driveSetupFolders: (id: string, where: "linked" | "new") => request<{ created: string[]; folder: { id: string; name: string; url: string } }>(`/api/drive/tenders/${id}/folders`, { method: "POST", body: JSON.stringify({ where }) }),
   driveDisconnect: () => request<{ ok: boolean }>("/api/drive/connection", { method: "DELETE" }),
   driveFolders: (parent: string) => request<{ parent: string; folders: { id: string; name: string }[] }>(`/api/drive/folders?parent=${encodeURIComponent(parent)}`),
   driveTender: (id: string) => request<{ folder: { id: string; name: string; url: string; linked_at: string } | null }>(`/api/drive/tenders/${id}`),

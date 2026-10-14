@@ -82,6 +82,43 @@ function TextDialog({ tenderId, file, onClose }: { tenderId: string; file: Drive
   );
 }
 
+function JobFolders({ tenderId, status, onDone, setErr }: { tenderId: string; status: DriveStatus; onDone: () => void; setErr: (s: string) => void }) {
+  const [plan, setPlan] = useState<Awaited<ReturnType<typeof api.driveFolderPlan>> | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState("");
+  useEffect(() => { api.driveFolderPlan(tenderId).then(setPlan).catch(() => setPlan(null)); }, [tenderId, status.can_write]);
+  if (!plan) return null;
+  const missing = plan.plan.filter((p) => p.action === "create");
+  const allow = async () => { try { window.location.href = (await api.driveConnect(tenderId, true)).url; } catch (e) { setErr((e as Error).message); } };
+  const run = async (where: "linked" | "new") => {
+    setErr(""); setDone(""); setBusy(true);
+    try { const r = await api.driveSetupFolders(tenderId, where); setDone(`Created ${r.created.length} folder${r.created.length === 1 ? "" : "s"}.`); await onDone(); setPlan(await api.driveFolderPlan(tenderId)); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Panel title="Set up job folders">
+      <p className="mb-3 text-sm">The platform can add the standard job folders (01 to 12) inside this folder. It only ever <strong>creates new, empty folders</strong>: nothing is renamed, moved, overwritten or deleted, and a number already used by a differently named folder is left alone.</p>
+      <ul className="mb-3 grid gap-1.5 text-sm sm:grid-cols-2">
+        {plan.plan.map((p) => (
+          <li key={p.number} className="flex items-center gap-2">
+            <Chip tone={p.action === "exists" ? "green" : p.action === "create" ? "neutral" : "amber"}>{p.action === "exists" ? "Already there" : p.action === "create" ? "Will be created" : "Number in use"}</Chip>
+            <span>{p.name}{p.action === "number_taken" && <span className="text-muted-foreground"> — “{p.actual}” is already {p.number}</span>}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-3">
+        {!plan.can_write && <button className="btn btn-solid" onClick={allow}>Allow Drive to add folders…</button>}
+        {plan.can_write && missing.length > 0 && <button className="btn btn-solid" disabled={busy} onClick={() => run("linked")}>{busy ? "Creating…" : `Add ${missing.length} missing folder${missing.length === 1 ? "" : "s"}`}</button>}
+        {plan.can_write && missing.length > 0 && <button className="btn btn-ghost" disabled={busy} onClick={() => run("new")}>Create a new job folder in My Drive instead</button>}
+        {missing.length === 0 && <span className="text-sm text-muted-foreground">Nothing to add.</span>}
+        {done && <span role="status" className="text-sm text-green-fg">{done}</span>}
+      </div>
+      {!plan.can_write && <p className="mt-2 text-xs text-muted-foreground">This asks Google for one extra, narrow permission (“add files and folders this app creates”). It cannot see, change or delete your other files. You can remove it any time at myaccount.google.com/permissions.</p>}
+    </Panel>
+  );
+}
+
 export function DriveDocs({ tenderId }: { tenderId: string }) {
   const [status, setStatus] = useState<DriveStatus | null>(null);
   const [folder, setFolder] = useState<{ id: string; name: string; url: string } | null | undefined>(undefined);
@@ -151,11 +188,13 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
       {status?.connected && (
         <>
           <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
-            <Chip tone="green">Connected</Chip><span>{status.account || "Google account"} · read-only</span>
+            <Chip tone="green">Connected</Chip><span>{status.account || "Google account"} · {status.can_write ? "can add new folders (cannot change or delete anything)" : "read-only"}</span>
             <button className="underline underline-offset-4" onClick={disconnect}>Disconnect</button>
           </div>
           {folder === null && <Empty title="No folder linked to this tender" body="Choose the folder that holds this tender's documents (the job folder, not the folder above it)." />}
-          {folder === null && <div className="mt-4"><button className="btn btn-solid" onClick={() => setPick(true)}>Choose folder</button></div>}
+          {folder === null && <div className="mt-4 flex flex-wrap gap-3"><button className="btn btn-solid" onClick={() => setPick(true)}>Choose folder</button>
+            {status.can_write ? <button className="btn btn-ghost" onClick={async () => { try { await api.driveSetupFolders(tenderId, "new"); await load(); } catch (e) { setErr((e as Error).message); } }}>Create a new job folder in My Drive</button>
+              : <button className="btn btn-ghost" onClick={async () => { try { window.location.href = (await api.driveConnect(tenderId, true)).url; } catch (e) { setErr((e as Error).message); } }}>Allow Drive to add folders…</button>}</div>}
           {folder && (
             <div className="space-y-5">
               <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -174,7 +213,7 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
                     <Stat label="Loose in main folder" value={fmtNum(listing.counts.loose_in_root)} sub="not filed in 01–07" />
                   </div>
                   {listing.truncated && <div className="border border-amber-line bg-amber-bg px-4 py-3 text-sm text-amber-fg">Some deeper subfolders were not read (the folder is very large or nested more than six levels).</div>}
-                  <Panel title="Issued-pack folders (01–07)">
+                  <Panel title="Job folder structure">
                     <ul className="grid gap-1.5 text-sm sm:grid-cols-2">
                       {listing.structure.map((s) => (
                         <li key={s.number} className="flex items-center gap-2">
@@ -184,6 +223,7 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
                       ))}
                     </ul>
                   </Panel>
+                  <JobFolders tenderId={tenderId} status={status} onDone={load} setErr={setErr} />
                   <Panel title="Files" flush action={
                     <div className="flex flex-wrap items-center gap-3 text-sm">
                       <label className="flex items-center gap-2"><input type="checkbox" checked={onlyLatest} onChange={(e) => setOnlyLatest(e.target.checked)} /> Hide superseded</label>

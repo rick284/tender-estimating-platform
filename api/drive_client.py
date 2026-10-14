@@ -1,5 +1,6 @@
-"""Minimal read-only Google Drive client (OAuth + file listing). The HTTP transport is injectable so tests never
-touch the network. Scope is drive.readonly: the platform can look, never change or delete."""
+"""Minimal Google Drive client (OAuth, file listing, folder creation). The HTTP transport is injectable so tests never
+touch the network. Default scope is drive.readonly (look, never change). The optional drive.file permission only ever lets the
+platform create NEW folders and files it makes itself: it cannot see, change or delete anything else."""
 from __future__ import annotations
 import base64
 import hashlib
@@ -13,6 +14,7 @@ import config
 from drive_index import FOLDER_MIME
 
 SCOPES = "https://www.googleapis.com/auth/drive.readonly openid email"
+SCOPES_WRITE = "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file openid email"
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 API = "https://www.googleapis.com/drive/v3"
@@ -46,9 +48,13 @@ def decrypt(s: str) -> str:
         raise DriveError("The saved Google connection can no longer be read. Please disconnect and connect again.") from e
 
 
-def auth_url(state: str) -> str:
+def can_write(scopes: str) -> bool:
+    return "auth/drive.file" in (scopes or "")
+
+
+def auth_url(state: str, write: bool = False) -> str:
     q = {"client_id": config.GOOGLE_CLIENT_ID, "redirect_uri": config.GOOGLE_REDIRECT_URI, "response_type": "code",
-         "scope": SCOPES, "access_type": "offline", "prompt": "consent", "include_granted_scopes": "true", "state": state}
+         "scope": SCOPES_WRITE if write else SCOPES, "access_type": "offline", "prompt": "consent", "include_granted_scopes": "true", "state": state}
     return f"{AUTH_URL}?{urlencode(q)}"
 
 
@@ -81,6 +87,20 @@ async def _get(token: str, path: str, params: dict[str, Any]) -> dict[str, Any]:
         raise DriveError("That Drive folder was not found (it may have been moved or unshared).")
     if r.status_code != 200:
         raise DriveError("Google Drive had a problem. Please try again.")
+    return r.json()
+
+
+async def create_folder(token: str, name: str, parent_id: str | None) -> dict[str, Any]:
+    """Create ONE new folder (the only write this client can make). Needs the drive.file permission. Never renames, moves or deletes."""
+    body: dict[str, Any] = {"name": name, "mimeType": FOLDER_MIME}
+    if parent_id:
+        body["parents"] = [parent_id]
+    async with _client() as c:
+        r = await c.post(f"{API}/files", params={"fields": "id,name,webViewLink", "supportsAllDrives": "true"}, json=body, headers={"Authorization": f"Bearer {token}"})
+    if r.status_code in (403, 404):
+        raise DriveError("Google would not let this app add a folder there. With the narrow permission it uses, Google only lets it add to folders it created itself.")
+    if r.status_code != 200:
+        raise DriveError("Google Drive had a problem creating the folder. Please try again.")
     return r.json()
 
 

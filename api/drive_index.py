@@ -9,6 +9,13 @@ STANDARD_FOLDERS = [
     ("04", "RFIs Correspondence and Clarifications"), ("05", "Takeoffs Markups and Programme"),
     ("06", "Estimating Working Files"), ("07", "Superseded and Archive"),
 ]
+# The job folder layout agreed with Rick (15 Oct 2026). The older 01-07 layout above is still recognised.
+JOB_FOLDERS = [
+    ("01", "Project_Admin"), ("02", "Source_Documents"), ("03", "Correspondence"), ("04", "Takeoffs_and_Scope"),
+    ("05", "Supplier_and_Subcontract_Pricing"), ("06", "Estimate_Workbooks"), ("07", "Programme_and_Methodology"),
+    ("08", "Risk_Allowances_and_RFIs"), ("09", "QA_and_Review"), ("10", "Issued_and_Baselines"), ("11", "Time_and_Billing"),
+    ("12", "Delivery_and_Actuals"),
+]
 FOLDER_MIME = "application/vnd.google-apps.folder"
 
 _REV = re.compile(r"(?<![A-Za-z0-9])(?:rev(?:ision)?|issue|ver(?:sion)?|v|r)[ _.\-]?(\d{1,3}[A-Za-z]?|[A-Za-z])(?![A-Za-z0-9])", re.I)
@@ -40,9 +47,10 @@ def analyse(files: list[dict[str, Any]]) -> dict[str, Any]:
     A file is 'superseded' only when another file in the SAME folder has the same base name and a higher revision."""
     groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     out = []
+    layout = detect_layout([f["name"] for f in files if f.get("is_folder") and not f.get("path")])
     for f in files:
         f = dict(f)
-        f["revision"] = None; f["latest"] = None; f["superseded_by"] = None; f["in_archive"] = _in_archive(f.get("path", ""))
+        f["revision"] = None; f["latest"] = None; f["superseded_by"] = None; f["in_archive"] = _in_archive(f.get("path", ""), layout)
         if not f.get("is_folder"):
             base, rev = split_revision(f["name"])
             f["revision"] = rev
@@ -67,15 +75,45 @@ def analyse(files: list[dict[str, Any]]) -> dict[str, Any]:
     return {"files": out, "ambiguous_groups": ambiguous}
 
 
-def _in_archive(path: str) -> bool:
-    return any(p.lower().startswith("07") for p in path.split("/")[:1])
+def _has_number(name: str, num: str) -> bool:
+    return re.match(rf"^\s*{num}(?![0-9])", name) is not None
 
 
-def check_structure(top_folder_names: list[str]) -> list[dict[str, Any]]:
+def detect_layout(top_folder_names: list[str]) -> str:
+    """'12' when the folder uses the 12-folder job layout (a name matches one of its folders, or 08-12 style numbers), else '07'."""
+    for n in top_folder_names:
+        for num, label in JOB_FOLDERS:
+            if _base(n) == _base(f"{num} {label}"):
+                return "12"
+        if re.match(r"^\s*(08|09|1[0-2])[ _\-]", n):
+            return "12"
+    return "07"
+
+
+def _in_archive(path: str, layout: str = "07") -> bool:
+    top = path.split("/")[0].lower() if path else ""
+    return (layout == "07" and top.startswith("07")) or "superseded" in top or "archive" in top
+
+
+def check_structure(top_folder_names: list[str], layout: str | None = None) -> list[dict[str, Any]]:
     """For each standard folder: found (with the actual name) or missing."""
+    layout = layout or detect_layout(top_folder_names)
+    wanted = JOB_FOLDERS if layout == "12" else STANDARD_FOLDERS
     res = []
-    for num, label in STANDARD_FOLDERS:
-        hit = next((n for n in top_folder_names if re.match(rf"^\s*{num}\b", n)), None)
-        res.append({"number": num, "label": label, "found": hit is not None, "actual": hit,
+    for num, label in wanted:
+        hit = next((n for n in top_folder_names if _has_number(n, num)), None)
+        res.append({"number": num, "label": label.replace("_", " ") if layout == "12" else label, "found": hit is not None, "actual": hit,
                     "exact": bool(hit) and _base(hit) == _base(f"{num} {label}")})
     return res
+
+
+def plan_folders(top_folder_names: list[str]) -> list[dict[str, Any]]:
+    """What setting up the 12-folder layout would do inside a job folder. Never renames, moves or duplicates:
+    a number already used by a differently-named folder (for example the older '01 Client Issue Pack') is left alone and reported."""
+    out = []
+    for num, label in JOB_FOLDERS:
+        name = f"{num}_{label}"
+        hit = next((n for n in top_folder_names if _has_number(n, num)), None)
+        action = "create" if hit is None else "exists" if _base(hit) == _base(name) else "number_taken"
+        out.append({"number": num, "name": name, "action": action, "actual": hit})
+    return out

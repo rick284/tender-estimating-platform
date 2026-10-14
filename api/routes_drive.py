@@ -10,7 +10,7 @@ import config
 import drive_client as dc
 from db import get_db
 import doc_text
-from drive_index import STANDARD_FOLDERS, analyse, check_structure
+from drive_index import JOB_FOLDERS, STANDARD_FOLDERS, analyse, check_structure, plan_folders
 from security import current_user
 from services import audit, now
 
@@ -40,15 +40,16 @@ async def _token(user: dict[str, Any]) -> str:
 async def status(user: dict[str, Any] = Depends(current_user)):
     doc = await _integration(user)
     return {"configured": dc.configured(), "connected": bool(doc), "account": doc.get("account", "") if doc else "",
-            "connected_at": doc["connected_at"].isoformat() if doc else None, "read_only": True,
+            "connected_at": doc["connected_at"].isoformat() if doc else None, "read_only": not (doc and dc.can_write(doc.get("scopes", ""))),
+            "can_write": bool(doc and dc.can_write(doc.get("scopes", ""))), "job_folders": [f"{n}_{l}" for n, l in JOB_FOLDERS],
             "standard_folders": [f"{n} {l}" for n, l in STANDARD_FOLDERS]}
 
 
 @router.get("/connect")
-async def connect(tender: str = Query("", max_length=64), user: dict[str, Any] = Depends(current_user)):
+async def connect(tender: str = Query("", max_length=64), write: bool = Query(False), user: dict[str, Any] = Depends(current_user)):
     _need_config()
     state = jwt.encode({"org": user["org_id"], "uid": user["_id"], "t": tender if tender.isalnum() else "", "exp": int(now().timestamp()) + 600, "p": "drive"}, config.JWT_SECRET, algorithm="HS256")
-    return {"url": dc.auth_url(state)}
+    return {"url": dc.auth_url(state, write)}
 
 
 @router.get("/callback")
@@ -74,7 +75,7 @@ async def callback(code: str = "", state: str = "", error: str = ""):
     db = get_db()
     account = await dc.userinfo_email(tok.get("access_token", ""))
     await db.integrations.update_one({"org_id": st["org"], "kind": "google_drive"},
-                                     {"$set": {"refresh_token": dc.encrypt(rt), "account": account, "connected_at": now(), "connected_by": st["uid"]}},
+                                     {"$set": {"refresh_token": dc.encrypt(rt), "account": account, "connected_at": now(), "connected_by": st["uid"], "scopes": tok.get("scope", "")}},
                                      upsert=True)
     await audit(db, {"org_id": st["org"], "_id": st["uid"]}, "drive.connect", "google_drive", account)
     return RedirectResponse(f"{back}?drive=connected")
@@ -140,6 +141,62 @@ async def unlink_folder(tender_id: str, user: dict[str, Any] = Depends(current_u
     await get_db().tenders.update_one({"_id": t["_id"]}, {"$unset": {"drive_folder": ""}})
     await audit(get_db(), user, "drive.unlink_folder", t["_id"])
     return {"ok": True}
+
+
+async def _top_folder_names(user, link) -> list[str]:
+    tok = await _token(user)
+    try:
+        return [f["name"] for f in await dc.list_children(tok, link["id"], only_folders=True)]
+    except dc.DriveError as e:
+        raise HTTPException(409, str(e))
+
+
+@router.get("/tenders/{tender_id}/folder-plan")
+async def folder_plan(tender_id: str, user: dict[str, Any] = Depends(current_user)):
+    """What 'Set up job folders' would do in the linked folder. Read-only: nothing is created here."""
+    t = await _tender(user, tender_id)
+    link = t.get("drive_folder")
+    if not link:
+        raise HTTPException(409, "Link this tender to a Drive folder first.")
+    doc = await _integration(user)
+    return {"folder": link, "plan": plan_folders(await _top_folder_names(user, link)), "can_write": bool(doc and dc.can_write(doc.get("scopes", "")))}
+
+
+@router.post("/tenders/{tender_id}/folders")
+async def setup_folders(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)):
+    """Create the missing job subfolders. where='linked' adds them inside the linked folder; where='new' makes a new job folder in My Drive
+    (named after the tender), adds them there and links the tender to it. New folders only: nothing is renamed, moved, overwritten or deleted."""
+    t = await _tender(user, tender_id)
+    doc = await _integration(user)
+    if not doc or not dc.can_write(doc.get("scopes", "")):
+        raise HTTPException(409, "Drive has only been given read-only access. Press 'Allow Drive to add folders' first.")
+    where = body.get("where", "linked")
+    if where not in ("linked", "new"):
+        raise HTTPException(422, "Choose where to create the folders.")
+    tok = await _token(user)
+    db = get_db()
+    created: list[str] = []
+    try:
+        if where == "new":
+            root = await dc.create_folder(tok, t["name"][:120] or "Job", None)
+            link = {"id": root["id"], "name": root["name"], "url": root.get("webViewLink", ""), "linked_at": now().isoformat()}
+            await db.tenders.update_one({"_id": t["_id"]}, {"$set": {"drive_folder": link}})
+            created.append(root["name"])
+            names: list[str] = []
+        else:
+            link = t.get("drive_folder")
+            if not link:
+                raise HTTPException(409, "Link this tender to a Drive folder first.")
+            names = [f["name"] for f in await dc.list_children(tok, link["id"], only_folders=True)]
+        for step in plan_folders(names):
+            if step["action"] == "create":
+                await dc.create_folder(tok, step["name"], link["id"])
+                created.append(step["name"])
+    except dc.DriveError as e:
+        await audit(db, user, "drive.setup_folders_failed", t["_id"], f"{len(created)} created before the error")
+        raise HTTPException(409, f"{e} ({len(created)} folder(s) were created before this stopped.)" if created else str(e))
+    await audit(db, user, "drive.setup_folders", t["_id"], f"{where}: {len(created)} created")
+    return {"created": created, "folder": link, "plan": plan_folders(names + [c for c in created if c[:2].isdigit()])}
 
 
 @router.get("/tenders/{tender_id}/files")

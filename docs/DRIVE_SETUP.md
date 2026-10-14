@@ -29,6 +29,12 @@ Save; Render restarts the service.
 Open a tender > **Drive Documents** > **Connect Google Drive** > approve on Google > **Choose folder**
 (for example `329 Hobsonville Road`) > the file list appears with latest/superseded revisions and a check of the 01-07 folders.
 
+## D. Optional: let the platform add job folders (write permission)
+By default Drive is read-only. On a tender's **Drive Documents** page, **Set up job folders** > **Allow Drive to add folders** asks Google for one extra, narrow permission (`drive.file`). Add `https://www.googleapis.com/auth/drive.file` under Data access / Scopes in the Google Cloud consent screen first.
+- The platform then only ever **creates new, empty folders** (01_Project_Admin ... 12_Delivery_and_Actuals). It never renames, moves, overwrites or deletes, and it skips a number already used by a differently named folder (for example the older `01 Client Issue Pack`).
+- Google only lets a `drive.file` app add to folders it created itself. If Google refuses to add inside your existing job folder, use **Create a new job folder in My Drive instead** (the tender is linked to the new folder), or create the subfolders by hand.
+- Not yet tested against real Google: this is the first thing to try after deploying.
+
 ## Notes
 - Google shows "Google hasn't verified this app" while in Testing mode: Advanced > continue. Expected.
 - Disconnect anytime in the platform, or at https://myaccount.google.com/permissions

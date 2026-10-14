@@ -3,7 +3,8 @@ import json
 from playwright.sync_api import sync_playwright, expect
 
 SHOT = "/tmp/claude-0/-home-user/d48f647b-2b13-5568-9c30-5dd27b3706a0/scratchpad/tp/e2e/"
-state = {"connected": False, "folder": None}
+state = {"connected": False, "folder": None, "write": False, "made": 0}
+PLAN = lambda: [{"number": f"{i:02d}", "name": f"{i:02d}_X", "action": "number_taken" if i in (1, 3) else ("exists" if i < state["made"] else "create"), "actual": "01 Client Issue Pack" if i == 1 else "03 Quotes" if i == 3 else None} for i in range(1, 13)]
 READ = {}
 F = lambda i, n, p="", rev=None, latest=None, sup=None, arch=False: {"id": i, "name": n, "path": p, "mime": "application/pdf", "is_folder": False, "modified": "2026-10-02T01:00:00Z",
     "size": 1500000, "link": "https://drive.google.com/x", "revision": rev, "latest": latest, "superseded_by": sup, "in_archive": arch, "read": READ.get(i)}
@@ -16,7 +17,7 @@ LISTING = {"folder": {"id": "T1", "name": "329 Hobsonville Road", "url": "https:
 def route(r):
     p = r.request.url.split("/api/drive")[1].split("?")[0]; m = r.request.method
     j = lambda b, s=200: r.fulfill(status=s, content_type="application/json", body=json.dumps(b))
-    if p == "/status": return j({"configured": True, "connected": state["connected"], "account": "rick@gmail.example", "connected_at": None, "read_only": True, "standard_folders": []})
+    if p == "/status": return j({"configured": True, "connected": state["connected"], "account": "rick@gmail.example", "connected_at": None, "read_only": not state["write"], "can_write": state["write"], "standard_folders": []})
     if p == "/connect": state["connected"] = True; return j({"url": "http://localhost:5173/#/tenders"})
     if p == "/folders": return j({"parent": "root", "folders": [{"id": "T1", "name": "329 Hobsonville Road"}]})
     if p.endswith("/read"):
@@ -24,6 +25,8 @@ def route(r):
         LISTING["files"] = [{**f, "read": READ.get(f["id"])} for f in LISTING["files"]]
         return j({"results": []})
     if "/texts/" in p: return j({"file_id": "1", "name": "Drawings RevC.pdf", "status": "ok", "pages": 2, "chars": 90, "warnings": [], "path": "", "revision": "C", "pages_text": [{"n": 1, "text": "Total $12,345.00"}, {"n": 2, "text": "Exclusions: rock"}]})
+    if p.endswith("/folder-plan"): return j({"folder": LISTING["folder"], "plan": [{**x, "action": "exists" if x["action"] == "create" and state["made"] else x["action"]} for x in PLAN()], "can_write": state["write"]})
+    if p.endswith("/folders") and m == "POST": state["made"] = 12; return j({"created": ["02_X"] * 10, "folder": LISTING["folder"]})
     if p.startswith("/tenders/") and p.endswith("/files"): return j(LISTING)
     if p.startswith("/tenders/") and m == "PUT": state["folder"] = LISTING["folder"]; return j({"folder": LISTING["folder"]})
     if p.startswith("/tenders/"): return j({"folder": state["folder"]})
@@ -58,4 +61,13 @@ with sync_playwright() as p:
     expect(pg.get_by_text("Total $12,345.00")).to_be_visible()
     pg.get_by_label("Search within this file").fill("rock"); expect(pg.get_by_text("Page 1")).to_have_count(0)
     pg.screenshot(path=SHOT + "drive_2.png")
+    # job folder setup: asks for the narrow permission first, then creates only the missing folders
+    expect(pg.get_by_text("Number in use").first).to_be_visible()
+    expect(pg.get_by_text("Will be created")).to_have_count(10)
+    expect(pg.get_by_role("button", name="Allow Drive to add folders…")).to_be_visible()
+    state["write"] = True; pg.reload()
+    pg.get_by_role("button", name="Add 10 missing folders").click()
+    expect(pg.get_by_text("Created 10 folders.")).to_be_visible(timeout=10000)
+    expect(pg.get_by_text("Nothing to add.")).to_be_visible()
+    pg.screenshot(path=SHOT + "drive_3_folders.png", full_page=True)
     print("OK drive page | page errors:", errs); b.close()

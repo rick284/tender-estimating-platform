@@ -184,3 +184,68 @@ def test_read_files_extracts_text_and_keeps_provenance(client, auth, drive):
     finally:
         cfg.REGISTRATION_OPEN = False
     assert client.get(f"/api/drive/tenders/{tid}/texts/D1", headers=other).status_code == 404
+
+
+# ---- job folder setup (write permission) -------------------------------------------------------------------------------
+from drive_index import detect_layout, plan_folders
+
+
+def test_plan_never_renames_or_duplicates_and_layout_is_detected():
+    plan = {p["number"]: p for p in plan_folders(["01 Client Issue Pack", "02_Source_Documents", "stuff"])}
+    assert plan["01"]["action"] == "number_taken" and plan["01"]["actual"] == "01 Client Issue Pack"      # older layout: left alone
+    assert plan["02"]["action"] == "exists" and plan["03"]["action"] == "create" and len(plan) == 12
+    assert detect_layout(["01 Client Issue Pack", "07 Superseded and Archive"]) == "07"
+    assert detect_layout(["01_Project_Admin", "02_Source_Documents"]) == "12"
+    files = [{"id": "a", "name": "07_Programme_and_Methodology", "is_folder": True, "path": "", "folder": ""},
+             {"id": "b", "name": "P_Rev1.pdf", "is_folder": False, "path": "07_Programme_and_Methodology", "folder": "07_Programme_and_Methodology"},
+             {"id": "c", "name": "Old.pdf", "is_folder": False, "path": "Superseded", "folder": "Superseded"}]
+    got = {f["id"]: f["in_archive"] for f in analyse(files)["files"]}
+    assert got["b"] is False and got["c"] is True            # 07 is only the archive in the older layout
+
+
+def test_setup_folders_needs_the_write_permission_and_only_creates_missing_folders(client, auth, drive, monkeypatch):
+    created = []
+
+    def h(request):
+        if request.method == "POST" and request.url.path == "/drive/v3/files":
+            body = json.loads(request.content)
+            assert set(body) <= {"name", "mimeType", "parents"} and body["mimeType"] == FOLDER
+            created.append(body)
+            return httpx.Response(200, json={"id": f"N{len(created)}", "name": body["name"], "webViewLink": "https://x/" + body["name"]})
+        if request.url.host == "oauth2.googleapis.com" and dict(up.parse_qsl(request.content.decode()))["grant_type"] == "authorization_code":
+            return httpx.Response(200, json={"access_token": "AT", "refresh_token": "RT-secret", "scope": "openid email https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file"})
+        return handler(request)
+    monkeypatch.setattr(dc, "TRANSPORT", httpx.MockTransport(h))
+    tid = client.post("/api/tenders", headers=auth, files={"file": ("a.xlsx", __import__("factory").make_workbook())}).json()["id"]
+    client.get("/api/drive/callback", params={"code": "c", "state": dict(up.parse_qsl(up.urlparse(client.get("/api/drive/connect", headers=auth).json()["url"]).query))["state"]})
+    assert client.put(f"/api/drive/tenders/{tid}", headers=auth, json={"folder_id": "T1"}).status_code == 200
+    q = dict(up.parse_qsl(up.urlparse(client.get("/api/drive/connect?write=1", headers=auth).json()["url"]).query))
+    assert "auth/drive.file" in q["scope"] and "auth/drive.readonly" in q["scope"]
+    r = client.get("/api/drive/callback", params={"code": "c", "state": q["state"]}, follow_redirects=False)
+    assert r.status_code in (302, 307)
+    assert client.get("/api/drive/status", headers=auth).json()["can_write"] is True
+    plan = client.get(f"/api/drive/tenders/{tid}/folder-plan", headers=auth).json()["plan"]
+    assert [p["action"] for p in plan].count("number_taken") == 3 and not created           # 01, 03, 07 already used by the older names
+    r = client.post(f"/api/drive/tenders/{tid}/folders", headers=auth, json={"where": "linked"})
+    assert r.status_code == 200, r.text
+    assert [c["name"][:2] for c in created] == ["02", "04", "05", "06", "08", "09", "10", "11", "12"]      # 01, 03, 07 are taken by the older names
+    assert all(c["parents"] == ["T1"] for c in created)
+    # a new job folder in My Drive
+    created.clear()
+    r = client.post(f"/api/drive/tenders/{tid}/folders", headers=auth, json={"where": "new"})
+    assert r.status_code == 200 and len(created) == 13 and "parents" not in created[0]
+    assert client.get(f"/api/drive/tenders/{tid}", headers=auth).json()["folder"]["id"] == "N1"
+
+
+def test_setup_folders_refused_without_write_and_google_refusal_is_explained(client, auth, drive, monkeypatch):
+    tid = client.post("/api/tenders", headers=auth, files={"file": ("a.xlsx", __import__("factory").make_workbook())}).json()["id"]
+    q = dict(up.parse_qsl(up.urlparse(client.get("/api/drive/connect", headers=auth).json()["url"]).query))
+    client.get("/api/drive/callback", params={"code": "c", "state": q["state"]})
+    client.put(f"/api/drive/tenders/{tid}", headers=auth, json={"folder_id": "T1"})
+    assert client.post(f"/api/drive/tenders/{tid}/folders", headers=auth, json={"where": "linked"}).status_code == 409
+    db = __import__("db").get_db()
+    import asyncio
+    asyncio.run(db.integrations.update_one({"kind": "google_drive"}, {"$set": {"scopes": "https://www.googleapis.com/auth/drive.file"}}))
+    monkeypatch.setattr(dc, "TRANSPORT", httpx.MockTransport(lambda r: httpx.Response(404, json={}) if r.method == "POST" and r.url.path == "/drive/v3/files" else handler(r)))
+    r = client.post(f"/api/drive/tenders/{tid}/folders", headers=auth, json={"where": "linked"})
+    assert r.status_code == 409 and "only lets it add to folders it created" in r.json()["detail"]
