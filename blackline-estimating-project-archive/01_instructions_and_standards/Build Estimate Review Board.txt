@@ -1,0 +1,51 @@
+I can continue from here, but I can’t directly see the mobile UI to confirm the **Work** label itself. What I can confirm is that I have the project context and estimating reference files available.
+
+I also found an important version-control issue before touching anything:
+
+- **Intake file read: Yes — Rev3 located**
+- **Master prompt file read: Yes — Rev4**
+- **Triple Verification Standard read: Yes — Rev4**
+- **Relevant existing tools/source files read: Yes**
+- **Master Estimate Workbook read: Yes**
+- **Test workbook/project received: No**
+
+The current approved Intake is **Rev3**, not the older Rev2 copy that is mounted here. fileciteturn3file5 More importantly, the latest approved Master Workbook I found is **Master_Estimate_Workbook_Rev3_RiskTruth_AlliedResources.xlsx**, which includes the 14 Allied resource alternatives and supersedes Rev2. fileciteturn4file2
+
+So I don't want to build the new review architecture into the Rev2 workbook sitting here and accidentally lose those later changes.
+
+### What we're building
+
+I’m locking in the new workstream as the **Independent Estimate Verification Board**.
+
+The governing rule will be:
+
+> **Every material component of an estimate is presumed incorrect until independently demonstrated to be correct. Agreement with the primary estimate is not evidence.**
+
+And I think we should strengthen the earlier concept further. It should have **three genuinely independent whole-estimate reviewers**, followed by specialist challenge reviews:
+
+1. **Independent Estimator A — clean-room whole estimate review**
+2. **Independent Estimator B — clean-room whole estimate review**
+3. **Independent Estimator C — clean-room whole estimate review**
+4. **Scope/document challenge**
+5. **Quantity/takeoff challenge**
+6. **Method/productivity/crew challenge**
+7. **Rates/procurement challenge**
+8. **Programme/time-cost challenge**
+9. **Risk/commercial/double-count challenge**
+10. **Chief Estimator adjudication**
+
+The first three will **not see our primary quantities, rates, productivities or tender total before committing their own findings**. That is essential to avoid anchoring.
+
+No voting and no averaging. If five reviewers say $100 and one can demonstrate $125 from stronger evidence, **$125 wins**. The adjudicator follows evidence, not consensus.
+
+The workbook will get a **Verification Board** control module, not another cost estimate. It will record disagreements and release status while the existing Resource → QS → Tender → Summary chain remains the only cost chain. This is consistent with the single-workbook architecture already required by the development standard. fileciteturn4file5
+
+### One thing I need from you
+
+Please upload **`Master_Estimate_Workbook_Rev3_RiskTruth_AlliedResources.xlsx`** into this Work conversation/project.
+
+Once that exact file is available to edit, I can build the module into the correct master rather than an obsolete Rev2.
+
+I have already located the approved Rev3 in your File Library, so you don't need to hunt for which version it is. fileciteturn4file2
+
+After you attach it, I'll proceed directly through **prototype → adversarial test → workbook integration → Master Prompt/Triple Verification updates → release testing**, rather than stopping for more design discussion.
