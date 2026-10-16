@@ -5,7 +5,7 @@ import type { Edit } from "./types";
  *  Structural edits (`op`) add or delete a thing and carry their details in `payload`. */
 export interface DraftEdit {
   target: string; key: string; field: string; value: string; scale?: number; original: string;
-  op?: "add" | "delete"; payload?: Record<string, unknown>;
+  op?: "add" | "delete" | "set"; payload?: Record<string, unknown>;
 }
 export interface EditCtx {
   editing: boolean;

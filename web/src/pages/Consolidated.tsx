@@ -43,8 +43,10 @@ export function Consolidated({ est }: { est: Estimate }) {
           <table className="grid-table">
             <tbody>
               {row("Known cost before OH and profit", c.gross_known_package)}
-              <tr><td>Company overhead <span className="text-muted-foreground">({fmtPct(c.overhead_rate, 0)} markup)</span></td><td className="num"><Money v={c.overhead} /></td></tr>
-              <tr><td>Profit <span className="text-muted-foreground">({fmtPct(c.margin, 0)} true margin on sell)</span></td><td className="num"><Money v={c.profit} /></td></tr>
+              <tr><td>Company overhead <span className="text-muted-foreground">({c.overhead_basis ?? `${fmtPct(c.overhead_rate, 0)} markup`})</span></td><td className="num"><Money v={c.overhead} /></td></tr>
+              {!!c.bonds && <tr><td>Bonds</td><td className="num"><Money v={c.bonds} /></td></tr>}
+              {!!c.retention_finance && <tr><td>Retention finance</td><td className="num"><Money v={c.retention_finance} /></td></tr>}
+              <tr><td>Profit <span className="text-muted-foreground">({c.profit_basis ?? `${fmtPct(c.margin, 0)} true margin on sell`})</span></td><td className="num"><Money v={c.profit} /></td></tr>
               <tr className="total-row"><td>Working all-in tender excl. GST</td><td className="num"><Money v={c.all_in} /></td></tr>
               <tr><td>Gross margin on sell</td><td className="num">{fmtPct(c.gross_margin_on_sell)}</td></tr>
             </tbody>

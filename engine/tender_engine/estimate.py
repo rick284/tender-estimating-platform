@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 from .buildup import compute_buildup
-from .commercial import COMMERCIAL_METHODS, compute_tender, is_custom, is_pre_margin, methods_for
+from .commercial import COMMERCIAL_METHODS, compute_tender, package_sell_line, is_custom, is_pre_margin, methods_for
 from . import risk_truth as rtm
 from . import management_reserve as mrm
 from .consolidated import compute_consolidated
@@ -100,7 +100,7 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
     tender = compute_tender(qs.total_direct, commercial)
     cmap = {c.ref: c for c in commercial}
     mr_out = _reserve_out(m, commercial, qs.total_direct, tender, rtr)
-    cons = compute_consolidated(tender.subtotal, m.overlays, m.overlap, cmap["CA17"].pct, cmap["CA18"].pct)
+    cons = compute_consolidated(tender.subtotal, m.overlays, m.overlap, commercial=commercial)
 
     # ---- QS lines with their build-up rows
     rows_by_code: dict[str, list[str]] = {}
@@ -181,7 +181,9 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
         "confirmed_overlap": _f(cons.confirmed_overlap), "known_after_overlap": _f(cons.known_after_overlap),
         "overhead": _f(cons.overhead), "profit": _f(cons.profit), "all_in": _f(cons.all_in_tender),
         "gross_margin_on_sell": _f(cons.gross_margin_on_sell),
-        "overhead_rate": _f(cmap["CA17"].pct), "margin": _f(cmap["CA18"].pct)}
+        "bonds": _f(cons.bonds), "retention_finance": _f(cons.retention_finance),
+        "overhead_rate": _f(cmap["CA17"].pct), "margin": _f(cmap["CA18"].pct),
+        "overhead_basis": _basis(cmap["CA17"]), "profit_basis": _basis(cmap["CA18"])}
 
     tender_out = {
         "base_direct": _f(tender.base_direct), "pre_margin_total": _f(tender.pre_margin_total),
@@ -226,11 +228,21 @@ def compute_estimate(m: MasterWorkbookImport) -> dict[str, Any]:
         "consolidated": consolidated_out, "tender": tender_out, "commercial": commercial_out,
         "qs": qs_out, "sections": sections, "buildup": buildup, "library": library, "weather": weather_out,
         "reconciliation": reconciliation, "qa_counts": flag_counts, "schedule": schedule_out,
-        "risk_truth": _risk_truth_out(m, rtr), "management_reserve": mr_out, "register": m.register, "register_summary": register_status_summary(m.register), "quotes": m.quotes, "programme": programme_out, "scope": _scope_out(m, qs, tender),
+        "risk_truth": _risk_truth_out(m, rtr), "management_reserve": mr_out, "labour_builds": _labour_out(m), "register": m.register, "register_summary": register_status_summary(m.register), "quotes": m.quotes, "programme": programme_out, "scope": _scope_out(m, qs, tender),
         "reconciled": all(r["ok"] for r in reconciliation) if m.reference is not None else None,
         "edited": m.reference is None,
         "import_notes": list(m.notes),
     }
+
+
+def _labour_out(m) -> dict[str, Any]:
+    from . import labour_rate as lab
+    out = {}
+    for code, b in m.labour_builds.items():
+        j = lab.to_json(lab.compute(b["inputs"]))
+        j["history"] = [{"rate": h["rate"], "status": h["status"], "evidence": h["inputs"].get("evidence", ""), "source_date": h["inputs"].get("source_date", "")} for h in b.get("history", [])]
+        out[code] = j
+    return out
 
 
 def _scope_out(m, qs, tender) -> dict[str, Any]:
@@ -283,6 +295,16 @@ def _risk_truth_out(m, r) -> dict[str, Any]:
             "programme_gate": r["programme_gate"], "gate": r["gate"], "issues": r["issues"], "live": bool(m.risk_truth) or m.reference is None}
 
 
+def _basis(ci) -> str:
+    """Plain wording for how a line is applied to the package: '10% markup', '15% true margin', 'fixed amount $30,000.00', 'switched off'."""
+    if ci.include != "Yes":
+        return "switched off"
+    if ci.method == "Fixed Amount":
+        return f"fixed amount ${D(ci.pc_sum):,.2f}"
+    pct = f"{D(ci.pct) * 100:.1f}".rstrip("0").rstrip(".")
+    return f"{pct}% true margin" if ci.method == "Margin %" else f"{pct}% markup"
+
+
 def _schedule(m, qs, tender, cons, cmap) -> dict[str, Any]:
     ca_refs = [ref for ref, amt in tender.additions.items() if amt != 0]
     sources = [{"key": f"qs:{ln.code}", "label": f"{ln.code} {ln.description}", "amount": ln.amount, "own": True, "section": ln.section} for ln in qs.lines]
@@ -294,7 +316,7 @@ def _schedule(m, qs, tender, cons, cmap) -> dict[str, Any]:
         sched["map"] = auto_map(sched, [{"code": ln.code, "section": ln.section} for ln in qs.lines], [{"name": o.name} for o in m.overlays], ca_refs)
     else:
         sched = m.schedule
-    r = compute_schedule(sched, sources, cmap["CA17"].pct, cmap["CA18"].pct, cons.all_in_tender)
+    r = compute_schedule(sched, sources, None, None, cons.all_in_tender, line=package_sell_line(cmap))
     f = _f
     mp = sched.get("map", {})
     return {

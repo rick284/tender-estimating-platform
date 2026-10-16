@@ -98,6 +98,8 @@ export interface DriveListing {
   counts: { files: number; latest_revisions: number; superseded: number; ambiguous_groups: number; loose_in_root: number };
 }
 
+export interface LabourStep { label: string; basis: string; amount: number; running: number }
+export interface LabourCalc { inputs: Record<string, string | boolean>; weekly_cost: number; rate: number; per_paid_hour: number; leave_pct: number; productivity: number; status: "GREEN" | "AMBER" | "RED"; status_note: string; steps: LabourStep[]; history?: { rate: string; status: string; evidence: string; source_date: string }[] }
 export interface AiProviderInfo { id: string; label: string; available: boolean; default_model: string; key_hint: string }
 export interface AiStatus { configured: boolean; enabled: boolean; provider: string; model: string; key_source: "own" | "platform" | null; key_last4: string; providers: AiProviderInfo[]; can_change: boolean; acknowledged_at: string | null; max_files: number; max_pictures: number }
 export interface AiEvidence { file_id: string; file: string; page: number; quote: string; verified: boolean }
@@ -175,6 +177,7 @@ export const api = {
   driveTexts: (id: string) => request<{ texts: DriveTextSummary[] }>(`/api/drive/tenders/${id}/texts`),
   aiStatus: () => request<AiStatus>("/api/ai/status"),
   aiSettings: (b: { provider?: string; model?: string; api_key?: string; clear_key?: boolean; enabled?: boolean; acknowledged?: boolean }) => request<AiStatus>("/api/ai/settings", { method: "PUT", body: JSON.stringify(b) }),
+  labourCalc: (inputs: Record<string, unknown>) => request<LabourCalc>("/api/labour/calc", { method: "POST", body: JSON.stringify(inputs) }),
   aiTest: () => request<{ ok: boolean; model: string }>("/api/ai/test", { method: "POST" }),
   aiDraft: (id: string, fileIds: string[], mode: "register" | "scope" = "register") => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ file_ids: fileIds, mode }) }, LONG),
   aiProposals: (id: string) => request<{ proposals: AiProposal[] }>(`/api/ai/tenders/${id}/proposals`),

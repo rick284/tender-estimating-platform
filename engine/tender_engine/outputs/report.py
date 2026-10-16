@@ -28,6 +28,16 @@ H3 = ParagraphStyle("h3", parent=BASE, fontName="Helvetica-Bold", fontSize=9.5, 
 BUL = ParagraphStyle("bul", parent=BASE, leftIndent=11, bulletIndent=1, spaceAfter=1.5)
 
 
+
+def _ohb(c) -> str:
+    """How overhead was applied, in words (older stored estimates only have the rate)."""
+    return c.get("overhead_basis") or f"{pct(c['overhead_rate'], 1)} markup"
+
+
+def _prb(c) -> str:
+    return c.get("profit_basis") or f"{pct(c['margin'], 1)} true margin"
+
+
 def _esc(t: Any) -> str:
     return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -159,7 +169,7 @@ def report_pdf(est: dict[str, Any], ctx: OutputContext, intake: dict[str, str] |
     parts = [f"The current working all-in package is {money(c['all_in'])} excl. GST"]
     if c["overlays"]:
         parts.append(f"comprising own works plus {len(c['overlays'])} subcontract package{'s' if len(c['overlays']) != 1 else ''}")
-    parts.append(f"with {pct(c['overhead_rate'], 1)} company overhead recovery and {pct(c['margin'], 1)} contractor profit calculated as a true margin. "
+    parts.append(f"with company overhead recovery ({_ohb(c)}) and contractor profit ({_prb(c)}). "
                  f"The resulting gross margin on the all-in sell price is {pct(c['gross_margin_on_sell'])}")
     story.append(Paragraph(_esc(", ".join(parts[:-1]) + (", " if len(parts) > 1 else "") + parts[-1] + "."), BASE))
     if s.get("management_reserve"):
@@ -173,8 +183,12 @@ def report_pdf(est: dict[str, Any], ctx: OutputContext, intake: dict[str, str] |
             ["Current known cost before OH/profit", money(c["gross_known_package"]), "Own works plus subcontract packages"],
             ["Own works before OH/profit", money(c["own_works"]), "Includes allowances and any management reserve"]]
     rows += [[o["name"], money(o["amount"]), f"Subcontract package ({o['kind'].lower()})"] for o in c["overlays"]]
-    rows += [[f"Company OH, {pct(c['overhead_rate'], 1)}", money(c["overhead"]), "Applied to the consolidated known cost"],
-             [f"Profit, {pct(c['margin'], 1)} true margin", money(c["profit"]), f"Overall gross margin on sell = {pct(c['gross_margin_on_sell'])}"]]
+    rows += [[f"Company OH, {_ohb(c)}", money(c["overhead"]), "Applied to the consolidated known cost"]]
+    if c.get("bonds"):
+        rows.append(["Bonds", money(c["bonds"]), "Applied to the consolidated known cost"])
+    if c.get("retention_finance"):
+        rows.append(["Retention finance", money(c["retention_finance"]), "Applied to the consolidated known cost"])
+    rows += [[f"Profit, {_prb(c)}", money(c["profit"]), f"Overall gross margin on sell = {pct(c['gross_margin_on_sell'])}"]]
     story.append(Spacer(1, 6))
     story.append(KeepTogether(_table(rows, [62 * mm, 38 * mm, W - 100 * mm], bold_rows=(1,), right=(1,))))
 
@@ -247,8 +261,8 @@ def report_pdf(est: dict[str, Any], ctx: OutputContext, intake: dict[str, str] |
     additions = [x for x in est["commercial"] if x["amount"] and x["stage"] == "pre" and x["ref"] != "CA17"]
     for x in additions:
         rows.append([f"{x['ref']} {x['name']}", money(x["amount"]), "Pre-margin allowance"])
-    rows += [["Own works before overhead and profit", money(t["subtotal"]), ""], [f"Company overhead ({pct(c['overhead_rate'], 1)})", money(t["overhead"]), "Own works only (standalone view)"],
-             [f"Profit ({pct(c['margin'], 1)} true margin)", money(t["profit"]), "True margin on cost plus overhead"], ["Own works tender", money(t["total_excl_gst"]), "Standalone, before subcontract packages"]]
+    rows += [["Own works before overhead and profit", money(t["subtotal"]), ""], [f"Company overhead ({_ohb(c)})", money(t["overhead"]), "Own works only (standalone view)"],
+             [f"Profit ({_prb(c)})", money(t["profit"]), "On cost plus overhead"], ["Own works tender", money(t["total_excl_gst"]), "Standalone, before subcontract packages"]]
     bold = tuple(i for i, r in enumerate(rows) if r[0] in ("Base direct estimate", "Own works before overhead and profit", "Own works tender"))
     story.append(Spacer(1, 4))
     story.append(_table(rows, [70 * mm, 36 * mm, W - 106 * mm], bold_rows=bold, right=(1,)))

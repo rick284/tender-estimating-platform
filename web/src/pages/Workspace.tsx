@@ -263,7 +263,7 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
       add: (target, key, payload) => setEdits((p) => {
         const n = { ...p };
         if (target === "schedule") dropPrefix(n, "schedule_map|");          // a new format starts with a clean mapping
-        n[opKey(target, key, "add")] = { target, key, field: "", value: "", original: "", op: "add", payload };
+        n[opKey(target, key, "add")] = { target, key, field: "", value: "", original: "", op: target === "labour" && est?.labour_builds?.[key] ? "set" : "add", payload };
         return n;
       }),
       remove: (target, key) => setEdits((p) => {

@@ -50,6 +50,7 @@ class MasterWorkbookImport:
     schedule: dict | None = None                 # client price schedule format + mapping (tender_engine.schedule); None = automatic
     register: list = field(default_factory=list)  # tender register items (tender_engine.register)
     quotes: list = field(default_factory=list)    # supplier / subcontractor quote register (tender_engine.quotes)
+    labour_builds: dict = field(default_factory=dict)   # labour true-cost build-ups made in the platform, by library code (tender_engine.labour_rate)
     scope: list = field(default_factory=list)     # scope coverage and interface schedule (tender_engine.scope)
     risk_truth: list = field(default_factory=list)  # Risk Truth exposures (tender_engine.risk_truth)
     management_reserve: dict | None = None         # Management Reserve adjudication (tender_engine.management_reserve); None = CA16 stays a plain line

@@ -59,6 +59,58 @@ class TenderResult:
     net_after_retention: Decimal
 
 
+def price_stack(cost: Decimal, by_ref: Mapping[str, CommercialInput]) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    """The one place overhead, profit, bonds and retention finance are applied to a cost base (the own-works subtotal, or the whole
+    consolidated package). Returns (overhead, profit, bonds, retention_finance), honouring each line's include switch and basis:
+    CA19/CA20 % of the base or a fixed sum; CA17 markup % of the base or a fixed amount; CA18 true margin %, markup % or a fixed amount
+    (profit is charged on base + overhead + bonds + finance)."""
+    cost = D(cost)
+
+    def pct_or_pc(ref):
+        c = by_ref.get(ref)
+        if c is None or c.include != "Yes":
+            return ZERO
+        if c.method == "%":
+            return cost * D(c.pct)
+        if c.method == "PC Sum":
+            return D(c.pc_sum)
+        return ZERO
+
+    bonds, ret_fin = pct_or_pc("CA19"), pct_or_pc("CA20")
+    overhead = ZERO
+    oh_in = by_ref.get("CA17")
+    if oh_in and oh_in.include == "Yes":
+        if oh_in.method == "Markup %":
+            overhead = cost * D(oh_in.pct)
+        elif oh_in.method == "Fixed Amount":
+            overhead = D(oh_in.pc_sum)
+    profit = ZERO
+    pr_in = by_ref.get("CA18")
+    if pr_in and pr_in.include == "Yes":
+        cost_base = cost + overhead + bonds + ret_fin
+        if pr_in.method == "Margin %":
+            m = D(pr_in.pct)
+            if m >= ONE:
+                raise ValueError("Margin must be below 100%")
+            profit = cost_base / (ONE - m) - cost_base
+        elif pr_in.method == "Markup %":
+            profit = cost_base * D(pr_in.pct)
+        elif pr_in.method == "Fixed Amount":
+            profit = D(pr_in.pc_sum)
+    return overhead, profit, bonds, ret_fin
+
+
+def package_sell_line(by_ref: Mapping[str, CommercialInput]) -> tuple[Decimal, Decimal]:
+    """The commercial stack as a straight line: sell = a x cost + b, where b is the part that does not move with cost (fixed
+    overhead, profit, bond or finance amounts, carried through the margin). Used to share a package's price between client schedule
+    groups so the groups add up to the package exactly: group sell = a x group cost + b x (group cost / package cost)."""
+    def sell(c):
+        oh, pr, bo, rf = price_stack(c, by_ref)
+        return c + oh + pr + bo + rf
+    b = sell(ZERO)
+    return sell(ONE) - b, b
+
+
 def _pre_margin_amount(ci: CommercialInput, base: Decimal) -> Decimal:
     if ci.include != "Yes":
         return ZERO
@@ -83,41 +135,7 @@ def compute_tender(base_direct: Decimal, inputs: Sequence[CommercialInput]) -> T
     def get(ref):
         return by_ref.get(ref)
 
-    # CA19 / CA20 (on subtotal)
-    def pct_or_pc(ref):
-        c = get(ref)
-        if c is None or c.include != "Yes":
-            return ZERO
-        if c.method == "%":
-            return subtotal * D(c.pct)
-        if c.method == "PC Sum":
-            return D(c.pc_sum)
-        return ZERO
-
-    bonds = pct_or_pc("CA19")
-    ret_fin = pct_or_pc("CA20")
-
-    oh_in = get("CA17")
-    overhead = ZERO
-    if oh_in and oh_in.include == "Yes":
-        if oh_in.method == "Markup %":
-            overhead = subtotal * D(oh_in.pct)
-        elif oh_in.method == "Fixed Amount":
-            overhead = D(oh_in.pc_sum)
-
-    pr_in = get("CA18")
-    profit = ZERO
-    if pr_in and pr_in.include == "Yes":
-        cost_base = subtotal + overhead + bonds + ret_fin
-        if pr_in.method == "Margin %":
-            m = D(pr_in.pct)
-            if m >= ONE:
-                raise ValueError("Margin must be below 100%")
-            profit = cost_base / (ONE - m) - cost_base
-        elif pr_in.method == "Markup %":
-            profit = cost_base * D(pr_in.pct)
-        elif pr_in.method == "Fixed Amount":
-            profit = D(pr_in.pc_sum)
+    overhead, profit, bonds, ret_fin = price_stack(subtotal, by_ref)
 
     commercial = overhead + profit + bonds + ret_fin
     total = subtotal + commercial

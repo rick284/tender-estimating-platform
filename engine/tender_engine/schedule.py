@@ -102,8 +102,8 @@ def _parts(value: Any, amount: Decimal, key: str) -> list[tuple[str, Decimal]]:
     return out
 
 
-def compute_schedule(schedule: dict[str, Any], sources: Sequence[dict[str, Any]], overhead_rate: Decimal, margin: Decimal,
-                     all_in: Decimal) -> dict[str, Any]:
+def compute_schedule(schedule: dict[str, Any], sources: Sequence[dict[str, Any]], overhead_rate: Decimal | None, margin: Decimal | None,
+                     all_in: Decimal, line: tuple[Decimal, Decimal] | None = None) -> dict[str, Any]:
     """sources: [{"key", "label", "amount" (Decimal), "own": bool}]. Returns the priced schedule and its reconciliation."""
     validate_schedule(schedule)
     groups = {g["id"]: g for g in schedule["groups"]}
@@ -155,14 +155,17 @@ def compute_schedule(schedule: dict[str, Any], sources: Sequence[dict[str, Any]]
             for gid in groups:
                 hidden[gid] += spread_total * own_weight[gid] / weight_sum
 
-    k = (ONE + D(overhead_rate)) / (ONE - D(margin))
+    # group sell = a x group cost + b x (group cost / package cost): `line` = (a, b) from commercial.package_sell_line, so fixed
+    # overhead / profit / bond amounts are shared by cost and the groups add up to the package. Rates only: the older form.
+    a, b = line if line is not None else ((ONE + D(overhead_rate)) / (ONE - D(margin)), ZERO)
+    package_cost = sum((sum((amt[ln["ref"]] for ln in g["lines"] if ln["kind"] != "margin"), ZERO) + hidden[g["id"]] for g in schedule["groups"]), ZERO)
     out_groups = []
     total_sell = ZERO
     for g in schedule["groups"]:
         gid = g["id"]
         line_total = sum((amt[ln["ref"]] for ln in g["lines"] if ln["kind"] != "margin"), ZERO)
         cost = line_total + hidden[gid]
-        sell = cost * k
+        sell = cost * a + (b * cost / package_cost if package_cost != 0 else ZERO)
         lines, shown = [], ZERO
         for ln in g["lines"]:
             if ln["kind"] == "margin":
@@ -182,6 +185,16 @@ def compute_schedule(schedule: dict[str, Any], sources: Sequence[dict[str, Any]]
         out_groups.append({"id": gid, "name": g["name"], "code": g.get("code", ""), "lines": full, "subtotal": subtotal,
                            "cost": cents(cost), "hidden": cents(hidden[gid]), "total": total})
         total_sell += total
+    # Each group is rounded to the cent on its own, so several groups can miss the package by a cent or two. When everything is mapped,
+    # put that rounding on the largest group (its Margin line) so the printed groups always add up to the all-in exactly.
+    gap = cents(all_in) - sum((g["total"] for g in out_groups), ZERO)
+    if gap != 0 and not unmapped and not problems and abs(gap) <= Decimal("0.01") * len(out_groups) and out_groups:
+        big = max(out_groups, key=lambda g: g["total"])
+        big["total"] += gap
+        for ln in big["lines"]:
+            if ln["kind"] == "margin":
+                ln["amount"] += gap
+        total_sell += gap
     mapped_total = sum((D(s["amount"]) for s in sources), ZERO) - sum((u["amount"] for u in unmapped), ZERO)
     gross = sum((D(s["amount"]) for s in sources), ZERO)
     diff = cents(total_sell) - cents(all_in)

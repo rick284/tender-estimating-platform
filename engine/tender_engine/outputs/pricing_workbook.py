@@ -61,8 +61,10 @@ def pricing_workbook(est: dict[str, Any], ctx: OutputContext) -> bytes:
     if c["confirmed_overlap"]:
         rows.append(("Confirmed overlap", -c["confirmed_overlap"], "Removed from the known package"))
     rows += [("Current known package before overhead and profit", c["gross_known_package"] - (c["confirmed_overlap"] or 0), "Own works plus subcontract packages"),
-             (f"Company overhead ({pct(c['overhead_rate'], 1)})", c["overhead"], "Applied across the known package"),
-             (f"Profit ({pct(c['margin'], 1)} true margin)", c["profit"], "Applied after overhead; true margin, not markup"),
+             (f"Company overhead ({c.get('overhead_basis') or pct(c['overhead_rate'], 1) + ' markup'})", c["overhead"], "Applied across the known package"),
+             *([("Bonds", c["bonds"], "Applied across the known package")] if c.get("bonds") else []),
+             *([("Retention finance", c["retention_finance"], "Applied across the known package")] if c.get("retention_finance") else []),
+             (f"Profit ({c.get('profit_basis') or pct(c['margin'], 1) + ' true margin'})", c["profit"], "Applied after overhead and bonds"),
              ("WORKING ALL-IN TENDER", c["all_in"], "Current answer to: what will this cost?")]
     for label, amount, note in rows:
         r += 1

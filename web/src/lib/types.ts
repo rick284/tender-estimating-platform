@@ -9,7 +9,7 @@ export interface Estimate {
   consolidated: {
     own_works: number; overlays: { name: string; amount: number; kind: string }[]; overlays_total: number;
     gross_known_package: number; confirmed_overlap: number; known_after_overlap: number; overhead: number;
-    profit: number; all_in: number; gross_margin_on_sell: number; overhead_rate: number; margin: number;
+    profit: number; all_in: number; gross_margin_on_sell: number; overhead_rate: number; margin: number; overhead_basis?: string; profit_basis?: string; bonds?: number; retention_finance?: number;
   };
   tender: {
     base_direct: number; pre_margin_total: number; subtotal: number; overhead: number; profit: number;
@@ -26,6 +26,7 @@ export interface Estimate {
   register_summary: { rfis: number; open_rfis: number; open_red_rfis: number; red_risks: number };
   quotes: QuoteItem[];
   scope?: ScopeOut;
+  labour_builds?: Record<string, import("./api").LabourCalc>;
   programme: ProgrammeData;
   risk_truth: RiskTruth;
   management_reserve: ManagementReserve | null;
@@ -68,7 +69,7 @@ export interface RevisionInfo {
   has_inputs: boolean; parent_n: number | null; note: string; change_count: number; edited: boolean;
 }
 export interface Change { target: string; key: string; field: string; label: string; before: string; after: string }
-export interface Edit { target: string; key: string; field?: string; op?: "add" | "delete"; value?: unknown }
+export interface Edit { target: string; key: string; field?: string; op?: "add" | "delete" | "set"; value?: unknown }
 export interface TenderDetail extends Tender { revisions: RevisionInfo[] }
 export interface TenderList { tenders: Tender[]; totals: { count: number; by_stage: Record<Stage, { count: number; value: number }> } }
 export interface Diff {

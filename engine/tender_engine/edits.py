@@ -35,6 +35,8 @@ An edit is {"target", "key", "field", "value"} (set a value) or {"target", "op":
   scope      add    key = new id ("C-xxxxxx")  value: group / title / owner / treatment / cost_refs / ... (see scope.FIELDS)   (scope coverage and interface schedule)
              set    key = id   field: any of scope.FIELDS
              delete key = id
+  labour     add    key = new library code, value: labour_rate inputs (role, hourly_rate, paid/productive hours, on-costs, evidence ...)   (NZ labour true-cost build-up)
+             set    key = code of a rate built here, value: the full inputs again (the old build is kept in its history)
   brief      set    field: any of brief.FIELDS   (what the job is, who owns it, what we know; stored in meta)
   exposure   add    key = new id ("X-xxxxxx")  value: risk_id / consequence / mode / ... (see risk_truth.FIELDS)   (Risk Truth exposure)
              set    key = id   field: any of risk_truth.FIELDS
@@ -76,6 +78,7 @@ from . import register as reg
 from . import quotes as qt
 from . import scope as sc
 from . import brief as bf
+from . import labour_rate as lab
 from . import risk_truth as rtm
 from . import management_reserve as mrm
 from . import programme as prg
@@ -179,6 +182,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     quotes = copy.deepcopy(base.quotes)
     scope = copy.deepcopy(base.scope)
     meta = dict(base.meta)
+    builds = copy.deepcopy(base.labour_builds)
     exposures = copy.deepcopy(base.risk_truth)
     reserve = copy.deepcopy(base.management_reserve)
     programme = copy.deepcopy(base.programme)
@@ -568,6 +572,33 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
             except sc.ScopeError as ex:
                 raise EditError(str(ex))
 
+        elif target == "labour":
+            code = str(key or "").strip().upper()
+            if op not in ("add", "set"):
+                raise EditError("A labour rate build is kept for its history. Make a new build to change it.")
+            try:
+                calc = lab.compute(value if isinstance(value, dict) else {})
+            except (lab.LabourError, ValueError) as ex:
+                raise EditError(str(ex))
+            i = calc["inputs"]
+            if op == "add":
+                if not LIB_CODE.match(code):
+                    raise EditError("A rate code is letters, numbers and dashes, for example LAB-CARP.")
+                if code in library:
+                    raise EditError(f"Rate code {code} already exists.")
+                library[code] = LibraryRate(code=code, description=lab.description(i), unit="hr", base_rate=calc["rate_rounded"], category="Labour",
+                                            source=lab.library_source(i, calc))
+                new_library.append(code)
+                builds[code] = {"inputs": i, "history": []}
+            else:
+                if code not in builds:
+                    raise EditError(f"{code} wasn't built here, so it can't be rebuilt here. Add a new rate instead.")
+                old = lab.compute(builds[code]["inputs"])
+                builds[code]["history"].append({"inputs": builds[code]["inputs"], "rate": str(old["rate_rounded"]), "status": old["status"]})
+                builds[code]["inputs"] = i
+                library[code] = LibraryRate(code=code, description=lab.description(i), unit="hr", base_rate=calc["rate_rounded"], category="Labour",
+                                            source=lab.library_source(i, calc))
+
         elif target == "brief":
             if op != "set":
                 raise EditError("Brief fields can only be set.")
@@ -738,6 +769,7 @@ def apply_edits(base: MasterWorkbookImport, edits: list[dict[str, Any]]) -> tupl
     m.risk_truth = exposures
     m.scope = scope
     m.meta = meta
+    m.labour_builds = builds
     m.management_reserve = reserve
     m.reference = None            # no longer the workbook as received
     return m, _net_changes(base, m, rows, qs, new_library)
@@ -818,6 +850,7 @@ def _net_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, rows: list[_R
     _quote_changes(a, b, add)
     _scope_changes(a, b, add)
     _brief_changes(a, b, add)
+    _labour_changes(a, b, add)
     _exposure_changes(a, b, add)
     _reserve_changes(a, b, add)
     _programme_changes(a, b, add)
@@ -918,6 +951,14 @@ def _scope_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> Non
     for sid, y in ib.items():
         if sid not in ia:
             add("scope", sid, "added", label(y), "", y["treatment"] or y["title"][:80])
+
+
+def _labour_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:
+    for code, bb in b.labour_builds.items():
+        if code in a.labour_builds and a.labour_builds[code]["inputs"] != bb["inputs"]:
+            ra, rb = lab.compute(a.labour_builds[code]["inputs"]), lab.compute(bb["inputs"])
+            add("labour", code, "rate", f"Labour rate {code} (rebuilt)", ra["rate_rounded"], rb["rate_rounded"])
+            add("labour", code, "status", f"Labour rate {code} status", ra["status"], rb["status"])
 
 
 def _brief_changes(a: MasterWorkbookImport, b: MasterWorkbookImport, add) -> None:
