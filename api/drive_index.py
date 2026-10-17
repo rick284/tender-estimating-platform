@@ -4,13 +4,17 @@ from __future__ import annotations
 import re
 from typing import Any
 
-STANDARD_FOLDERS = [
+# The standard job folder layout (Rick, 18 Oct 2026): the 01-07 layout of the Hobsonville job plus 00 Project Admin.
+# Every job lives in Blackline Estimating / <Client> / <Job name> / these folders.
+JOB_FOLDERS = [
+    ("00", "Project Admin"),
     ("01", "Client Issue Pack"), ("02", "Tender Source Documents"), ("03", "Supplier and Subcontractor Quotes"),
     ("04", "RFIs Correspondence and Clarifications"), ("05", "Takeoffs Markups and Programme"),
     ("06", "Estimating Working Files"), ("07", "Superseded and Archive"),
 ]
-# The job folder layout agreed with Rick (15 Oct 2026). The older 01-07 layout above is still recognised.
-JOB_FOLDERS = [
+STANDARD_FOLDERS = JOB_FOLDERS
+# The 12-folder layout proposed on 15 Oct 2026 (replaced on 18 Oct 2026). Folders already set up that way are still recognised.
+LEGACY_12_FOLDERS = [
     ("01", "Project_Admin"), ("02", "Source_Documents"), ("03", "Correspondence"), ("04", "Takeoffs_and_Scope"),
     ("05", "Supplier_and_Subcontract_Pricing"), ("06", "Estimate_Workbooks"), ("07", "Programme_and_Methodology"),
     ("08", "Risk_Allowances_and_RFIs"), ("09", "QA_and_Review"), ("10", "Issued_and_Baselines"), ("11", "Time_and_Billing"),
@@ -80,9 +84,10 @@ def _has_number(name: str, num: str) -> bool:
 
 
 def detect_layout(top_folder_names: list[str]) -> str:
-    """'12' when the folder uses the 12-folder job layout (a name matches one of its folders, or 08-12 style numbers), else '07'."""
+    """'12' when the folder uses the older 12-folder layout (a name matches one of its folders, or 08-12 style numbers), else '07'
+    (the standard 00-07 layout, where 07 is the archive)."""
     for n in top_folder_names:
-        for num, label in JOB_FOLDERS:
+        for num, label in LEGACY_12_FOLDERS:
             if _base(n) == _base(f"{num} {label}"):
                 return "12"
         if re.match(r"^\s*(08|09|1[0-2])[ _\-]", n):
@@ -98,7 +103,7 @@ def _in_archive(path: str, layout: str = "07") -> bool:
 def check_structure(top_folder_names: list[str], layout: str | None = None) -> list[dict[str, Any]]:
     """For each standard folder: found (with the actual name) or missing."""
     layout = layout or detect_layout(top_folder_names)
-    wanted = JOB_FOLDERS if layout == "12" else STANDARD_FOLDERS
+    wanted = LEGACY_12_FOLDERS if layout == "12" else JOB_FOLDERS
     res = []
     for num, label in wanted:
         hit = next((n for n in top_folder_names if _has_number(n, num)), None)
@@ -108,11 +113,12 @@ def check_structure(top_folder_names: list[str], layout: str | None = None) -> l
 
 
 def plan_folders(top_folder_names: list[str]) -> list[dict[str, Any]]:
-    """What setting up the 12-folder layout would do inside a job folder. Never renames, moves or duplicates:
-    a number already used by a differently-named folder (for example the older '01 Client Issue Pack') is left alone and reported."""
+    """What setting up the standard 00-07 layout would do inside a job folder. Never renames, moves or duplicates:
+    a number already used by a differently-named folder (for example '01_Project_Admin' from the older 12-folder layout) is left alone
+    and reported."""
     out = []
     for num, label in JOB_FOLDERS:
-        name = f"{num}_{label}"
+        name = f"{num} {label}"
         hit = next((n for n in top_folder_names if _has_number(n, num)), None)
         action = "create" if hit is None else "exists" if _base(hit) == _base(name) else "number_taken"
         out.append({"number": num, "name": name, "action": action, "actual": hit})

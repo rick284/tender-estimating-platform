@@ -98,7 +98,7 @@ function JobFolders({ tenderId, status, onDone, setErr }: { tenderId: string; st
   };
   return (
     <Panel title="Set up job folders">
-      <p className="mb-3 text-sm">The platform can add the standard job folders (01 to 12) inside this folder. It only ever <strong>creates new, empty folders</strong>: nothing is renamed, moved, overwritten or deleted, and a number already used by a differently named folder is left alone.</p>
+      <p className="mb-3 text-sm">The platform can add the standard job folders (00 Project Admin to 07 Superseded and Archive) inside this folder. It only ever <strong>creates new, empty folders</strong>: nothing is renamed, moved, overwritten or deleted, and a number already used by a differently named folder is left alone.</p>
       <ul className="mb-3 grid gap-1.5 text-sm sm:grid-cols-2">
         {plan.plan.map((p) => (
           <li key={p.number} className="flex items-center gap-2">

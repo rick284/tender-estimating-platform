@@ -101,8 +101,9 @@ def test_series_with_different_suffixes_and_ties():
 
 def test_structure_check():
     s = check_structure(["01 Client Issue Pack", "03 Quotes"])
-    assert [x["found"] for x in s] == [True, False, True, False, False, False, False]
-    assert s[0]["exact"] and not s[2]["exact"]
+    assert [x["number"] for x in s] == ["00", "01", "02", "03", "04", "05", "06", "07"]   # standard layout: 00 Project Admin + 01-07
+    assert [x["found"] for x in s] == [False, True, False, True, False, False, False, False]
+    assert s[1]["exact"] and not s[3]["exact"]
 
 
 def test_not_configured_and_isolation(client, auth):
@@ -135,7 +136,7 @@ def test_connect_flow_files_and_tenant_isolation(client, auth, drive, monkeypatc
     assert by["Drawings RevC.pdf"]["latest"] and by["Drawings RevB.pdf"]["superseded_by"] == "Drawings RevC.pdf"
     assert by["Estimate_Rev30.xlsx"]["in_archive"] and by["Drawings RevB.pdf"]["path"] == "01 Client Issue Pack"
     assert d["counts"]["loose_in_root"] == 2 and d["counts"]["superseded"] == 2
-    assert [s["found"] for s in d["structure"]] == [True, False, True, False, False, False, True]
+    assert [s["found"] for s in d["structure"]] == [False, True, False, True, False, False, False, True]   # 00 Project Admin missing
 
     # a different company sees nothing and cannot use the first company's connection
     other = {"Authorization": f"Bearer {register(client, 'b@example.com', 'Other Ltd').json()['token']}"}
@@ -192,8 +193,9 @@ from drive_index import detect_layout, plan_folders
 
 def test_plan_never_renames_or_duplicates_and_layout_is_detected():
     plan = {p["number"]: p for p in plan_folders(["01 Client Issue Pack", "02_Source_Documents", "stuff"])}
-    assert plan["01"]["action"] == "number_taken" and plan["01"]["actual"] == "01 Client Issue Pack"      # older layout: left alone
-    assert plan["02"]["action"] == "exists" and plan["03"]["action"] == "create" and len(plan) == 12
+    assert plan["01"]["action"] == "exists" and plan["00"]["action"] == "create" and plan["00"]["name"] == "00 Project Admin"
+    assert plan["02"]["action"] == "number_taken" and plan["02"]["actual"] == "02_Source_Documents"       # older 12-folder name: left alone
+    assert plan["03"]["action"] == "create" and len(plan) == 8
     assert detect_layout(["01 Client Issue Pack", "07 Superseded and Archive"]) == "07"
     assert detect_layout(["01_Project_Admin", "02_Source_Documents"]) == "12"
     files = [{"id": "a", "name": "07_Programme_and_Methodology", "is_folder": True, "path": "", "folder": ""},
@@ -225,15 +227,16 @@ def test_setup_folders_needs_the_write_permission_and_only_creates_missing_folde
     assert r.status_code in (302, 307)
     assert client.get("/api/drive/status", headers=auth).json()["can_write"] is True
     plan = client.get(f"/api/drive/tenders/{tid}/folder-plan", headers=auth).json()["plan"]
-    assert [p["action"] for p in plan].count("number_taken") == 3 and not created           # 01, 03, 07 already used by the older names
+    assert [p["action"] for p in plan].count("exists") == 3 and not created                 # 01, 03, 07 already there with the standard names
     r = client.post(f"/api/drive/tenders/{tid}/folders", headers=auth, json={"where": "linked"})
     assert r.status_code == 200, r.text
-    assert [c["name"][:2] for c in created] == ["02", "04", "05", "06", "08", "09", "10", "11", "12"]      # 01, 03, 07 are taken by the older names
+    assert [c["name"] for c in created] == ["00 Project Admin", "02 Tender Source Documents", "04 RFIs Correspondence and Clarifications",
+                                           "05 Takeoffs Markups and Programme", "06 Estimating Working Files"]      # 01, 03, 07 already exist
     assert all(c["parents"] == ["T1"] for c in created)
     # a new job folder in My Drive
     created.clear()
     r = client.post(f"/api/drive/tenders/{tid}/folders", headers=auth, json={"where": "new"})
-    assert r.status_code == 200 and len(created) == 13 and "parents" not in created[0]
+    assert r.status_code == 200 and len(created) == 9 and "parents" not in created[0]       # the job folder + 00-07
     assert client.get(f"/api/drive/tenders/{tid}", headers=auth).json()["folder"]["id"] == "N1"
 
 
