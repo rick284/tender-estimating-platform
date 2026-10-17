@@ -87,7 +87,9 @@ export interface Timesheet {
 export interface TimePing { session_id: string; tender_id: string; page: string; active_seconds: number; draft_edits: number; end: boolean }
 const tq = (o: Record<string, string>) => new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString();
 
-export interface DriveStatus { configured: boolean; connected: boolean; account: string; connected_at: string | null; read_only: boolean; can_write?: boolean; job_folders?: string[]; standard_folders: string[] }
+export interface DriveStatus { configured: boolean; connected: boolean; account: string; connected_at: string | null; read_only: boolean; can_write?: boolean; can_write_anywhere?: boolean; job_folders?: string[]; standard_folders: string[] }
+export interface DriveJobsRoot { id: string; name: string; url: string }
+export interface DriveNewJobPlan { root: DriveJobsRoot | null; client: string; job: string; clients: string[]; client_exists: boolean; job_exists: boolean; can_write_anywhere: boolean; folders: string[] }
 export interface DriveFile { id: string; name: string; path: string; mime: string; is_folder: boolean; modified: string; size: number | null; link: string; revision: string | null; latest: boolean | null; superseded_by: string | null; in_archive: boolean; ambiguous?: boolean; read: DriveRead | null }
 export interface DriveRead { status: "ok" | "partial" | "needs_ocr" | "unsupported" | "failed"; read_at: string; pages: number; chars: number; stale: boolean; warnings: string[] }
 export interface DriveReadResult { file_id: string; name: string; status: DriveRead["status"]; pages: number; warnings: string[] }
@@ -186,10 +188,13 @@ export const api = {
   driveStatus: () => request<DriveStatus>("/api/drive/status"),
   driveConnect: (tender: string, write = false) => request<{ url: string }>(`/api/drive/connect?tender=${encodeURIComponent(tender)}${write ? "&write=1" : ""}`),
   driveFolderPlan: (id: string) => request<{ folder: { id: string; name: string }; plan: { number: string; name: string; action: "create" | "exists" | "number_taken"; actual: string | null }[]; can_write: boolean }>(`/api/drive/tenders/${id}/folder-plan`),
-  driveSetupFolders: (id: string, where: "linked" | "new") => request<{ created: string[]; folder: { id: string; name: string; url: string } }>(`/api/drive/tenders/${id}/folders`, { method: "POST", body: JSON.stringify({ where }) }),
+  driveSetupFolders: (id: string, where: "linked" | "new", names?: { client: string; job: string }) => request<{ created: string[]; folder: { id: string; name: string; url: string; path?: string } }>(`/api/drive/tenders/${id}/folders`, { method: "POST", body: JSON.stringify({ where, ...(names ?? {}) }) }),
+  driveJobsRoot: () => request<{ folder: DriveJobsRoot | null }>(`/api/drive/jobs-root`),
+  driveSetJobsRoot: (folderId: string) => request<{ folder: DriveJobsRoot }>(`/api/drive/jobs-root`, { method: "PUT", body: JSON.stringify({ folder_id: folderId }) }),
+  driveNewJobPlan: (id: string, client = "", job = "") => request<DriveNewJobPlan>(`/api/drive/tenders/${id}/new-job-plan?client=${encodeURIComponent(client)}&job=${encodeURIComponent(job)}`),
   driveDisconnect: () => request<{ ok: boolean }>("/api/drive/connection", { method: "DELETE" }),
   driveFolders: (parent: string) => request<{ parent: string; folders: { id: string; name: string }[] }>(`/api/drive/folders?parent=${encodeURIComponent(parent)}`),
-  driveTender: (id: string) => request<{ folder: { id: string; name: string; url: string; linked_at: string } | null }>(`/api/drive/tenders/${id}`),
+  driveTender: (id: string) => request<{ folder: { id: string; name: string; url: string; linked_at: string; path?: string } | null }>(`/api/drive/tenders/${id}`),
   driveLink: (id: string, folderId: string) => request<{ folder: { id: string; name: string; url: string } }>(`/api/drive/tenders/${id}`, { method: "PUT", body: JSON.stringify({ folder_id: folderId }) }),
   driveUnlink: (id: string) => request<{ ok: boolean }>(`/api/drive/tenders/${id}`, { method: "DELETE" }),
   driveRead: (id: string, fileIds: string[]) => request<{ results: DriveReadResult[] }>(`/api/drive/tenders/${id}/read`, { method: "POST", body: JSON.stringify({ file_ids: fileIds }) }, LONG),

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type DriveFile, type DriveListing, type DriveRead, type DriveStatus, type DriveText } from "../lib/api";
+import { api, type DriveFile, type DriveListing, type DriveNewJobPlan, type DriveRead, type DriveStatus, type DriveText } from "../lib/api";
 import { Chip, Empty, PageHeader, Panel, Stat } from "../components/ui";
 import { Modal } from "../components/Modal";
 import { fmtDate, fmtNum } from "../lib/format";
 
 const fmtSize = (n: number | null) => (n == null ? "—" : n > 1e6 ? `${fmtNum(Math.round(n / 1e5) / 10)} MB` : `${fmtNum(Math.max(1, Math.round(n / 1e3)))} KB`);
 
-function FolderPicker({ open, onClose, onPick }: { open: boolean; onClose: () => void; onPick: (id: string) => void }) {
+function FolderPicker({ open, onClose, onPick, title = "Choose the tender's Drive folder" }: { open: boolean; onClose: () => void; onPick: (id: string) => void; title?: string }) {
   const [trail, setTrail] = useState<{ id: string; name: string }[]>([{ id: "root", name: "My Drive" }]);
   const [folders, setFolders] = useState<{ id: string; name: string }[] | null>(null);
   const [err, setErr] = useState("");
@@ -17,7 +17,7 @@ function FolderPicker({ open, onClose, onPick }: { open: boolean; onClose: () =>
     api.driveFolders(cur.id).then((r) => setFolders(r.folders)).catch((e) => setErr(e.message));
   }, [open, cur.id]);
   return (
-    <Modal open={open} onClose={onClose} title="Choose the tender's Drive folder">
+    <Modal open={open} onClose={onClose} title={title}>
       <div className="space-y-3">
         <div className="text-sm">{trail.map((t, i) => (
           <span key={t.id}>{i > 0 && " / "}<button className="underline underline-offset-4" onClick={() => setTrail(trail.slice(0, i + 1))}>{t.name}</button></span>
@@ -82,6 +82,92 @@ function TextDialog({ tenderId, file, onClose }: { tenderId: string; file: Drive
   );
 }
 
+const WRITE_NOTE = "Google words this permission as being able to see, edit, create and delete your Drive files, because adding a folder inside one you already have (your jobs folder and its client folders) needs it. This app is built to only ever create new folders: it never renames, moves, overwrites, shares or deletes anything. You can remove the permission any time at myaccount.google.com/permissions.";
+
+function NewJobFolder({ tenderId, status, open, onClose, onDone, setErr }: { tenderId: string; status: DriveStatus; open: boolean; onClose: () => void; onDone: () => void; setErr: (s: string) => void }) {
+  const [plan, setPlan] = useState<DriveNewJobPlan | null>(null);
+  const [client, setClient] = useState("");
+  const [job, setJob] = useState("");
+  const [pickRoot, setPickRoot] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [started, setStarted] = useState(false);
+  useEffect(() => {
+    if (!open) { setStarted(false); return; }
+    setMsg("");
+    api.driveNewJobPlan(tenderId).then((p) => { setPlan(p); setClient(p.client); setJob(p.job); setStarted(true); }).catch((e) => setMsg((e as Error).message));
+  }, [open, tenderId]);
+  useEffect(() => {
+    if (!open || !started) return;
+    const t = setTimeout(() => { api.driveNewJobPlan(tenderId, client, job).then(setPlan).catch(() => undefined); }, 350);
+    return () => clearTimeout(t);
+  }, [client, job, open, started, tenderId]);
+  const allow = async () => { try { window.location.href = (await api.driveConnect(tenderId, true)).url; } catch (e) { setErr((e as Error).message); } };
+  const chooseRoot = async (id: string) => {
+    setPickRoot(false); setMsg("");
+    try { await api.driveSetJobsRoot(id); setPlan(await api.driveNewJobPlan(tenderId, client, job)); } catch (e) { setMsg((e as Error).message); }
+  };
+  const create = async () => {
+    setBusy(true); setMsg("");
+    try { await api.driveSetupFolders(tenderId, "new", { client: client.trim(), job: job.trim() }); onClose(); await onDone(); }
+    catch (e) { setMsg((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  const canWrite = !!(plan?.can_write_anywhere ?? status.can_write_anywhere);
+  const ready = !!plan?.root && canWrite && client.trim() && job.trim();
+  return (
+    <>
+      <Modal open={open} onClose={onClose} title="Create the job folder">
+        <div className="space-y-4 text-sm">
+          <p>The job folder is made inside your jobs folder, under the client&rsquo;s folder. It is never made in My Drive. A client or job folder that already exists is used as it is, never duplicated.</p>
+          {msg && <div role="alert" className="border border-red-line bg-red-bg px-4 py-3 text-red-fg">{msg}</div>}
+          {!plan && !msg && <p className="text-muted-foreground" aria-live="polite">Checking your Drive…</p>}
+          {plan && (
+            <>
+              <div>
+                <div className="label mb-1">Jobs folder</div>
+                {plan.root
+                  ? <div className="flex flex-wrap items-center gap-3"><span className="font-medium">{plan.root.name}</span><button className="underline underline-offset-4" onClick={() => setPickRoot(true)}>Change</button></div>
+                  : <div className="space-y-2"><p className="text-muted-foreground">Choose the top folder that holds all your jobs (for example &ldquo;Blackline Estimating&rdquo;). This is set once for the company.</p>
+                      <button className="btn btn-solid" onClick={() => setPickRoot(true)}>Choose the jobs folder…</button></div>}
+              </div>
+              <label className="block"><span className="label mb-1 block">Client folder</span>
+                <input list="drive-clients" value={client} onChange={(e) => setClient(e.target.value)} maxLength={120} className="h-9 w-full border bg-background px-3 focus:border-primary" aria-label="Client folder name" />
+                <datalist id="drive-clients">{plan.clients.map((c) => <option key={c} value={c} />)}</datalist>
+              </label>
+              <label className="block"><span className="label mb-1 block">Job folder</span>
+                <input value={job} onChange={(e) => setJob(e.target.value)} maxLength={120} className="h-9 w-full border bg-background px-3 focus:border-primary" aria-label="Job folder name" />
+              </label>
+              {plan.root && client.trim() && job.trim() && (
+                <div className="border bg-muted/40 px-3 py-2">
+                  <div className="font-medium">{plan.root.name} / {client.trim()} / {job.trim()}</div>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    <Chip tone={plan.client_exists ? "green" : "neutral"}>{plan.client_exists ? "Client folder exists: used as it is" : "Client folder will be created"}</Chip>
+                    <Chip tone={plan.job_exists ? "amber" : "neutral"}>{plan.job_exists ? "Job folder exists: linked, missing subfolders added" : "Job folder will be created"}</Chip>
+                  </div>
+                  <ul className="mt-2 grid gap-0.5 text-muted-foreground sm:grid-cols-2">{plan.folders.map((f) => <li key={f}>{f}</li>)}</ul>
+                </div>
+              )}
+              {!canWrite && (
+                <div className="space-y-2 border border-amber-line bg-amber-bg px-3 py-2 text-amber-fg">
+                  <p>Drive needs permission to add folders inside your existing folders.</p>
+                  <button className="btn btn-solid" onClick={allow}>Allow Drive to add folders…</button>
+                  <p className="text-xs">{WRITE_NOTE}</p>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-3">
+                <button className="btn btn-solid" disabled={!ready || busy} onClick={create}>{busy ? "Creating…" : "Create job folder"}</button>
+                <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+      <FolderPicker open={pickRoot} onClose={() => setPickRoot(false)} onPick={chooseRoot} title="Choose your jobs folder (e.g. Blackline Estimating)" />
+    </>
+  );
+}
+
 function JobFolders({ tenderId, status, onDone, setErr }: { tenderId: string; status: DriveStatus; onDone: () => void; setErr: (s: string) => void }) {
   const [plan, setPlan] = useState<Awaited<ReturnType<typeof api.driveFolderPlan>> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -90,7 +176,7 @@ function JobFolders({ tenderId, status, onDone, setErr }: { tenderId: string; st
   if (!plan) return null;
   const missing = plan.plan.filter((p) => p.action === "create");
   const allow = async () => { try { window.location.href = (await api.driveConnect(tenderId, true)).url; } catch (e) { setErr((e as Error).message); } };
-  const run = async (where: "linked" | "new") => {
+  const run = async (where: "linked") => {
     setErr(""); setDone(""); setBusy(true);
     try { const r = await api.driveSetupFolders(tenderId, where); setDone(`Created ${r.created.length} folder${r.created.length === 1 ? "" : "s"}.`); await onDone(); setPlan(await api.driveFolderPlan(tenderId)); }
     catch (e) { setErr((e as Error).message); }
@@ -110,18 +196,17 @@ function JobFolders({ tenderId, status, onDone, setErr }: { tenderId: string; st
       <div className="flex flex-wrap items-center gap-3">
         {!plan.can_write && <button className="btn btn-solid" onClick={allow}>Allow Drive to add folders…</button>}
         {plan.can_write && missing.length > 0 && <button className="btn btn-solid" disabled={busy} onClick={() => run("linked")}>{busy ? "Creating…" : `Add ${missing.length} missing folder${missing.length === 1 ? "" : "s"}`}</button>}
-        {plan.can_write && missing.length > 0 && <button className="btn btn-ghost" disabled={busy} onClick={() => run("new")}>Create a new job folder in My Drive instead</button>}
         {missing.length === 0 && <span className="text-sm text-muted-foreground">Nothing to add.</span>}
         {done && <span role="status" className="text-sm text-green-fg">{done}</span>}
       </div>
-      {!plan.can_write && <p className="mt-2 text-xs text-muted-foreground">This asks Google for one extra, narrow permission (“add files and folders this app creates”). It cannot see, change or delete your other files. You can remove it any time at myaccount.google.com/permissions.</p>}
+      {!plan.can_write && <p className="mt-2 text-xs text-muted-foreground">{WRITE_NOTE}</p>}
     </Panel>
   );
 }
 
 export function DriveDocs({ tenderId }: { tenderId: string }) {
   const [status, setStatus] = useState<DriveStatus | null>(null);
-  const [folder, setFolder] = useState<{ id: string; name: string; url: string } | null | undefined>(undefined);
+  const [folder, setFolder] = useState<{ id: string; name: string; url: string; path?: string } | null | undefined>(undefined);
   const [listing, setListing] = useState<DriveListing | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -130,6 +215,7 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [reading, setReading] = useState("");
   const [view, setView] = useState<DriveFile | null>(null);
+  const [newJob, setNewJob] = useState(false);
 
   const load = useCallback(async () => {
     setErr("");
@@ -175,7 +261,7 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
   const unread = files.filter((f) => f.latest !== false && !f.in_archive && (!f.read || f.read.stale)).map((f) => f.id);
   return (
     <div>
-      <PageHeader title="Drive Documents" sub="The tender's Google Drive folder, read-only. The platform can look at the files but never change, move or delete them." />
+      <PageHeader title="Drive Documents" sub="The tender's Google Drive job folder. The platform reads the files and, when you ask, adds new folders; it never changes, moves or deletes anything." />
       {note && note !== "connected" && <div role="alert" className="mb-4 border border-amber-line bg-amber-bg px-4 py-3 text-sm text-amber-fg">Google Drive was not connected ({note}). Try again.</div>}
       {err && <div role="alert" className="mb-4 border border-red-line bg-red-bg px-4 py-3 text-sm text-red-fg">{err}</div>}
       {status && !status.configured && <Empty title="Drive is not switched on yet" body="The Google connection has not been set up on this server. Once the Google client ID and secret are added, a Connect button will appear here." />}
@@ -188,17 +274,17 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
       {status?.connected && (
         <>
           <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
-            <Chip tone="green">Connected</Chip><span>{status.account || "Google account"} · {status.can_write ? "can add new folders (cannot change or delete anything)" : "read-only"}</span>
+            <Chip tone="green">Connected</Chip><span>{status.account || "Google account"} · {status.can_write ? "can add new folders (this app never changes or deletes anything)" : "read-only"}</span>
             <button className="underline underline-offset-4" onClick={disconnect}>Disconnect</button>
           </div>
-          {folder === null && <Empty title="No folder linked to this tender" body="Choose the folder that holds this tender's documents (the job folder, not the folder above it)." />}
+          {folder === null && <Empty title="No folder linked to this tender" body="Choose the job folder that already holds this tender's documents, or create it inside your jobs folder (for example Blackline Estimating / client / job)." />}
           {folder === null && <div className="mt-4 flex flex-wrap gap-3"><button className="btn btn-solid" onClick={() => setPick(true)}>Choose folder</button>
-            {status.can_write ? <button className="btn btn-ghost" onClick={async () => { try { await api.driveSetupFolders(tenderId, "new"); await load(); } catch (e) { setErr((e as Error).message); } }}>Create a new job folder in My Drive</button>
-              : <button className="btn btn-ghost" onClick={async () => { try { window.location.href = (await api.driveConnect(tenderId, true)).url; } catch (e) { setErr((e as Error).message); } }}>Allow Drive to add folders…</button>}</div>}
+            <button className="btn btn-ghost" onClick={() => setNewJob(true)}>Create the job folder…</button></div>}
+          {status && <NewJobFolder tenderId={tenderId} status={status} open={newJob} onClose={() => setNewJob(false)} onDone={load} setErr={setErr} />}
           {folder && (
             <div className="space-y-5">
               <div className="flex flex-wrap items-center gap-3 text-sm">
-                <span className="font-medium">{folder.name}</span>
+                <span className="font-medium">{folder.path ?? folder.name}</span>
                 {folder.url && <a className="underline underline-offset-4" href={folder.url} target="_blank" rel="noreferrer">Open in Drive</a>}
                 <button className="underline underline-offset-4" onClick={() => setPick(true)}>Change folder</button>
                 <button className="underline underline-offset-4" onClick={load} disabled={busy}>{busy ? "Reading…" : "Refresh"}</button>
@@ -210,7 +296,7 @@ export function DriveDocs({ tenderId }: { tenderId: string }) {
                     <Stat label="Files" value={fmtNum(listing.counts.files)} />
                     <Stat label="Latest revisions" value={fmtNum(listing.counts.latest_revisions)} />
                     <Stat label="Superseded" value={fmtNum(listing.counts.superseded)} sub="a newer revision sits beside it" />
-                    <Stat label="Loose in main folder" value={fmtNum(listing.counts.loose_in_root)} sub="not filed in 01–07" />
+                    <Stat label="Loose in main folder" value={fmtNum(listing.counts.loose_in_root)} sub="not filed in a subfolder" />
                   </div>
                   {listing.truncated && <div className="border border-amber-line bg-amber-bg px-4 py-3 text-sm text-amber-fg">Some deeper subfolders were not read (the folder is very large or nested more than six levels).</div>}
                   <Panel title="Job folder structure">

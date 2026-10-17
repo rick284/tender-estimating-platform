@@ -1,6 +1,8 @@
 """Minimal Google Drive client (OAuth, file listing, folder creation). The HTTP transport is injectable so tests never
-touch the network. Default scope is drive.readonly (look, never change). The optional drive.file permission only ever lets the
-platform create NEW folders and files it makes itself: it cannot see, change or delete anything else."""
+touch the network. Default scope is drive.readonly (look, never change). The optional write permission is Google's full `drive`
+scope, because creating a job folder inside an EXISTING folder the app did not make (Blackline Estimating / <Client>) is not
+allowed with the narrow drive.file scope. Whatever Google's wording says, THIS CLIENT ONLY EVER CREATES: `create_folder` is the
+one write call; it never renames, moves, overwrites, shares or deletes (tests assert that only folder-create POSTs are sent)."""
 from __future__ import annotations
 import base64
 import hashlib
@@ -14,7 +16,8 @@ import config
 from drive_index import FOLDER_MIME
 
 SCOPES = "https://www.googleapis.com/auth/drive.readonly openid email"
-SCOPES_WRITE = "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file openid email"
+SCOPE_DRIVE = "https://www.googleapis.com/auth/drive"
+SCOPES_WRITE = f"https://www.googleapis.com/auth/drive.readonly {SCOPE_DRIVE} openid email"
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 API = "https://www.googleapis.com/drive/v3"
@@ -49,7 +52,13 @@ def decrypt(s: str) -> str:
 
 
 def can_write(scopes: str) -> bool:
-    return "auth/drive.file" in (scopes or "")
+    """Any write permission (the older narrow drive.file grant, or the full drive grant)."""
+    return "auth/drive.file" in (scopes or "") or can_write_anywhere(scopes)
+
+
+def can_write_anywhere(scopes: str) -> bool:
+    """The full drive grant: needed to add a job folder inside folders the app did not create (Blackline Estimating / <Client>)."""
+    return SCOPE_DRIVE in (scopes or "").split()
 
 
 def auth_url(state: str, write: bool = False) -> str:
@@ -98,7 +107,8 @@ async def create_folder(token: str, name: str, parent_id: str | None) -> dict[st
     async with _client() as c:
         r = await c.post(f"{API}/files", params={"fields": "id,name,webViewLink", "supportsAllDrives": "true"}, json=body, headers={"Authorization": f"Bearer {token}"})
     if r.status_code in (403, 404):
-        raise DriveError("Google would not let this app add a folder there. With the narrow permission it uses, Google only lets it add to folders it created itself.")
+        raise DriveError("Google would not let this app add a folder there. Press 'Allow Drive to add folders' again (the permission may be the older, narrower one), "
+                         "and check the connected account can edit that folder.")
     if r.status_code != 200:
         raise DriveError("Google Drive had a problem creating the folder. Please try again.")
     return r.json()
@@ -119,6 +129,15 @@ async def list_children(token: str, folder_id: str, only_folders: bool = False) 
         page = d.get("nextPageToken")
         if not page:
             return out
+
+
+def _same(a: str, b: str) -> bool:
+    return " ".join(a.split()).casefold() == " ".join(b.split()).casefold()
+
+
+async def find_folder(token: str, parent_id: str, name: str) -> dict[str, Any] | None:
+    """The folder called `name` directly inside `parent_id` (case and spacing ignored), or None."""
+    return next((f for f in await list_children(token, parent_id, only_folders=True) if _same(f["name"], name)), None)
 
 
 async def get_file(token: str, file_id: str) -> dict[str, Any]:

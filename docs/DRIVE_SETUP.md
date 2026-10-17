@@ -27,13 +27,18 @@ Save; Render restarts the service.
 
 ## C. Connect inside the platform
 Open a tender > **Drive Documents** > **Connect Google Drive** > approve on Google > **Choose folder**
-(for example `329 Hobsonville Road`) > the file list appears with latest/superseded revisions and a check of the 01-07 folders.
+(for example `329 Hobsonville Road`) > the file list appears with latest/superseded revisions and a check of the 00-07 job folders.
 
 ## D. Optional: let the platform add job folders (write permission)
-By default Drive is read-only. On a tender's **Drive Documents** page, **Set up job folders** > **Allow Drive to add folders** asks Google for one extra, narrow permission (`drive.file`). Add `https://www.googleapis.com/auth/drive.file` under Data access / Scopes in the Google Cloud consent screen first.
-- The platform then only ever **creates new, empty folders** (01_Project_Admin ... 12_Delivery_and_Actuals). It never renames, moves, overwrites or deletes, and it skips a number already used by a differently named folder (for example the older `01 Client Issue Pack`).
-- Google only lets a `drive.file` app add to folders it created itself. If Google refuses to add inside your existing job folder, use **Create a new job folder in My Drive instead** (the tender is linked to the new folder), or create the subfolders by hand.
-- Not yet tested against real Google: this is the first thing to try after deploying.
+By default Drive is read-only. To let the platform create job folders:
+1. Google Cloud console > Google Auth Platform > **Data access** > **Add or remove scopes** > tick (or paste) `https://www.googleapis.com/auth/drive` > Update > **Save**.
+2. In the platform, open a tender > **Drive Documents** > **Allow Drive to add folders** and approve on Google (Google will list "See, edit, create and delete all of your Google Drive files": that is Google's wording for this permission; the narrower `drive.file` permission cannot add a folder inside a folder you made yourself, such as Blackline Estimating).
+3. **Create the job folder…** > **Choose the jobs folder…** once for the company (for example `Blackline Estimating`) > type or pick the client (existing client folders are offered) > check the job name > **Create job folder**.
+
+Where it goes: always `<jobs folder> / <client> / <job>` with `00 Project Admin` ... `07 Superseded and Archive` inside. Never My Drive. An existing client or job folder is used as it is (never duplicated); only missing subfolders are added.
+- The platform's code only ever **creates new, empty folders**. It never renames, moves, overwrites, shares or deletes, and it skips a number already used by a differently named folder.
+- **Set up job folders** on a linked folder adds the missing 00-07 subfolders to it.
+- Remove the permission any time at https://myaccount.google.com/permissions (then reconnect read-only).
 
 ## Notes
 - Google shows "Google hasn't verified this app" while in Testing mode: Advanced > continue. Expected.

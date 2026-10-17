@@ -222,7 +222,7 @@ def test_setup_folders_needs_the_write_permission_and_only_creates_missing_folde
     client.get("/api/drive/callback", params={"code": "c", "state": dict(up.parse_qsl(up.urlparse(client.get("/api/drive/connect", headers=auth).json()["url"]).query))["state"]})
     assert client.put(f"/api/drive/tenders/{tid}", headers=auth, json={"folder_id": "T1"}).status_code == 200
     q = dict(up.parse_qsl(up.urlparse(client.get("/api/drive/connect?write=1", headers=auth).json()["url"]).query))
-    assert "auth/drive.file" in q["scope"] and "auth/drive.readonly" in q["scope"]
+    assert dc.SCOPE_DRIVE in q["scope"].split() and "auth/drive.readonly" in q["scope"]
     r = client.get("/api/drive/callback", params={"code": "c", "state": q["state"]}, follow_redirects=False)
     assert r.status_code in (302, 307)
     assert client.get("/api/drive/status", headers=auth).json()["can_write"] is True
@@ -233,11 +233,10 @@ def test_setup_folders_needs_the_write_permission_and_only_creates_missing_folde
     assert [c["name"] for c in created] == ["00 Project Admin", "02 Tender Source Documents", "04 RFIs Correspondence and Clarifications",
                                            "05 Takeoffs Markups and Programme", "06 Estimating Working Files"]      # 01, 03, 07 already exist
     assert all(c["parents"] == ["T1"] for c in created)
-    # a new job folder in My Drive
+    # a NEW job folder is never made in My Drive: it needs the company's jobs folder AND the full permission (this grant is the narrow one)
     created.clear()
     r = client.post(f"/api/drive/tenders/{tid}/folders", headers=auth, json={"where": "new"})
-    assert r.status_code == 200 and len(created) == 9 and "parents" not in created[0]       # the job folder + 00-07
-    assert client.get(f"/api/drive/tenders/{tid}", headers=auth).json()["folder"]["id"] == "N1"
+    assert r.status_code == 409 and "jobs folder" in r.json()["detail"] and not created
 
 
 def test_setup_folders_refused_without_write_and_google_refusal_is_explained(client, auth, drive, monkeypatch):
@@ -251,4 +250,67 @@ def test_setup_folders_refused_without_write_and_google_refusal_is_explained(cli
     asyncio.run(db.integrations.update_one({"kind": "google_drive"}, {"$set": {"scopes": "https://www.googleapis.com/auth/drive.file"}}))
     monkeypatch.setattr(dc, "TRANSPORT", httpx.MockTransport(lambda r: httpx.Response(404, json={}) if r.method == "POST" and r.url.path == "/drive/v3/files" else handler(r)))
     r = client.post(f"/api/drive/tenders/{tid}/folders", headers=auth, json={"where": "linked"})
-    assert r.status_code == 409 and "only lets it add to folders it created" in r.json()["detail"]
+    assert r.status_code == 409 and "Allow Drive to add folders" in r.json()["detail"]
+
+
+def test_new_job_folder_goes_inside_jobs_folder_and_client_folder_never_my_drive(client, auth, drive, monkeypatch):
+    """Rick, 18 Oct 2026: a new job folder must land in <jobs folder> / <Client> / <Job name>, e.g. Blackline Estimating / Dave Stewart /
+    329 Hobsonville Road, never in My Drive. Existing client and job folders are reused, never duplicated."""
+    monkeypatch.setitem(TREE, "root", TREE["root"] + [{"id": "BE", "name": "Blackline Estimating", "mimeType": FOLDER, "webViewLink": "https://x/BE"}])
+    monkeypatch.setitem(TREE, "BE", [{"id": "C1", "name": "Dave Stewart", "mimeType": FOLDER}])
+    monkeypatch.setitem(TREE, "C1", [{"id": "T9", "name": "Existing Job", "mimeType": FOLDER, "webViewLink": "https://x/T9"}])
+    created = []
+
+    def h(request):
+        if request.method == "POST" and request.url.path == "/drive/v3/files":
+            body = json.loads(request.content)
+            assert set(body) <= {"name", "mimeType", "parents"} and body["mimeType"] == FOLDER and body.get("parents")   # only folder creates, always with a parent
+            created.append(body)
+            return httpx.Response(200, json={"id": f"N{len(created)}", "name": body["name"], "webViewLink": "https://x/" + body["name"]})
+        if request.url.host == "oauth2.googleapis.com" and dict(up.parse_qsl(request.content.decode()))["grant_type"] == "authorization_code":
+            return httpx.Response(200, json={"access_token": "AT", "refresh_token": "RT-secret",
+                                             "scope": "openid email https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive"})
+        assert request.method == "GET" or request.url.host == "oauth2.googleapis.com"      # Drive itself only ever gets reads and folder creates
+        return handler(request)
+    monkeypatch.setattr(dc, "TRANSPORT", httpx.MockTransport(h))
+    mk = lambda: client.post("/api/tenders", headers=auth, files={"file": ("a.xlsx", __import__("factory").make_workbook())}).json()["id"]
+    t1, t2, t3 = mk(), mk(), mk()
+    q = dict(up.parse_qsl(up.urlparse(client.get("/api/drive/connect?write=1", headers=auth).json()["url"]).query))
+    client.get("/api/drive/callback", params={"code": "c", "state": q["state"]})
+    st = client.get("/api/drive/status", headers=auth).json()
+    assert st["can_write"] and st["can_write_anywhere"]
+
+    # no jobs folder chosen yet: refused, nothing created
+    r = client.post(f"/api/drive/tenders/{t1}/folders", headers=auth, json={"where": "new", "client": "Dave Stewart", "job": "New Job"})
+    assert r.status_code == 409 and "jobs folder" in r.json()["detail"] and not created
+    assert client.put("/api/drive/jobs-root", headers=auth, json={"folder_id": "D1"}).status_code == 422          # a file, not a folder
+    assert client.put("/api/drive/jobs-root", headers=auth, json={"folder_id": "BE"}).json()["folder"]["name"] == "Blackline Estimating"
+
+    plan = client.get(f"/api/drive/tenders/{t1}/new-job-plan", headers=auth, params={"client": "Dave Stewart", "job": "New Job"}).json()
+    assert plan["root"]["id"] == "BE" and plan["clients"] == ["Dave Stewart"] and plan["client_exists"] and not plan["job_exists"]
+    assert plan["folders"][0] == "00 Project Admin" and len(plan["folders"]) == 8 and not created
+
+    # existing client (spacing/case ignored): only the job folder and 00-07 are created, inside it
+    r = client.post(f"/api/drive/tenders/{t1}/folders", headers=auth, json={"where": "new", "client": "dave  stewart", "job": "New Job"})
+    assert r.status_code == 200, r.text
+    assert created[0] == {"name": "New Job", "mimeType": FOLDER, "parents": ["C1"]}
+    assert [c["name"] for c in created[1:]] == [f"{n} {l}" for n, l in __import__("drive_index").JOB_FOLDERS] and all(c["parents"] == ["N1"] for c in created[1:])
+    link = client.get(f"/api/drive/tenders/{t1}", headers=auth).json()["folder"]
+    assert link["id"] == "N1" and link["path"] == "Blackline Estimating / Dave Stewart / New Job"
+
+    # a new client: its folder is made inside the jobs folder first
+    created.clear()
+    r = client.post(f"/api/drive/tenders/{t2}/folders", headers=auth, json={"where": "new", "client": "Acme Civil", "job": "12 Main Street"})
+    assert r.status_code == 200, r.text
+    assert created[0] == {"name": "Acme Civil", "mimeType": FOLDER, "parents": ["BE"]} and created[1] == {"name": "12 Main Street", "mimeType": FOLDER, "parents": ["N1"]}
+    assert len(created) == 10
+
+    # an existing job folder is reused (linked), never duplicated; only its missing subfolders are added
+    created.clear()
+    r = client.post(f"/api/drive/tenders/{t3}/folders", headers=auth, json={"where": "new", "client": "Dave Stewart", "job": "existing job"})
+    assert r.status_code == 200, r.text
+    assert len(created) == 8 and all(c["parents"] == ["T9"] for c in created)
+    assert client.get(f"/api/drive/tenders/{t3}", headers=auth).json()["folder"]["id"] == "T9"
+
+    # names are required
+    assert client.post(f"/api/drive/tenders/{t3}/folders", headers=auth, json={"where": "new", "client": " ", "job": "x"}).status_code in (409, 422)
