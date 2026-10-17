@@ -10,7 +10,7 @@ import config
 import drive_client as dc
 from db import get_db
 import doc_text
-from drive_index import JOB_FOLDERS, STANDARD_FOLDERS, analyse, check_structure, plan_folders
+from drive_index import FOLDER_MIME, JOB_FOLDERS, STANDARD_FOLDERS, analyse, check_structure, plan_folders
 from security import current_user
 from services import audit, now
 
@@ -41,7 +41,8 @@ async def status(user: dict[str, Any] = Depends(current_user)):
     doc = await _integration(user)
     return {"configured": dc.configured(), "connected": bool(doc), "account": doc.get("account", "") if doc else "",
             "connected_at": doc["connected_at"].isoformat() if doc else None, "read_only": not (doc and dc.can_write(doc.get("scopes", ""))),
-            "can_write": bool(doc and dc.can_write(doc.get("scopes", ""))), "job_folders": [f"{n} {l}" for n, l in JOB_FOLDERS],
+            "can_write": bool(doc and dc.can_write(doc.get("scopes", ""))),
+            "can_write_anywhere": bool(doc and dc.can_write_anywhere(doc.get("scopes", ""))), "job_folders": [f"{n} {l}" for n, l in JOB_FOLDERS],
             "standard_folders": [f"{n} {l}" for n, l in STANDARD_FOLDERS]}
 
 
@@ -100,6 +101,71 @@ async def browse(parent: str = Query("root", max_length=100), user: dict[str, An
     except dc.DriveError as e:
         raise HTTPException(409, str(e))
     return {"parent": parent, "folders": [{"id": f["id"], "name": f["name"]} for f in fs]}
+
+
+# ---- the company's jobs folder: every new job folder goes inside it, as <jobs folder> / <Client> / <Job name> ----------------------
+
+async def _jobs_root(user: dict[str, Any]) -> dict[str, Any] | None:
+    org = await get_db().orgs.find_one({"_id": user["org_id"]}) or {}
+    return org.get("drive_jobs_root")
+
+
+@router.get("/jobs-root")
+async def get_jobs_root(user: dict[str, Any] = Depends(current_user)):
+    return {"folder": await _jobs_root(user)}
+
+
+@router.put("/jobs-root")
+async def set_jobs_root(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)):
+    """Choose the company's top jobs folder once (for example 'Blackline Estimating'). New job folders are made inside it, under the client's folder."""
+    fid = str(body.get("folder_id", "")).strip()
+    if not fid or len(fid) > 100:
+        raise HTTPException(422, "Choose a folder.")
+    tok = await _token(user)
+    try:
+        f = await dc.get_file(tok, fid)
+    except dc.DriveError as e:
+        raise HTTPException(409, str(e))
+    if f["mimeType"] != FOLDER_MIME:
+        raise HTTPException(422, "That is a file, not a folder.")
+    root = {"id": f["id"], "name": f["name"], "url": f.get("webViewLink", ""), "set_at": now().isoformat(), "set_by": user["_id"]}
+    db = get_db()
+    await db.orgs.update_one({"_id": user["org_id"]}, {"$set": {"drive_jobs_root": root}})
+    await audit(db, user, "drive.set_jobs_root", "google_drive", f["name"])
+    return {"folder": root}
+
+
+def _clean_name(s: Any, what: str) -> str:
+    name = " ".join(str(s or "").replace("/", "-").split())[:120]
+    if not name:
+        raise HTTPException(422, f"Type the {what} folder name.")
+    return name
+
+
+@router.get("/tenders/{tender_id}/new-job-plan")
+async def new_job_plan(tender_id: str, client: str = Query("", max_length=160), job: str = Query("", max_length=160),
+                       user: dict[str, Any] = Depends(current_user)):
+    """What 'Create the job folder' would do: <jobs folder> / <Client> / <Job name> / 00-07. Read-only. Existing folders are reused, never duplicated."""
+    t = await _tender(user, tender_id)
+    doc = await _integration(user)
+    root = await _jobs_root(user)
+    client_name = " ".join((client or t.get("client", "")).split())[:120]
+    job_name = " ".join((job or t.get("name", "")).split())[:120]
+    out = {"root": root, "client": client_name, "job": job_name, "clients": [], "client_exists": False, "job_exists": False,
+           "can_write_anywhere": bool(doc and dc.can_write_anywhere(doc.get("scopes", ""))), "folders": [f"{n} {l}" for n, l in JOB_FOLDERS]}
+    if not root:
+        return out
+    tok = await _token(user)
+    try:
+        kids = await dc.list_children(tok, root["id"], only_folders=True)
+        out["clients"] = [k["name"] for k in kids]
+        cf = next((k for k in kids if dc._same(k["name"], client_name)), None) if client_name else None
+        out["client_exists"] = bool(cf)
+        if cf and job_name:
+            out["job_exists"] = bool(await dc.find_folder(tok, cf["id"], job_name))
+    except dc.DriveError as e:
+        raise HTTPException(409, str(e))
+    return out
 
 
 async def _tender(user: dict[str, Any], tender_id: str) -> dict[str, Any]:
@@ -164,8 +230,9 @@ async def folder_plan(tender_id: str, user: dict[str, Any] = Depends(current_use
 
 @router.post("/tenders/{tender_id}/folders")
 async def setup_folders(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)):
-    """Create the missing job subfolders. where='linked' adds them inside the linked folder; where='new' makes a new job folder in My Drive
-    (named after the tender), adds them there and links the tender to it. New folders only: nothing is renamed, moved, overwritten or deleted."""
+    """Create the missing job subfolders. where='linked' adds them inside the linked folder. where='new' makes the job folder inside the
+    company's jobs folder as <jobs folder> / <Client> / <Job name> (an existing client or job folder of that name is reused, never duplicated),
+    adds 00-07 there and links the tender to it. Never in My Drive. New folders only: nothing is renamed, moved, overwritten or deleted."""
     t = await _tender(user, tender_id)
     doc = await _integration(user)
     if not doc or not dc.can_write(doc.get("scopes", "")):
@@ -178,11 +245,28 @@ async def setup_folders(tender_id: str, body: dict[str, Any], user: dict[str, An
     created: list[str] = []
     try:
         if where == "new":
-            root = await dc.create_folder(tok, t["name"][:120] or "Job", None)
-            link = {"id": root["id"], "name": root["name"], "url": root.get("webViewLink", ""), "linked_at": now().isoformat()}
+            jobs_root = await _jobs_root(user)
+            if not jobs_root:
+                raise HTTPException(409, "Choose the company's jobs folder first (for example 'Blackline Estimating'). New job folders go inside it, never in My Drive.")
+            if not dc.can_write_anywhere(doc.get("scopes", "")):
+                raise HTTPException(409, "Drive needs the permission to add folders inside your existing folders. Press 'Allow Drive to add folders' and approve it.")
+            client_name, job_name = _clean_name(body.get("client") or t.get("client"), "client"), _clean_name(body.get("job") or t.get("name"), "job")
+            cf = await dc.find_folder(tok, jobs_root["id"], client_name)
+            if not cf:
+                cf = await dc.create_folder(tok, client_name, jobs_root["id"])
+                created.append(f"{client_name} (client folder)")
+            jf = await dc.find_folder(tok, cf["id"], job_name)
+            if not jf:
+                jf = await dc.create_folder(tok, job_name, cf["id"])
+                created.append(f"{job_name} (job folder)")
+                names: list[str] = []
+            else:
+                names = [f["name"] for f in await dc.list_children(tok, jf["id"], only_folders=True)]
+            if not jf.get("webViewLink"):
+                jf = {**jf, **(await dc.get_file(tok, jf["id"]))}
+            link = {"id": jf["id"], "name": jf["name"], "url": jf.get("webViewLink", ""), "linked_at": now().isoformat(),
+                    "path": f"{jobs_root['name']} / {cf['name']} / {jf['name']}"}
             await db.tenders.update_one({"_id": t["_id"]}, {"$set": {"drive_folder": link}})
-            created.append(root["name"])
-            names: list[str] = []
         else:
             link = t.get("drive_folder")
             if not link:
