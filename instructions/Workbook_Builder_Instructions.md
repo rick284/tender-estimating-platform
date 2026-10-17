@@ -146,6 +146,18 @@ Write each question to the RFI Log with the **assumption priced while it is open
 
 Do not deliver anything else unless Rick asks.
 
+**Filing.** Every file you deliver or receive belongs in the job's named folder, `Blackline Estimating / <Client> / <Job name> /`:
+- `00 Project Admin`: job record, scope of work, proposal, production programme, go-ahead, decision log, handover;
+- `01 Client Issue Pack`: the current issue only;
+- `02 Tender Source Documents`;
+- `03 Supplier and Subcontractor Quotes`: one folder per supplier;
+- `04 RFIs Correspondence and Clarifications`: emails saved by date and Email ID;
+- `05 Takeoffs Markups and Programme`;
+- `06 Estimating Working Files`: every workbook revision;
+- `07 Superseded and Archive`.
+
+This layout is a guide: add folders whenever a document needs a better home. Never overwrite or delete a revision; supersede it to `07`. If you cannot write to Drive, give Rick the folder tree and a file-by-file list of where each file goes. (Full rules: `instructions/senior-estimator/17_Job_Filing_Standard.md` in the Mason repository.)
+
 **Revision naming.** Follow the revision Rick gives you (for example `Rev0`, `Rev1`). On a re-run, copy the previous workbook, keep its history, and record what changed in the **Change Log** sheet (section 8.7).
 
 ---
@@ -650,6 +662,7 @@ When the app's importer learns to read a new sheet or column, section 5 / 8 is u
 ### Revision history
 | Rev | Date | Change | Reason |
 |---|---|---|---|
+| Rev6.1 | 18 Oct 2026 | Section 2: filing rule for the named job folder (00 Project Admin to 07 Superseded and Archive, extra folders as needed, never overwrite or delete) | Rick: everything must be filed in an appropriate subfolder inside a named main folder, so it is traceable |
 | Rev6 | 18 Oct 2026 | Appendix A work breakdown and resource detail standard (when an operation gets its own line, what every build-up shows, minimum operation checklists for preliminaries, ESC, earthworks, foundation excavation, drainage, service trenches, pavements and crossings, retaining, testing; capacity; reporting); 1A.1 item 3 requires every package broken into operations; 1A.11 one step at a time, each step finished before it is presented, accuracy before speed (time allowances are a plan, not a cap) | Rick, 18 Oct 2026: the step-by-step run gave a much better result; take-off and build-up must be as accurate as possible and not rushed; "it is not enough to say earthworks when there are 50 different parts and resources required" |
 | Rev5 | 18 Oct 2026 | Section 1A Completion Standard added: Definition of Done, RED = priced on weak evidence (never blank), quantity and rate evidence ladders, vector-PDF measurement allowed with dimension checks, default document precedence for conflicts, own works built from crews, placeholders for missing/partial quotes, standing company inputs (10% OH markup, 15% true margin, weather Rev2, start-date and working-week defaults), completion vs release, single-pass workbook build with an essential-sheets fallback, questions never stop work. Rule 1, rule 7, Steps 4/6/7/8/12, 5.4, 5.6, 7, 9, 10, 11, 12, 13 aligned to it | Hobsonville blind tests (BLIND-01 to BLIND-17, and the 17-Oct rerun plan) never produced a complete price: rule 1 ("leave the number blank"), the "do not scale" reading, the reference-rate ban and "no defaults" for commercial inputs let every gap end as a blank RED line and a HOLD card. Rick: "when we price a job, we must be able to complete it" |
 | Rev1 | 14 Oct 2026 | First issue: process, sheet contract, logs, handover | Rick requested an external-AI instruction set to build job workbooks for the app |

@@ -41,7 +41,7 @@ async def status(user: dict[str, Any] = Depends(current_user)):
     doc = await _integration(user)
     return {"configured": dc.configured(), "connected": bool(doc), "account": doc.get("account", "") if doc else "",
             "connected_at": doc["connected_at"].isoformat() if doc else None, "read_only": not (doc and dc.can_write(doc.get("scopes", ""))),
-            "can_write": bool(doc and dc.can_write(doc.get("scopes", ""))), "job_folders": [f"{n}_{l}" for n, l in JOB_FOLDERS],
+            "can_write": bool(doc and dc.can_write(doc.get("scopes", ""))), "job_folders": [f"{n} {l}" for n, l in JOB_FOLDERS],
             "standard_folders": [f"{n} {l}" for n, l in STANDARD_FOLDERS]}
 
 
