@@ -1,8 +1,8 @@
 # Workbook Builder Instructions — Blackline QSi Pro
 
-**Version:** Rev5 (18 Oct 2026) · **Owner:** Rick (3Bears Projects) · **Status:** living document — see section 14 for how it is improved.
+**Version:** Rev6 (18 Oct 2026) · **Owner:** Rick (3Bears Projects) · **Status:** living document — see section 14 for how it is improved.
 
-> **Rev5 in one line:** every job ends with a complete, priced estimate. Weak evidence is flagged, never left blank. Section 1A (Completion Standard) is how you do that, and it takes precedence over any reading of the other rules that would leave scope unpriced.
+> **Rev5–Rev6 in short:** every job ends with a complete, priced estimate. Weak evidence is flagged, never left blank. Section 1A (Completion Standard) is how you do that, and it takes precedence over any reading of the other rules that would leave scope unpriced. Every work package is broken into all of its operations and resources (Appendix A). The work is done **one step at a time**, and the take-off and build-up are never rushed to fit a time allowance (1A.11).
 
 ---
 
@@ -53,7 +53,7 @@ These come from Rick's governing standards (Master Prompt Rev5, Triple Verificat
 A run is complete only when **all** of these are true:
 1. Every requirement on Scope Coverage has an owner and a treatment, and every `PRICED`, `ALLOWANCE` or `PC SUM` row links to a QS line or commercial line that carries a **non-zero amount**. `UNRESOLVED` is not an acceptable final treatment. Where ownership or design is unclear, price it as `ALLOWANCE` and keep the RFI open. Where the client's instruction takes it out, mark it `EXCLUDED` and write a qualification.
 2. Every QS line has a quantity, a rate and an amount, a status word (section 5.3) and a colour with a reason. The only lines without cost are `EXCLUDED` / `BY OTHERS` scope, and each of those has a written exclusion or interface on the Cover.
-3. Every own-works QS line is built from resources: labour and plant rows (crew × hours) plus materials (1A.5). The only own-works lump sums are quotes, or `ALLOWANCE-PC` rows with a written basis.
+3. Every work package is broken into its operations (Appendix A): each checklist item is Included, Not required (with a reason) or By others. Every own-works operation is built from resources: labour and plant rows (crew × hours) plus materials, cartage, disposal and testing (1A.5). The only own-works lump sums are quotes, or `ALLOWANCE-PC` rows with a written basis.
 4. Every subcontract package has a number on Consolidated Package: a quote, or an `ALLOWANCE-PC` placeholder with its basis (1A.6). Never 0.
 5. Commercial Inputs carry the standing company settings (1A.7). The workbook shows an own-works tender and an all-in price.
 6. Programme durations come from the build-up hours (section 5.9), and the weather tool has been run, or its inputs are recorded with the reason it wasn't.
@@ -130,7 +130,12 @@ These are company policy. They are not job answers, so using them never compromi
 - Do not spend a run re-verifying work that earlier runs already checked unless the source changed. Move the estimate forward.
 
 ### 1A.10 Questions don't stop work
-Write each question to the RFI Log with the **assumption priced while it is open**, then continue. The only things you stop for are sending, contacting or committing to anyone (never allowed) and an action that cannot be undone.
+Write each question to the RFI Log with the **assumption priced while it is open**, then continue. The only things you stop for are sending, contacting or committing to anyone (never allowed), an action that cannot be undone, and the planned end of a step (1A.11).
+
+### 1A.11 One step at a time, with accuracy before speed
+- **Work one step at a time** unless Rick asks for a straight run. A step is one stage of the estimating production programme (the plan made at the start of the job). At the end of each step, present the step's complete output, its gate result, hours used against the plan, open questions, and the next step. Then wait for Rick's go.
+- **Each step is finished before it is presented.** For example, the take-off step is not finished until every in-scope operation has a quantity; the build-up step is not finished until every operation has its resources. "Step by step" never means "part done".
+- **Accuracy before speed.** The time allowances in the production programme are a plan, not a cap. If the take-off or the resource build-up needs more time to be done properly, take it. Record the extra hours and the reason, and tell Rick at the end of the step. Never cut detail, skip an operation or lower accuracy to stay inside an allowance (Appendix A.6).
 
 ---
 
@@ -645,6 +650,7 @@ When the app's importer learns to read a new sheet or column, section 5 / 8 is u
 ### Revision history
 | Rev | Date | Change | Reason |
 |---|---|---|---|
+| Rev6 | 18 Oct 2026 | Appendix A work breakdown and resource detail standard (when an operation gets its own line, what every build-up shows, minimum operation checklists for preliminaries, ESC, earthworks, foundation excavation, drainage, service trenches, pavements and crossings, retaining, testing; capacity; reporting); 1A.1 item 3 requires every package broken into operations; 1A.11 one step at a time, each step finished before it is presented, accuracy before speed (time allowances are a plan, not a cap) | Rick, 18 Oct 2026: the step-by-step run gave a much better result; take-off and build-up must be as accurate as possible and not rushed; "it is not enough to say earthworks when there are 50 different parts and resources required" |
 | Rev5 | 18 Oct 2026 | Section 1A Completion Standard added: Definition of Done, RED = priced on weak evidence (never blank), quantity and rate evidence ladders, vector-PDF measurement allowed with dimension checks, default document precedence for conflicts, own works built from crews, placeholders for missing/partial quotes, standing company inputs (10% OH markup, 15% true margin, weather Rev2, start-date and working-week defaults), completion vs release, single-pass workbook build with an essential-sheets fallback, questions never stop work. Rule 1, rule 7, Steps 4/6/7/8/12, 5.4, 5.6, 7, 9, 10, 11, 12, 13 aligned to it | Hobsonville blind tests (BLIND-01 to BLIND-17, and the 17-Oct rerun plan) never produced a complete price: rule 1 ("leave the number blank"), the "do not scale" reading, the reference-rate ban and "no defaults" for commercial inputs let every gap end as a blank RED line and a HOLD card. Rick: "when we price a job, we must be able to complete it" |
 | Rev1 | 14 Oct 2026 | First issue: process, sheet contract, logs, handover | Rick requested an external-AI instruction set to build job workbooks for the app |
 | Rev4 | 15 Oct 2026 | Scope Coverage sheet added to the template and the contract (the app reads it and checks every treatment is backed up); Step 3 now starts with it | Rick agreed the scope coverage and interface schedule is the next piece, with excluded and by-others items shown in the client report |
@@ -655,4 +661,133 @@ When the app's importer learns to read a new sheet or column, section 5 / 8 is u
 - Add a Productivity & Crew Library sheet and rules once Rick confirms it exists (Starter workstream 3).
 - Import Email / RFI / Quote logs into the app (Register and Quotes pages) so the workbook is the single hand-over.
 - Add worked, anonymised examples of a good QS row, build-up row and RFI.
-- Add a rule set per work type (earthworks, drainage, pavements, retaining) for typical build-up rows.
+- Add worked build-up examples per work type (earthworks, drainage, pavements, retaining) to sit beside the Appendix A checklists.
+
+---
+
+## Appendix A. Work breakdown and resource detail standard (Rev6)
+
+**Rule.** A work package is never priced as one line. "Earthworks", "drainage", "pavements" or "retaining" are **headings**, not items. Break each package into every operation it physically needs, and price each operation from its own resources. Rick's words: *it is not enough to say earthworks when there are 50 different parts and resources required to that task.*
+
+### A.1 When an operation gets its own line
+Make it a separate QS line, or a separate group of build-up rows under one QS line, whenever it has any one of these:
+- a different unit of measure (m2 strip, m3 cut, t import, lm trench, ea pit, LS test);
+- a different crew or plant;
+- a different production rate;
+- a different material;
+- a different disposal route or tip class;
+- a different programme position or hold point;
+- a different owner or quote.
+
+If two operations would share one line, write in *Quantity Basis* why they belong together.
+
+### A.2 What every operation's build-up shows
+1. **Method:** one plain sentence (for example, *"14 t excavator loads cut to 6-wheeler; cart 4 km to fill area; 7 t roller compacts in 200 mm lifts"*).
+2. **Quantity:** with its basis and its factor (bulking, compaction, waste, lap), each factor sourced or written as an estimator allowance.
+3. **Crew:** each labour type on its own row (foreman/leading hand, operator if the plant is dry hire, labourer, pipelayer, concrete finisher …) with a count.
+4. **Plant:** each item on its own row, with size and hire basis (wet/dry; operator and fuel included or not). Supporting plant counts too: roller, water cart, trucks, loader, compactor plate, laser, generator, pump.
+5. **Production rate and hours:** output per hour with its unit and basis. The hours follow from quantity ÷ rate. Labour and plant hours are shown separately.
+6. **Materials:** supply and delivery, with waste or compaction factors, as their own rows.
+7. **Cartage and disposal:** truck capacity, cycle time, number of trips or $/t cartage, and the tip fee by material class (cleanfill / managed fill / contaminated) with the density used.
+8. **Testing and inspection:** the number of tests or visits × the rate.
+9. **Consumables and small tools,** where not already in a plant or labour rate.
+10. **Temporary works** the operation needs (shoring, shields, dewatering, batter support, traffic shifts).
+
+### A.3 Minimum operation checklists
+Use these as the **minimum** to consider, not a limit. For every item, record on the take-off: **Included** (with its line), **Not required** (one-line reason, for example *"no trees on site — topo survey sheet 2"*), or **By others** (with the owner). A checklist item with none of these is a defect.
+
+**Preliminaries and general (time-related and fixed):**
+- Site establishment and disestablishment; site office/container; toilets; power and water; temporary fencing and gates; signage, H&S boards and the site-specific safety plan; environmental management plan.
+- Site supervisor and project management time for the programme duration; QA documentation.
+- Setout survey and level control; as-built survey; services location (dial-before-you-dig plus a private locator) and service protection.
+- Traffic management: TMP design, corridor access request, each traffic-management shift by type.
+- Plant mobilisation and demobilisation, per item; small plant and tools.
+- Cleaning, rubbish and skip bins; defects attendance; handover documents (PS3, as-builts, test certificates).
+- Meetings and programme updates; insurances and bonds (only if not in the commercial lines).
+
+**Erosion and sediment control:**
+- Silt fence: supply, install, maintain, remove (lm), plus super silt fence where specified.
+- Stabilised entrance: geotextile, aggregate, wheel wash, maintenance and top-ups.
+- Clean-water diversion bunds and channels; dirty-water diversions.
+- Sediment retention pond or decanting earth bund, and flocculation where required.
+- Catchpit inlet protection; dust suppression (water cart hours).
+- Progressive stabilisation (mulch, hydroseed, topsoil and grass).
+- Inspections and monitoring per the consent; removal and reinstatement.
+
+**Earthworks:**
+- Setout and level control for earthworks.
+- Clearing and grubbing vegetation; tree removal; stump grinding.
+- Demolition and removal of existing paving, kerbs, structures, fences; decommissioning existing services (remove, cap, grout-fill).
+- Topsoil strip (area × depth), stockpile, respread or export (with its own tip class).
+- Bulk cut to fill (in-situ m3, load, haul, place); bulk cut to waste (load, cart, tip fee by class).
+- Imported fill: supply ($/t × compacted density), delivery and spreading.
+- Place and compact in layers (lift thickness, passes); moisture conditioning (water, drying or lime).
+- Undercut and replace soft spots (allowance with a basis); rock or hard digging (allowance with a basis); unsuitable or contaminated material handling and disposal.
+- Proof roll; geotechnical inspections and hold points; compaction testing (tests per lift or per area).
+- Trim to formation and subgrade; batter trimming and protection; benching into slopes.
+- Overland flow path or swale shaping; haul road and access tracks; stockpile management.
+- Dewatering of excavations; final trim, topsoil and grass to finished areas.
+
+**Foundation excavation (where it is ours):**
+- Pads by type (count × dimensions); strip footings and thickenings by type (length × section).
+- Pile bores by type (count, diameter, depth, spoil).
+- Working space; hand digging near services; spoil handling, cartage and disposal; backfill and compaction.
+- Blinding (if ours); inspection hold points; reconciliation with the foundation subcontractor's inclusions.
+
+**Stormwater, wastewater and water (own works or the gap left by a subcontract):**
+- Setout.
+- Trench excavation by depth band (for example 0–1.5 m, 1.5–3 m, 3–4.5 m) and by width (pipe OD + working space).
+- Shoring or trench shields; dewatering.
+- Bedding by type (m3); pipe supply and lay by diameter and class; haunching; backfill by type (selected native / imported); compaction and testing.
+- Manholes by type and depth; catchpits and cesspits; connections to existing; inlet and outlet structures and headwalls.
+- Detention tank: excavation, base, installation, backfill, outlet control.
+- Soakage; subsoil drains; CCTV; pressure and air tests.
+- Removal or grout-filling of redundant pipes; spoil disposal; surface reinstatement; as-builts and council sign-off.
+
+**Service trenches:**
+- By service (power, comms, water, gas), with length, depth and width; shared trenches identified.
+- Bedding sand; ducts (if ours); warning tape; backfill and compaction; pits and chambers; reinstatement.
+- Coordination and attendance on utility installers.
+
+**Pavements, carparks, paths and crossings:**
+- Subgrade preparation and trim; CBR or bearing tests; subgrade improvement (stabilisation or undercut allowance); geotextile.
+- Subbase and basecourse, each layer separately: supply, place, compact.
+- Layer testing (NDM, Clegg or Benkelman as specified).
+- Concrete by thickness and type: supply, pump, placing and finishing crew.
+- Mesh or reinforcement and chairs; formwork and edges; joints (sawcuts, dowels, sealant); curing; surface finish.
+- Kerbs and channels by type; dish channels; wheel stops; bollards; line marking and signage; tactile indicators and accessible ramps.
+- Asphalt (if any): tack coat and each course.
+- Vehicle crossing to council specification: demolition of existing kerb and footpath, construction, berm reinstatement, traffic management.
+- Berm and verge reinstatement.
+
+**Retaining walls (segmental block, timber pole, concrete or crib — use the parts that apply):**
+- Setout.
+- Excavation for footing or levelling pad, and spoil.
+- Levelling pad (compacted aggregate or mass concrete).
+- Wall units by type (straight, corner, cap), counted by course or height band; pins and adhesive.
+- Geogrid by layer, length and type, if reinforced.
+- Drainage aggregate or no-fines concrete behind the wall; subsoil drain and outlets; filter fabric.
+- Backfill and compaction in lifts.
+- Bridging piles or footings over services; temporary batter support.
+- Fall protection, handrail or fence if required; inspections and producer statements.
+
+**Testing, compliance and handover:**
+- Geotechnical visits; compaction tests; materials tests; PS4 and other producer statements.
+- Council and utility inspections; CCTV and pressure tests; as-built survey; QA records.
+- Final clean; defects; handover documents.
+
+### A.4 Capacity in the template
+- QS Takeoff holds 200 items (rows 3–202), and Programme Export follows those rows.
+- Resource Build-Up holds 300 rows (rows 7–306). If the job needs more, copy a complete existing row and insert it inside the block: the app reads build-up rows to the end of the sheet.
+- Group closely related operations under one QS code, with several build-up rows, before you run out of QS rows.
+
+### A.5 Reporting the detail
+At the end of the take-off step and of the build-up step, report for each package:
+- the number of operations considered, included, not required and by others;
+- the number of build-up rows and of labour/plant rows;
+- the labour hours and plant hours.
+
+A package with one operation, or with no labour or plant rows, is incomplete unless it is a whole-scope subcontract quote.
+
+### A.6 Accuracy before speed
+The take-off and the resource build-up are where the estimate is won or lost. **Do not rush them to fit a time allowance.** If doing them properly needs more time than planned, take it. Record the extra hours and the reason on the estimating production programme, and tell Rick at the end of the step. Never cut detail, skip an operation or lower accuracy to stay inside an allowance.
