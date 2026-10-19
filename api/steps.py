@@ -48,9 +48,27 @@ def parse_step_folder(name: str) -> dict[str, Any] | None:
     return {"number": int(num), "suffix": suffix, "key": f"{int(num):02d}{suffix}", "name": rest or f"Step {int(num):02d}"}
 
 
-def parse_step_file(name: str) -> tuple[str, str] | None:
+LOOSE_FILE = re.compile(r"step[ _\-]?(\d{1,3})([a-z]?)(?=[ _\-.])(.*?)(brief|report)", re.I)
+
+
+def parse_step_file(name: str, loose: bool = False) -> tuple[str, str] | None:
+    """('05', 'brief') from STEP_05_BRIEF.md; with loose=True also from names the chat made up, e.g. 329Hobsonville_Step02_Production_Programme_Brief_2026-10-19.md."""
     m = STEP_FILE.match(name or "")
-    return (f"{int(m.group(1)):02d}{m.group(2).lower()}", m.group(3).lower()) if m else None
+    if m:
+        return (f"{int(m.group(1)):02d}{m.group(2).lower()}", m.group(3).lower())
+    if loose and (name or "").lower().endswith((".md", ".txt")):
+        m = LOOSE_FILE.search(name)
+        if m:
+            return (f"{int(m.group(1)):02d}{m.group(2).lower()}", m.group(4).lower())
+    return None
+
+
+def name_from_filename(name: str) -> str:
+    m = re.search(r"step[ _\-]?\d{1,3}[a-z]?[ _\-]+(.+?)[ _\-]+(?:brief|report)", name or "", re.I)
+    return re.sub(r"[_\s]+", " ", m.group(1)).strip() if m else ""
+
+
+FIXED_NAMES = {"01": "Scope of work and effort estimate", "02": "Estimating production programme"}      # 18_One_Step_One_Chat section 8
 
 
 def _cells(line: str) -> list[str]:
@@ -61,9 +79,10 @@ def _cells(line: str) -> list[str]:
 def parse_job_record(text: str) -> dict[str, Any]:
     """Lenient: pulls out what it can find; the page also shows the whole text, so a miss is never a loss."""
     out: dict[str, Any] = {"fields": {}, "steps": []}
-    pats = {"revision": r"Revision:\s*(Rev\s?\S+)", "release_status": r"Release status:\s*(READY|HOLD)", "lifecycle": r"Lifecycle:\s*([A-Z][A-Z /\-]+?)(?:\s{2,}|\n|$)",
-            "price": r"Price excl\.? GST:\s*([^\n]+?)(?:\s{2,}|\n|$)", "stage": r"Stage reached:\s*([0-9A-Za-z\-]+)", "step_completed": r"Step just completed:\s*([^\s].*?)(?:\s{2,}|\n|$)",
-            "mode": r"Mode:\s*(STEP|RUN-THROUGH)", "tender_closes": r"Tender closes:\s*([^\n]+?)(?:\s{2,}|\n|$)", "updated": r"Updated:\s*([0-9]{1,2}-[A-Za-z]{3}-[0-9]{4})"}
+    end = r"(?:\s*\||\s{2,}|\n|$)"
+    pats = {"revision": r"Revision:\s*([^|\n]+?)" + end, "release_status": r"Release(?: status)?:\s*(READY|HOLD)", "lifecycle": r"Lifecycle:\s*([A-Z][A-Za-z /\-]*?)" + end,
+            "price": r"(?i:price excl\.? GST):\s*([^|\n]+?)" + end, "stage": r"Stage reached:\s*([0-9A-Za-z\-]+)", "step_completed": r"Step just completed:\s*([^\s|][^|\n]*?)" + end,
+            "mode": r"Mode:\s*(STEP|RUN-THROUGH)", "tender_closes": r"(?i:tender closes|tender due date):\s*([^|\n]+?)" + end, "updated": r"Updated:\s*([0-9]{1,2}-[A-Za-z]{3}-[0-9]{4})"}
     for k, p in pats.items():
         m = re.search(p, text or "")
         if m and not set(re.sub(r"\(.*?\)", "", m.group(1)).strip()) <= set("$_ -"):
@@ -93,31 +112,39 @@ def parse_job_record(text: str) -> dict[str, Any]:
             raw = get("status").upper()
             status = next((s2 for s2 in STATUSES if s2 in raw.replace(" ", "-").replace("_", "-")), raw)
             out["steps"].append({"key": f"{int(m.group(1)):02d}{m.group(2).lower()}", "chat_title": get("chat title", "title"), "status": status,
-                                 "workbook_revision": get("workbook", "revision")})
+                                 "workbook_revision": get("workbook", "revision"), "brief_name": get("brief"), "report_name": get("report", "output")})
     return out
 
 
-def build_steps(folders: list[dict[str, Any]], record: dict[str, Any]) -> list[dict[str, Any]]:
+def build_steps(folders: list[dict[str, Any]], record: dict[str, Any], loose: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """folders: [{folder_id, name, files:[{id,name}]}] for each folder under Steps. Returns the ordered step list."""
     rec = {s["key"]: s for s in record.get("steps", [])}
     out: dict[str, dict[str, Any]] = {}
+    loose_files: dict[str, dict[str, Any]] = {}
+    for fl in loose or []:                                   # brief / report files saved loose (not in a step folder)
+        sf = parse_step_file(fl["name"], loose=True)
+        if sf:
+            loose_files[f"{sf[0]}:{sf[1]}"] = fl
     for f in folders:
         p = parse_step_folder(f["name"])
         if not p:
             continue
         brief = report = None
         for fl in f.get("files", []):
-            sf = parse_step_file(fl["name"])
+            sf = parse_step_file(fl["name"], loose=True)
             if sf and sf[0] == p["key"]:
                 (brief := fl) if sf[1] == "brief" else (report := fl)
         r = rec.get(p["key"], {})
+        brief = brief or loose_files.get(f"{p['key']}:brief")
+        report = report or loose_files.get(f"{p['key']}:report")
         status = r.get("status") or ("REPORTED" if report else "READY" if brief else "NOT STARTED")
         out[p["key"]] = {**p, "folder_id": f["folder_id"], "folder_name": f["name"], "group": group_for(p["name"]), "status": status, "brief": brief, "report": report,
                          "chat_title": r.get("chat_title", ""), "workbook_revision": r.get("workbook_revision", ""), "in_record": p["key"] in rec}
     for k, r in rec.items():                       # in the Job Record but with no folder yet
         if k not in out:
             part = next((x for x in (r["chat_title"] or "").split("|") if re.match(r"\s*step\s*\d", x, re.I)), "")
-            n = (parse_step_folder(part) or {}).get("name") or f"Step {k}"
+            n = ((parse_step_folder(part) or {}).get("name") or name_from_filename(r.get("brief_name", "")) or name_from_filename(r.get("report_name", ""))
+                 or FIXED_NAMES.get(k) or f"Step {k}")
             out[k] = {"number": int(re.match(r"\d+", k).group()), "suffix": k[2:], "key": k, "name": n, "folder_id": None, "folder_name": "", "group": group_for(n),
-                      "status": r["status"] or "NOT STARTED", "brief": None, "report": None, "chat_title": r["chat_title"], "workbook_revision": r["workbook_revision"], "in_record": True}
+                      "status": r["status"] or "NOT STARTED", "brief": loose_files.get(f"{k}:brief"), "report": loose_files.get(f"{k}:report"), "chat_title": r["chat_title"], "workbook_revision": r["workbook_revision"], "in_record": True}
     return sorted(out.values(), key=lambda s: (s["number"], s["suffix"]))

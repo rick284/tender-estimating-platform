@@ -106,3 +106,40 @@ def test_api_reads_the_build_path_from_drive_and_never_writes(client, auth, monk
     monkeypatch.setattr(config, "REGISTRATION_OPEN", True)
     other = {"Authorization": f"Bearer {register(client, 'z@example.com', 'Other Ltd').json()['token']}"}
     assert client.get(f"/api/steps/tenders/{tid}", headers=other).status_code == 404       # another company cannot read it
+
+
+# The first real Job Record the ChatGPT project wrote (19 Oct 2026 test): a slightly different layout from the template.
+REAL = """# JOB RECORD: 329 Hobsonville Road — TEST COPY
+Updated: 19-Oct-2026 | By: AI Senior Estimator
+
+## Status
+- Trigger: Reconstruct scope confirmation from Dave Stewart’s 04-Sep-2026 initial enquiry and current Drive tender documents
+- Mode: STEP — Step 01 Scope and estimating proposal COMPLETE AS DRAFT TEST
+- Lifecycle: WORKING | Release: HOLD / NOT SENT | Revision: Scope Rev A / Proposal Rev A
+- Construction price excl GST: NOT PREPARED (not the purpose of Step 01)
+- Current tender due date: NOT PROVIDED; historical original 14-Sep-2026 (passed)
+
+## Steps
+| Step | Status | Brief | Report / outputs |
+|---|---|---|---|
+| Step 01 | DRAFT, NOT APPROVED | This chat request | 329Hobsonville_Scope_Confirmation_RevA_2026-10-19.docx; 329Hobsonville_Estimating_Proposal_RevA_2026-10-19.docx |
+| Step 02 | NOT STARTED | 329Hobsonville_Step02_Production_Programme_Brief_2026-10-19.md | - |
+
+## Open high-priority questions
+1. Scope ownership
+"""
+
+
+def test_real_chatgpt_job_record_is_read():
+    p = st.parse_job_record(REAL)
+    f = p["fields"]
+    assert f["lifecycle"] == "WORKING" and f["release_status"] == "HOLD" and f["revision"] == "Scope Rev A / Proposal Rev A" and f["mode"] == "STEP"
+    assert f["price"].startswith("NOT PREPARED") and f["tender_closes"].startswith("NOT PROVIDED") and f["updated"] == "19-Oct-2026"
+    assert [(s["key"], s["status"]) for s in p["steps"]] == [("01", "DRAFT"), ("02", "NOT STARTED")]
+    steps = st.build_steps([], p, [{"id": "b2", "name": "329Hobsonville_Step02_Production_Programme_Brief_2026-10-19.md"}])
+    by = {s["key"]: s for s in steps}
+    assert by["01"]["name"] == "Scope of work and effort estimate" and by["01"]["group"] == "Scope and plan"        # the standard's fixed name for step 01
+    assert by["02"]["name"] == "Production Programme" and by["02"]["group"] == "Scope and plan" and by["02"]["brief"]["id"] == "b2"
+    assert st.parse_step_file("329Hobsonville_Step02_Production_Programme_Brief_2026-10-19.md") is None                      # strict by default
+    assert st.parse_step_file("329Hobsonville_Step02_Production_Programme_Brief_2026-10-19.md", loose=True) == ("02", "brief")
+    assert st.parse_step_file("Hobsonville_Estimating_Proposal_RevA.md", loose=True) is None
