@@ -58,6 +58,18 @@ async def _text(tok: str, f: dict[str, Any]) -> str:
     return data.decode("utf-8", errors="replace")[:400_000]
 
 
+def _apply_approvals(steps: list[dict[str, Any]], t: dict[str, Any]) -> list[dict[str, Any]]:
+    """Rick's approval in the app wins over the status the chat wrote in the Job Record (the chat cannot approve its own work)."""
+    ap = t.get("step_approvals") or {}
+    for s in steps:
+        a = ap.get(s["key"])
+        if a:
+            s["record_status"] = s["status"]
+            s["status"] = a["status"]
+            s["app_approval"] = {"status": a["status"], "note": a.get("note", ""), "at": a.get("at", ""), "by": a.get("by_name", ""), "filed": a.get("filed")}
+    return steps
+
+
 @router.get("/tenders/{tender_id}")
 async def overview(tender_id: str, user: dict[str, Any] = Depends(current_user)):
     """The step list (grouped for the sidebar) and the parsed Job Record header. Files are read, never written."""
@@ -66,7 +78,7 @@ async def overview(tender_id: str, user: dict[str, Any] = Depends(current_user))
     if record:
         text = await _text(tok, _f(record))
         parsed = st.parse_job_record(text)
-    steps = st.build_steps(folders, parsed, loose)
+    steps = _apply_approvals(st.build_steps(folders, parsed, loose), t)
     return {"folder_found": record is not None or bool(folders), "job_record": {"found": record is not None, "name": record["name"] if record else "", "link": record.get("webViewLink", "") if record else "",
             "text": text, "fields": parsed["fields"]}, "steps": steps, "groups": st.group_order(),
             "counts": {"steps": len(steps), "locked": sum(1 for s in steps if s["status"] == "APPROVED-LOCKED"), "draft": sum(1 for s in steps if s["status"] in ("DRAFT", "REPORTED")), "reopened": sum(1 for s in steps if s["status"] == "REOPENED")}}
@@ -77,10 +89,11 @@ async def step(tender_id: str, key: str, user: dict[str, Any] = Depends(current_
     """One step's brief and report text."""
     tok, t, record, folders, loose = await _scan(user, tender_id)
     parsed = st.parse_job_record(await _text(tok, _f(record))) if record else {"fields": {}, "steps": []}
-    found = next((s for s in st.build_steps(folders, parsed, loose) if s["key"] == key), None)
+    found = next((s for s in _apply_approvals(st.build_steps(folders, parsed, loose), t) if s["key"] == key), None)
     if not found:
         raise HTTPException(404, "That step was not found in the job folder.")
     out = {k: found[k] for k in ("key", "number", "name", "group", "status", "chat_title", "workbook_revision", "folder_name")}
+    out["app_approval"] = found.get("app_approval")
     for which in ("brief", "report"):
         f = found.get(which)
         out[which] = {"name": f["name"], "text": await _text(tok, f)} if f else None
@@ -208,6 +221,72 @@ async def import_production(tender_id: str, user: dict[str, Any] = Depends(curre
     await get_db().tenders.update_one({"_id": t["_id"]}, {"$set": {"production_plan": plan}})
     await audit(get_db(), user, "steps.production_import", t["_id"], best["name"])
     return await _production_out(user, {**t, "production_plan": plan})
+
+
+def approval_note(job: str, key: str, name: str, action: str, note: str, who: str, at: str, prior: str) -> str:
+    """The small file saved to the job folder so the next chat sees the decision. Plain text, no estimate figures."""
+    verb = "APPROVED AND LOCKED" if action == "approve" else "REOPENED (change note)"
+    return (f"# STEP {key} {verb}\n\nJob: {job}\nStep: {key} {name}\nDecision: {verb}\nBy: {who} (the estimator's decision, recorded in Blackline QSi Pro)\nWhen: {at}\n"
+            f"Status the chat had written: {prior or 'not stated'}\n\n## Note\n{note or '(none)'}\n\n## What this means\n"
+            + ("Later steps build on this result and do not redo it. A change needs a change note and a reopen.\n" if action == "approve" else
+               "This step's result is no longer locked. Rebuild the corrected result in a new chat for this step and bring it back for approval; do not patch the locked files.\n")
+            + "\nThis file was created by the app. Nothing here was sent to anyone.\n")
+
+
+@router.put("/tenders/{tender_id}/approval")
+async def set_approval(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)):
+    """Rick approves and locks a step, or reopens it with a change note. Recorded in the app (with history) and, when the full Drive permission is given,
+    filed as a NEW small text file in 00 Project Admin / Reviews and Decisions so the next chat can see it. Nothing is overwritten or deleted."""
+    from db import get_db
+    from routes_drive import _integration
+    from services import audit, now
+    t = await _tender(user, tender_id)
+    key = str(body.get("step") or "").strip().lower()
+    action = body.get("action")
+    note = str(body.get("note") or "").strip()[:2000]
+    if not re.fullmatch(r"\d{2,3}[a-z]?", key):
+        raise HTTPException(422, "Which step?")
+    if action not in ("approve", "reopen"):
+        raise HTTPException(422, "Choose approve or reopen.")
+    cur = (t.get("step_approvals") or {}).get(key, {})
+    locked = cur.get("status") == "APPROVED-LOCKED"
+    if action == "approve" and locked:
+        raise HTTPException(409, "This step is already approved and locked.")
+    if action == "reopen" and not locked:
+        raise HTTPException(409, "Only an approved step can be reopened.")
+    if action == "reopen" and len(note) < 5:
+        raise HTTPException(422, "A reopened step needs a change note: say what changed and why (at least 5 characters).")
+    status = "APPROVED-LOCKED" if action == "approve" else "REOPENED"
+    stamp = now()
+    entry = {"status": status, "note": note, "at": stamp.isoformat(), "by": user["_id"], "by_name": user.get("name", ""), "filed": None}
+    history = (cur.get("history") or []) + [{k: entry[k] for k in ("status", "note", "at", "by_name")}]
+    filed: dict[str, Any] | None = None
+    doc = await _integration(user)
+    link = t.get("drive_folder")
+    name = str(body.get("name") or "").strip()[:120]
+    prior = str(body.get("record_status") or "")[:40]
+    if link and doc and dc.can_write_anywhere(doc.get("scopes", "")):
+        try:
+            tok = await _token(user)
+            top = await dc.list_children(tok, link["id"])
+            admin = next((x for x in top if x["mimeType"] == dc.FOLDER_MIME and drive_index._has_number(x["name"], "00")), None)
+            if admin:
+                dest = await dc.find_folder(tok, admin["id"], "Reviews and Decisions") or await dc.create_folder(tok, "Reviews and Decisions", admin["id"])
+                fname = f"STEP_{key.upper()}_{'APPROVED_LOCKED' if action == 'approve' else 'REOPENED'}_{stamp.strftime('%Y-%m-%d_%H%M')}.md"
+                f = await dc.create_text_file(tok, fname, dest["id"], approval_note(t.get("name", ""), key, name, action, note, user.get("name", "") or "Estimator", stamp.strftime("%d-%b-%Y %H:%M UTC"), prior))
+                filed = {"name": f.get("name", fname), "link": f.get("webViewLink", "")}
+            else:
+                filed = {"error": "The job folder has no 00 Project Admin folder, so no file was saved."}
+        except (dc.DriveError, HTTPException) as e:
+            filed = {"error": e.detail if isinstance(e, HTTPException) else str(e)}
+        except httpx.HTTPError:
+            filed = {"error": "The connection to Google Drive dropped, so no file was saved."}
+    else:
+        filed = {"error": "Drive has not been given permission to save files, so the decision is recorded in the app only."}
+    entry["filed"] = filed
+    await get_db().tenders.update_one({"_id": t["_id"]}, {"$set": {f"step_approvals.{key}": {**entry, "history": history}}})
+    await audit(get_db(), user, "steps.approve" if action == "approve" else "steps.reopen", t["_id"], f"step {key}")
+    return {"step": key, "status": status, "filed": filed, "history": history}
 
 
 def _go(t: dict[str, Any]) -> dict[str, Any] | None:

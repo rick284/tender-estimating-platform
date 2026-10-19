@@ -387,3 +387,47 @@ def test_step01_reads_the_google_doc_text_layout_of_the_app_test_folder():
 def test_test_copy_labels_do_not_hide_step_files():
     assert st.norm_name("JOB_RECORD.md - APP TEST") == "JOB_RECORD.md" and st.norm_name("STEP_01_REPORT.md - TEST") == "STEP_01_REPORT.md"
     assert st.parse_step_file("STEP_01_REPORT.md - TEST") == ("01", "report") and st.parse_step_file("STEP_02_BRIEF.md - TEST") == ("02", "brief")
+
+
+def test_approve_lock_and_reopen_with_a_note_files_a_new_text_file(client, auth, monkeypatch):
+    monkeypatch.setattr(config, "GOOGLE_CLIENT_ID", "cid"); monkeypatch.setattr(config, "GOOGLE_CLIENT_SECRET", "sec")
+    tree = {"J": [{"id": "A", "name": "00 Project Admin", "mimeType": FOLDER}], "A": [{"id": "R", "name": "Reviews and Decisions", "mimeType": FOLDER}]}
+    made: list[tuple[str, str]] = []
+
+    def h(request):
+        u = request.url
+        if u.host == "oauth2.googleapis.com":
+            form = dict(up.parse_qsl(request.content.decode()))
+            tok = {"access_token": "AT", "refresh_token": "RT", "scope": f"{dc.SCOPE_DRIVE} openid email"} if form["grant_type"] == "authorization_code" else {"access_token": "AT2"}
+            return httpx.Response(200, json=tok)
+        if u.host == "openidconnect.googleapis.com":
+            return httpx.Response(200, json={"email": "r@x.example"})
+        if request.method == "POST" and u.path == "/upload/drive/v3/files":
+            body = request.content.decode()
+            assert 'parents' in body and '"R"' in body                              # filed inside Reviews and Decisions
+            made.append(("file", body)); return httpx.Response(200, json={"id": "N1", "name": "STEP_01_APPROVED_LOCKED.md", "webViewLink": "https://drive.google.com/n1"})
+        if u.path == "/drive/v3/files":
+            return httpx.Response(200, json={"files": tree.get(u.params["q"].split("'")[1], [])})
+        if u.path.rsplit("/", 1)[1] == "J":
+            return httpx.Response(200, json={"id": "J", "name": "Job", "mimeType": FOLDER})
+        return httpx.Response(404, json={})
+    monkeypatch.setattr(dc, "TRANSPORT", httpx.MockTransport(h))
+    tid = client.post("/api/tenders", headers=auth, files={"file": ("a.xlsx", make_workbook())}).json()["id"]
+    q = dict(up.parse_qsl(up.urlparse(client.get("/api/drive/connect", params={"write": 1}, headers=auth).json()["url"]).query))
+    client.get("/api/drive/callback", params={"code": "c", "state": q["state"]})
+    client.put(f"/api/drive/tenders/{tid}", headers=auth, json={"folder_id": "J"})
+    put = lambda **b: client.put(f"/api/steps/tenders/{tid}/approval", headers=auth, json=b)
+    assert put(step="x", action="approve").status_code == 422 and put(step="01", action="reopen", note="because").status_code == 409      # nothing to reopen yet
+    r = put(step="01", action="approve", note="Reviewed with the drawings", name="Scope of work", record_status="DRAFT")
+    assert r.status_code == 200 and r.json()["status"] == "APPROVED-LOCKED" and r.json()["filed"]["name"].startswith("STEP_01_APPROVED_LOCKED") and len(made) == 1
+    assert "Reviewed with the drawings" in made[0][1] and "Status the chat had written: DRAFT" in made[0][1]
+    assert put(step="01", action="approve").status_code == 409                                                   # already locked
+    assert put(step="01", action="reopen", note="no").status_code == 422                                          # a change note is required
+    r2 = put(step="01", action="reopen", note="Retaining wall height changed in Rev17")
+    assert r2.json()["status"] == "REOPENED" and len(r2.json()["history"]) == 2 and len(made) == 2
+
+
+def test_approval_without_drive_is_recorded_in_the_app_only(client, auth):
+    tid = client.post("/api/tenders", headers=auth, files={"file": ("a.xlsx", make_workbook())}).json()["id"]
+    r = client.put(f"/api/steps/tenders/{tid}/approval", headers=auth, json={"step": "02", "action": "approve"})
+    assert r.status_code == 200 and r.json()["status"] == "APPROVED-LOCKED" and "recorded in the app only" in r.json()["filed"]["error"]

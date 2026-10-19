@@ -118,13 +118,14 @@ export interface ProductionPlan {
 export interface EmailThread { file_id: string; name: string; link: string; path: string; direction: "in" | "out"; date: string; subject: string; party: string; count: number; refs: string[]; attachments: string[]; links: string[]; gmail_ids: string[]; modified: string; hit?: string }
 export interface EmailMessage { from: string; date: string; subject: string; gmail_id: string; body: string }
 export interface EmailThreadFull extends EmailThread { messages: EmailMessage[]; text: string }
+export interface AppApproval { status: string; note: string; at: string; by: string; filed: { name?: string; link?: string; error?: string } | null }
 export interface BuildStepFile { id: string; name: string }
-export interface BuildStep { key: string; number: number; name: string; group: string; status: string; chat_title: string; workbook_revision: string; folder_id: string | null; folder_name: string; brief: BuildStepFile | null; report: BuildStepFile | null; in_record: boolean }
+export interface BuildStep { key: string; number: number; name: string; group: string; status: string; chat_title: string; workbook_revision: string; folder_id: string | null; folder_name: string; brief: BuildStepFile | null; report: BuildStepFile | null; in_record: boolean; record_status?: string; app_approval?: AppApproval | null }
 export interface StepsOverview {
   folder_found: boolean; groups: string[]; steps: BuildStep[]; counts: { steps: number; locked: number; draft: number; reopened: number };
   job_record: { found: boolean; name: string; link: string; text: string; fields: Record<string, string> };
 }
-export interface StepDetail { key: string; number: number; name: string; group: string; status: string; chat_title: string; workbook_revision: string; folder_name: string; brief: { name: string; text: string } | null; report: { name: string; text: string } | null }
+export interface StepDetail { key: string; number: number; name: string; group: string; status: string; chat_title: string; workbook_revision: string; folder_name: string; brief: { name: string; text: string } | null; report: { name: string; text: string } | null; app_approval?: AppApproval | null }
 export interface LabourStep { label: string; basis: string; amount: number; running: number }
 export interface LabourCalc { inputs: Record<string, string | boolean>; weekly_cost: number; rate: number; per_paid_hour: number; leave_pct: number; productivity: number; status: "GREEN" | "AMBER" | "RED"; status_note: string; steps: LabourStep[]; history?: { rate: string; status: string; evidence: string; source_date: string }[] }
 export interface AiProviderInfo { id: string; label: string; available: boolean; default_model: string; key_hint: string }
@@ -214,6 +215,7 @@ export const api = {
   production: (id: string) => request<ProductionPlan>(`/api/steps/tenders/${id}/production`),
   saveProduction: (id: string, tasks: PlanTask[], window: PlanWindow | null) => request<ProductionPlan>(`/api/steps/tenders/${id}/production`, { method: "PUT", body: JSON.stringify({ tasks, window }) }),
   importProduction: (id: string) => request<ProductionPlan>(`/api/steps/tenders/${id}/production/import`, { method: "POST" }, LONG),
+  setApproval: (id: string, step: string, action: "approve" | "reopen", note: string, name: string, recordStatus: string) => request<{ step: string; status: string; filed: AppApproval["filed"] }>(`/api/steps/tenders/${id}/approval`, { method: "PUT", body: JSON.stringify({ step, action, note, name, record_status: recordStatus }) }),
   setGoAhead: (tenderId: string, mode: string, note: string) => request<{ go_ahead: GoAhead }>(`/api/steps/tenders/${tenderId}/go-ahead`, { method: "PUT", body: JSON.stringify({ mode, note }) }),
   clearGoAhead: (tenderId: string) => request<{ go_ahead: null }>(`/api/steps/tenders/${tenderId}/go-ahead`, { method: "DELETE" }),
   aiTest: () => request<{ ok: boolean; model: string }>("/api/ai/test", { method: "POST" }),

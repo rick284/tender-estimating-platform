@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { api, type BuildStep, type GoAhead, type StepDetail, type StepOneData, type StepsOverview } from "../lib/api";
+import { Modal } from "../components/Modal";
+import { api, type AppApproval, type BuildStep, type GoAhead, type StepDetail, type StepOneData, type StepsOverview } from "../lib/api";
 import type { Estimate } from "../lib/types";
 import { newUid, useEdit } from "../lib/edit";
 import { fmtMoney } from "../lib/format";
@@ -65,6 +66,21 @@ export function StepPage({ tenderId, stepKey, summary, reload, est }: { tenderId
   const load = () => { setBusy(true); setErr(""); api.stepDetail(tenderId, stepKey).then(setD).catch((e) => { setD(null); setErr((e as Error).message); }).finally(() => setBusy(false)); };
   useEffect(() => { setD(null); load(); }, [tenderId, stepKey]);                                                        // eslint-disable-line react-hooks/exhaustive-deps
   const status = d?.status ?? summary?.status ?? "";
+  const [decide, setDecide] = useState(false);
+  const [dNote, setDNote] = useState("");
+  const [dErr, setDErr] = useState("");
+  const [dBusy, setDBusy] = useState(false);
+  const [done, setDone] = useState<{ text: string; filed: AppApproval["filed"] } | null>(null);
+  useEffect(() => { setDone(null); }, [stepKey]);
+  const decideNow = async () => {
+    const locked = status === "APPROVED-LOCKED";
+    setDBusy(true); setDErr("");
+    try {
+      const r = await api.setApproval(tenderId, stepKey, locked ? "reopen" : "approve", dNote, d?.name ?? summary?.name ?? "", summary?.record_status ?? status);
+      setDecide(false); setDone({ text: locked ? `Step ${stepKey} reopened.` : `Step ${stepKey} approved and locked.`, filed: r.filed });
+      reload(); load();
+    } catch (e) { setDErr((e as Error).message); } finally { setDBusy(false); }
+  };
   return (
     <>
       <PageHeader title={`Step ${stepKey}: ${d?.name ?? summary?.name ?? ""}`} sub={d?.chat_title || summary?.chat_title || "Each step runs in its own chat. This page shows what that chat set out to do (the brief) and what it did (the report)."}
@@ -74,7 +90,25 @@ export function StepPage({ tenderId, stepKey, summary, reload, est }: { tenderId
         {(d?.group || summary?.group) && <Chip tone="neutral">{d?.group ?? summary?.group}</Chip>}
         {(d?.workbook_revision || summary?.workbook_revision) && <Chip tone="neutral">Workbook {d?.workbook_revision || summary?.workbook_revision}</Chip>}
         {status === "APPROVED-LOCKED" && <span className="text-muted-foreground">Locked: later steps build on this result and never redo it. A change needs a change note.</span>}
+        <button className={`btn ${status === "APPROVED-LOCKED" ? "btn-ghost" : "btn-solid"} !py-1.5 ml-auto`} onClick={() => { setDecide(true); setDNote(""); setDErr(""); }}>
+          {status === "APPROVED-LOCKED" ? "Reopen with a change note" : "Approve and lock"}</button>
       </div>
+      {done && <div role="status" className={`mb-4 border px-4 py-3 text-sm ${done.filed?.error ? "border-amber-line bg-amber-bg text-amber-fg" : "border-green-line bg-green-bg text-green-fg"}`}>
+        {done.text}{done.filed?.name ? <> Filed in Drive as <b>{done.filed.name}</b>{done.filed.link ? <> (<a className="underline" href={done.filed.link} target="_blank" rel="noreferrer">open</a>)</> : null}. The next chat will see it.</> : null}
+        {done.filed?.error ? <> {done.filed.error}</> : null}</div>}
+      {summary?.app_approval && !done && <p className="mb-4 text-xs text-muted-foreground">Last decision in the app: {stepLabel(summary.app_approval.status)}{summary.app_approval.by ? ` by ${summary.app_approval.by}` : ""}, {new Date(summary.app_approval.at).toLocaleString()}.{summary.app_approval.note ? ` Note: ${summary.app_approval.note}` : ""}</p>}
+      <Modal open={decide} onClose={() => setDecide(false)} title={status === "APPROVED-LOCKED" ? `Reopen step ${stepKey}` : `Approve and lock step ${stepKey}`}>
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">{status === "APPROVED-LOCKED"
+            ? "Reopening unlocks this step's result. Say what changed and why; the step is then rebuilt in a new chat, not patched."
+            : "Approving locks this step's result. Later steps build on it and never redo it. Check the report first."}</p>
+          <label className="block"><span className="label">{status === "APPROVED-LOCKED" ? "Change note (required)" : "Note (optional)"}</span>
+            <textarea value={dNote} onChange={(e) => setDNote(e.target.value)} rows={3} maxLength={2000} className="mt-1 w-full border bg-background px-3 py-2 text-sm focus:border-primary" /></label>
+          {dErr && <div role="alert" className="border border-red-line bg-red-bg px-3 py-2 text-sm text-red-fg">{dErr}</div>}
+          <div className="flex justify-end gap-2"><button className="btn btn-ghost" onClick={() => setDecide(false)}>Cancel</button>
+            <button className="btn btn-solid" disabled={dBusy} onClick={() => void decideNow()}>{dBusy ? "Saving…" : status === "APPROVED-LOCKED" ? "Reopen step" : "Approve and lock"}</button></div>
+        </div>
+      </Modal>
       {stepKey === "01" && <StepOne tenderId={tenderId} est={est} />}
       {stepKey === "02" && <ProductionPlanPanel tenderId={tenderId} />}
       {err && <div role="alert" className="mb-4 border border-red-line bg-red-bg px-4 py-3 text-sm text-red-fg">{err}</div>}

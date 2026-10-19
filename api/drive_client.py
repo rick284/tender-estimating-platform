@@ -114,6 +114,22 @@ async def create_folder(token: str, name: str, parent_id: str | None) -> dict[st
     return r.json()
 
 
+async def create_text_file(token: str, name: str, parent_id: str, text: str) -> dict[str, Any]:
+    """Create ONE new small text file (never updates an existing file: Drive gives a new file even when a name repeats). Needs the full Drive permission."""
+    import json as _json
+    boundary = "qsi" + hashlib.sha1(name.encode()).hexdigest()[:12]
+    meta = _json.dumps({"name": name, "parents": [parent_id], "mimeType": "text/markdown"})
+    body = (f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{meta}\r\n--{boundary}\r\nContent-Type: text/markdown; charset=UTF-8\r\n\r\n{text}\r\n--{boundary}--").encode()
+    async with _client() as c:
+        r = await c.post("https://www.googleapis.com/upload/drive/v3/files", params={"uploadType": "multipart", "fields": "id,name,webViewLink", "supportsAllDrives": "true"},
+                         content=body, headers={"Authorization": f"Bearer {token}", "Content-Type": f"multipart/related; boundary={boundary}"})
+    if r.status_code in (403, 404):
+        raise DriveError("Google would not let this app save a file there. Press 'Allow Drive to add folders' again to give the full permission.")
+    if r.status_code != 200:
+        raise DriveError("Google Drive had a problem saving the file. Please try again.")
+    return r.json()
+
+
 async def list_children(token: str, folder_id: str, only_folders: bool = False) -> list[dict[str, Any]]:
     q = f"'{folder_id.replace(chr(39), '')}' in parents and trashed=false"
     if only_folders:
