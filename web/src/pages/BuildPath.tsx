@@ -6,6 +6,7 @@ import { fmtMoney } from "../lib/format";
 import { Markdown } from "../components/Markdown";
 import { Chip, Empty, PageHeader, Panel } from "../components/ui";
 import { go } from "../lib/route";
+import { ProductionPlanPanel } from "./ProductionPlan";
 
 export const stepTone = (s: string): "green" | "amber" | "red" | "neutral" =>
   s === "APPROVED-LOCKED" ? "green" : s === "DRAFT" || s === "REPORTED" ? "amber" : s === "REOPENED" ? "red" : "neutral";
@@ -75,6 +76,7 @@ export function StepPage({ tenderId, stepKey, summary, reload, est }: { tenderId
         {status === "APPROVED-LOCKED" && <span className="text-muted-foreground">Locked: later steps build on this result and never redo it. A change needs a change note.</span>}
       </div>
       {stepKey === "01" && <StepOne tenderId={tenderId} est={est} />}
+      {stepKey === "02" && <ProductionPlanPanel tenderId={tenderId} />}
       {err && <div role="alert" className="mb-4 border border-red-line bg-red-bg px-4 py-3 text-sm text-red-fg">{err}</div>}
       {busy && !d && <p className="text-sm text-muted-foreground" aria-live="polite">Reading the step files…</p>}
       {d && !d.brief && !d.report && <Empty title="No files for this step yet" body="The step's brief and report appear here once the chat has saved them in the step folder." />}

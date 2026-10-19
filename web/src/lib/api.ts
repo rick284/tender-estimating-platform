@@ -107,6 +107,14 @@ export interface StepOneData {
   scope: { rows: ScopeRowIn[]; questions: { ref: string; title: string; question: string }[] } | null;
   proposal: { cases: { label: string; hours: number; rate: number | null; fee: number }[]; rate: number | null; low_hours?: number; high_hours?: number; low_fee?: number; high_fee?: number; revision: string; text: string } | null;
 }
+export interface PlanTask { id: string; ref: string; stage: string; name: string; owner: string; low: number | null; high: number | null; driver: string; predecessor: string; deliverable: string; acceptance: string; scope_refs: string; actual: number | null; done: boolean }
+export interface PlanWindow { low_hours: number | null; high_hours: number | null; benchmark_hours: number | null }
+export interface ProductionPlan {
+  tasks: PlanTask[]; window: PlanWindow | null; source: string; updated_at: string; go_ahead: GoAhead | null;
+  summary: { low: number; high: number; mid: number; actual_task_hours: number; tracked_hours: number; done: number; count: number; issues: string[];
+    stages: { stage: string; tasks: number; done: number; low: number; high: number; actual: number }[];
+    reconciliation: { low_hours: number; high_hours: number; position: "within" | "below" | "above"; benchmark: number | null; note: string } | null } | null;
+}
 export interface BuildStepFile { id: string; name: string }
 export interface BuildStep { key: string; number: number; name: string; group: string; status: string; chat_title: string; workbook_revision: string; folder_id: string | null; folder_name: string; brief: BuildStepFile | null; report: BuildStepFile | null; in_record: boolean }
 export interface StepsOverview {
@@ -197,6 +205,9 @@ export const api = {
   stepsOverview: (tenderId: string) => request<StepsOverview>(`/api/steps/tenders/${tenderId}`, {}, LONG),
   stepDetail: (tenderId: string, key: string) => request<StepDetail>(`/api/steps/tenders/${tenderId}/step/${encodeURIComponent(key)}`, {}, LONG),
   stepOne: (tenderId: string) => request<StepOneData>(`/api/steps/tenders/${tenderId}/step01`, {}, LONG),
+  production: (id: string) => request<ProductionPlan>(`/api/steps/tenders/${id}/production`),
+  saveProduction: (id: string, tasks: PlanTask[], window: PlanWindow | null) => request<ProductionPlan>(`/api/steps/tenders/${id}/production`, { method: "PUT", body: JSON.stringify({ tasks, window }) }),
+  importProduction: (id: string) => request<ProductionPlan>(`/api/steps/tenders/${id}/production/import`, { method: "POST" }, LONG),
   setGoAhead: (tenderId: string, mode: string, note: string) => request<{ go_ahead: GoAhead }>(`/api/steps/tenders/${tenderId}/go-ahead`, { method: "PUT", body: JSON.stringify({ mode, note }) }),
   clearGoAhead: (tenderId: string) => request<{ go_ahead: null }>(`/api/steps/tenders/${tenderId}/go-ahead`, { method: "DELETE" }),
   aiTest: () => request<{ ok: boolean; model: string }>("/api/ai/test", { method: "POST" }),

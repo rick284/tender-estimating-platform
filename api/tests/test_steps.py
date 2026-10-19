@@ -1,3 +1,4 @@
+import io
 import json
 import urllib.parse as up
 
@@ -240,3 +241,35 @@ def test_api_step01_reads_the_word_files_from_the_job_folder(client, auth, monke
     d = r.json()
     assert len(d["scope"]["rows"]) == 5 and d["scope"]["questions"][0]["ref"] == "Q1" and d["proposal"]["low_fee"] == 3750 and d["card"].startswith("# Decision card")
     assert set(d["files"]) == {"scope", "proposal", "card"} and d["go_ahead"] is None
+
+
+def _plan_xlsx():
+    from openpyxl import Workbook
+    wb = Workbook(); ws = wb.active; ws.title = "Task Plan"
+    ws.append(["ID", "Stage", "Task", "Owner", "Low hours", "High hours", "Source / driver", "Predecessor", "Deliverable", "Acceptance test"])
+    ws.append(["T1", "Intake", "Read documents", "Estimator", 2, 3, "Drive folder", "", "Register", "Rick agrees"])
+    ws.append(["T2", "Takeoff", "Earthworks takeoff", "Estimator", 28, 40, "Cut/fill plan", "T1", "QS lines", ""])
+    ws.append(["Total", "", "", "", 30, 43])
+    b = io.BytesIO(); wb.save(b); return b.getvalue()
+
+
+def test_production_plan_pure_and_saved(client, auth):
+    import production
+    t = production.clean(production.parse_task_plan(_plan_xlsx()))
+    assert [x["name"] for x in t] == ["Read documents", "Earthworks takeoff"]               # the Total row is not a task
+    s = production.summarise(t, {"low_hours": 30, "high_hours": 40, "benchmark_hours": 38}, 1.25)
+    assert (s["low"], s["high"], s["mid"], s["tracked_hours"]) == (30.0, 43.0, 36.5, 1.25)
+    assert s["reconciliation"]["position"] == "within" and any("acceptance" in i for i in s["issues"])
+    assert production.summarise(t, {"low_hours": 50, "high_hours": 60}, 0)["reconciliation"]["position"] == "below"
+    with pytest.raises(ValueError):
+        production.clean([{"name": "x", "low": 5, "high": 2}])
+    with pytest.raises(ValueError):
+        from openpyxl import Workbook
+        w = Workbook(); w.active.append(["nothing", "useful"]); bb = io.BytesIO(); w.save(bb); production.parse_task_plan(bb.getvalue())
+    tid = client.post("/api/tenders", headers=auth, files={"file": ("a.xlsx", make_workbook())}).json()["id"]
+    assert client.get(f"/api/steps/tenders/{tid}/production", headers=auth).json()["summary"] is None
+    r = client.put(f"/api/steps/tenders/{tid}/production", headers=auth, json={"tasks": t, "window": {"low_hours": 30, "high_hours": 40}})
+    assert r.status_code == 200 and r.json()["summary"]["count"] == 2
+    bad = client.put(f"/api/steps/tenders/{tid}/production", headers=auth, json={"tasks": [{"name": "x", "low": -1}]})
+    assert bad.status_code == 422
+    assert client.get(f"/api/steps/tenders/{tid}/production", headers=auth).json()["summary"]["reconciliation"]["position"] == "within"

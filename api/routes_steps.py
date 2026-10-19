@@ -1,5 +1,6 @@
 """The job's build path: read-only view of the step files the senior estimator (ChatGPT project) keeps in the job's Drive folder."""
 from __future__ import annotations
+import re
 import asyncio
 from typing import Any
 
@@ -112,6 +113,93 @@ async def step_one(tender_id: str, user: dict[str, Any] = Depends(current_user))
         raise HTTPException(422, f"One of the Step 01 files could not be read ({type(e).__name__}). Save the Scope Confirmation and Proposal as Word (.docx) files in the job folder.")
     out["go_ahead"] = _go(t)
     return out
+
+
+async def _tracked_hours(user: dict[str, Any], tender_id: str) -> float:
+    """Hours actually worked on this tender according to the Timesheet (active time of all sessions + manual entries)."""
+    from db import get_db
+    db = get_db()
+    sec = sum([s.get("active_seconds", 0) async for s in db.time_sessions.find({"org_id": user["org_id"], "tender_id": tender_id})])
+    mins = sum([m.get("minutes", 0) async for m in db.time_entries.find({"org_id": user["org_id"], "tender_id": tender_id})])
+    return sec / 3600 + mins / 60
+
+
+async def _production_out(user: dict[str, Any], t: dict[str, Any]) -> dict[str, Any]:
+    import production
+    p = t.get("production_plan") or {}
+    tasks = p.get("tasks") or []
+    return {"tasks": tasks, "window": p.get("window"), "source": p.get("source", ""), "updated_at": p.get("updated_at", ""), "go_ahead": _go(t),
+            "summary": production.summarise(tasks, p.get("window"), await _tracked_hours(user, t["_id"])) if tasks else None}
+
+
+@router.get("/tenders/{tender_id}/production")
+async def get_production(tender_id: str, user: dict[str, Any] = Depends(current_user)):
+    return await _production_out(user, await _tender(user, tender_id))
+
+
+@router.put("/tenders/{tender_id}/production")
+async def put_production(tender_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)):
+    """Save the plan as edited in the app (tasks and the Step 01 window). The previous version is kept in the audit trail's detail count only; Drive files are never touched."""
+    import production
+    from db import get_db
+    from services import audit, now
+    t = await _tender(user, tender_id)
+    try:
+        tasks = production.clean(body.get("tasks") or [])
+    except (ValueError, TypeError) as e:
+        raise HTTPException(422, str(e))
+    w = body.get("window")
+    if w is not None:
+        try:
+            w = {k: (None if w.get(k) in (None, "") else float(w[k])) for k in ("low_hours", "high_hours", "benchmark_hours")}
+        except (ValueError, TypeError, AttributeError):
+            raise HTTPException(422, "The fee window hours must be numbers.")
+    prev = t.get("production_plan") or {}
+    plan = {"tasks": tasks, "window": w if w is not None else prev.get("window"), "source": prev.get("source") or "Entered in the app", "updated_at": now().isoformat()}
+    await get_db().tenders.update_one({"_id": t["_id"]}, {"$set": {"production_plan": plan}})
+    await audit(get_db(), user, "steps.production_save", t["_id"], f"{len(tasks)} tasks")
+    return await _production_out(user, {**t, "production_plan": plan})
+
+
+@router.post("/tenders/{tender_id}/production/import")
+async def import_production(tender_id: str, user: dict[str, Any] = Depends(current_user)):
+    """Read the newest Step 02 task-plan workbook (.xlsx) in the linked Drive folder, and the Step 01 hours window from the proposal. Replaces the saved plan (read only on Drive)."""
+    import production
+    import step01
+    from db import get_db
+    from services import audit, now
+    t = await _tender(user, tender_id)
+    link = t.get("drive_folder")
+    if not link:
+        raise HTTPException(409, "Link this tender to its Drive job folder first (Drive Documents).")
+    tok = await _token(user)
+    try:
+        items, _trunc = await dc.walk(tok, link["id"], max_depth=4, max_files=1500)
+        files = [x for x in items if not x["is_folder"]]
+        plans = [f for f in files if re.search(r"production|task.?plan|step.?0?2", f["name"], re.I) and re.search(r"\.xlsx$", f["name"], re.I)]
+        if not plans:
+            raise HTTPException(404, "No Step 02 task-plan workbook (.xlsx with 'production' or 'task plan' in its name) was found in the job folder.")
+        best = max(plans, key=lambda f: f.get("modified", ""))
+        get = lambda f: dc.download(tok, {"id": f["id"], "name": f["name"], "mime": f["mime"], "size": f.get("size")})
+        tasks = production.clean(production.parse_task_plan((await get(best))[2]))
+        window = (t.get("production_plan") or {}).get("window")
+        prop = step01.pick_files(files).get("proposal")
+        if prop:
+            pr = step01.parse_proposal((await get(prop))[2])
+            if pr.get("low_hours") is not None:
+                window = {"low_hours": pr.get("low_hours"), "high_hours": pr.get("high_hours"), "benchmark_hours": window.get("benchmark_hours") if window else None}
+    except dc.DriveError as e:
+        raise HTTPException(409, str(e))
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:                                                       # noqa: BLE001
+        raise HTTPException(422, f"The task plan could not be read ({type(e).__name__}).")
+    plan = {"tasks": tasks, "window": window, "source": f"Drive: {best['name']}", "updated_at": now().isoformat()}
+    await get_db().tenders.update_one({"_id": t["_id"]}, {"$set": {"production_plan": plan}})
+    await audit(get_db(), user, "steps.production_import", t["_id"], best["name"])
+    return await _production_out(user, {**t, "production_plan": plan})
 
 
 def _go(t: dict[str, Any]) -> dict[str, Any] | None:
