@@ -100,6 +100,13 @@ export interface DriveListing {
   counts: { files: number; latest_revisions: number; superseded: number; ambiguous_groups: number; loose_in_root: number };
 }
 
+export interface GoAhead { mode: "client_go" | "proceed_anyway"; note: string; at: string; by: string }
+export interface ScopeRowIn { ref: string; title: string; detail: string; proposal: string; source: string; owner: string; treatment: string }
+export interface StepOneData {
+  files: Record<string, { name: string; link: string }>; card: string; go_ahead: GoAhead | null;
+  scope: { rows: ScopeRowIn[]; questions: { ref: string; title: string; question: string }[] } | null;
+  proposal: { cases: { label: string; hours: number; rate: number | null; fee: number }[]; rate: number | null; low_hours?: number; high_hours?: number; low_fee?: number; high_fee?: number; revision: string; text: string } | null;
+}
 export interface BuildStepFile { id: string; name: string }
 export interface BuildStep { key: string; number: number; name: string; group: string; status: string; chat_title: string; workbook_revision: string; folder_id: string | null; folder_name: string; brief: BuildStepFile | null; report: BuildStepFile | null; in_record: boolean }
 export interface StepsOverview {
@@ -189,6 +196,9 @@ export const api = {
   labourCalc: (inputs: Record<string, unknown>) => request<LabourCalc>("/api/labour/calc", { method: "POST", body: JSON.stringify(inputs) }),
   stepsOverview: (tenderId: string) => request<StepsOverview>(`/api/steps/tenders/${tenderId}`, {}, LONG),
   stepDetail: (tenderId: string, key: string) => request<StepDetail>(`/api/steps/tenders/${tenderId}/step/${encodeURIComponent(key)}`, {}, LONG),
+  stepOne: (tenderId: string) => request<StepOneData>(`/api/steps/tenders/${tenderId}/step01`, {}, LONG),
+  setGoAhead: (tenderId: string, mode: string, note: string) => request<{ go_ahead: GoAhead }>(`/api/steps/tenders/${tenderId}/go-ahead`, { method: "PUT", body: JSON.stringify({ mode, note }) }),
+  clearGoAhead: (tenderId: string) => request<{ go_ahead: null }>(`/api/steps/tenders/${tenderId}/go-ahead`, { method: "DELETE" }),
   aiTest: () => request<{ ok: boolean; model: string }>("/api/ai/test", { method: "POST" }),
   aiDraft: (id: string, fileIds: string[], mode: "register" | "scope" = "register") => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ file_ids: fileIds, mode }) }, LONG),
   aiProposals: (id: string) => request<{ proposals: AiProposal[] }>(`/api/ai/tenders/${id}/proposals`),

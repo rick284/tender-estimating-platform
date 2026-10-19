@@ -143,3 +143,100 @@ def test_real_chatgpt_job_record_is_read():
     assert st.parse_step_file("329Hobsonville_Step02_Production_Programme_Brief_2026-10-19.md") is None                      # strict by default
     assert st.parse_step_file("329Hobsonville_Step02_Production_Programme_Brief_2026-10-19.md", loose=True) == ("02", "brief")
     assert st.parse_step_file("Hobsonville_Estimating_Proposal_RevA.md", loose=True) is None
+
+
+# ---- Step 01 files and the go-ahead record ----
+def _docx(build):
+    import io, docx
+    d = docx.Document(); build(d); b = io.BytesIO(); d.save(b); return b.getvalue()
+
+
+def _scope_doc(d):
+    t = d.add_table(rows=1, cols=6)
+    for c, h in zip(t.rows[0].cells, ["Ref", "Work item", "Proposed work and boundaries", "Our proposal", "Client response", "Source"]):
+        c.text = h
+    for r in [("00", "PRELIMINARIES / ACCESS", "Site establishment, fencing.", "Included", "[ ] Confirm\n[ ] Exclude\n[ ] Query", "Dave 04-Sep"), ("12", "FOUNDATIONS / FLOOR SLAB", "Subcontractor pricing.", "Subcontract quote", "[ ] Confirm", "DHC"),
+              ("28", "BUILDING AND FIT-OUT", "Outside this package.", "Excluded", "[ ] Confirm", "Spec"), ("26", "LANDSCAPE", "Fencing interface.", "By others / confirm", "[ ] Confirm", "RC"), ("16", "PARKING FIT-OUT", "Marking.", "To confirm", "[ ] Confirm", "RC")]:
+        cells = t.add_row().cells
+        for c, v in zip(cells, r):
+            c.text = v
+    q = d.add_table(rows=1, cols=3)
+    for c, h in zip(q.rows[0].cells, ["Ref", "Interface", "Written answer requested"]):
+        c.text = h
+    cells = q.add_row().cells
+    for c, v in zip(cells, ["Q1", "Concrete/foundation excavation", "Does the quotation include pad excavation and disposal?"]):
+        c.text = v
+
+
+def _proposal_doc(d):
+    d.add_paragraph("ESTIMATING SERVICES PROPOSAL Rev A")
+    t = d.add_table(rows=1, cols=4)
+    for c, h in zip(t.rows[0].cells, ["Planning basis", "Estimator hours", "Rate (excl. GST)", "Indicative fee (excl. GST)"]):
+        c.text = h
+    for r in [("Lower effort case", "30", "$125/hr", "$3,750"), ("Reference effort scenario", "38", "$125/hr", "$4,750"), ("Upper effort case", "40", "$125/hr", "$5,000")]:
+        cells = t.add_row().cells
+        for c, v in zip(cells, r):
+            c.text = v
+
+
+def test_step01_files_are_parsed_and_mapped_to_scope_suggestions():
+    import step01
+    s = step01.parse_scope_confirmation(_docx(_scope_doc))
+    by = {r["ref"]: r for r in s["rows"]}
+    assert len(s["rows"]) == 5 and by["00"]["title"] == "PRELIMINARIES / ACCESS" and by["00"]["proposal"] == "Included" and by["00"]["source"] == "Dave 04-Sep"
+    assert (by["00"]["owner"], by["00"]["treatment"]) == ("OWN WORKS", "UNRESOLVED") and (by["12"]["owner"], by["12"]["treatment"]) == ("SUBCONTRACT", "UNRESOLVED")
+    assert (by["28"]["owner"], by["28"]["treatment"]) == ("OTHERS", "EXCLUDED") and (by["26"]["owner"], by["26"]["treatment"]) == ("OTHERS", "BY OTHERS") and by["16"]["owner"] == "TBC"
+    assert all(r["treatment"] != "PRICED" for r in s["rows"])                                  # nothing is priced at Step 01
+    assert s["questions"] == [{"ref": "Q1", "title": "Concrete/foundation excavation", "question": "Does the quotation include pad excavation and disposal?"}]
+    p = step01.parse_proposal(_docx(_proposal_doc))
+    assert (p["low_hours"], p["high_hours"], p["low_fee"], p["high_fee"], p["rate"], p["revision"]) == (30, 40, 3750, 5000, 125, "A") and len(p["cases"]) == 3
+    files = [{"name": "329H_Scope_Confirmation_RevA_2026-10-19.docx", "modified": "1"}, {"name": "329H_Scope_Confirmation_RevB_2026-10-20.docx", "modified": "2"},
+             {"name": "329H_Scope_Confirmation_RevA_2026-10-19.pdf", "modified": "3"}, {"name": "329H_Internal_Effort_Decision_Card_RevA.md", "modified": "1"}, {"name": "Estimating_Proposal_RevA.docx", "modified": "1"}]
+    got = step01.pick_files(files)
+    assert got["scope"]["name"].endswith("RevB_2026-10-20.docx") and got["proposal"] and got["card"]
+
+
+def test_go_ahead_record(client, auth):
+    tid = client.post("/api/tenders", headers=auth, files={"file": ("a.xlsx", make_workbook())}).json()["id"]
+    assert client.get(f"/api/steps/tenders/{tid}/go-ahead", headers=auth).json() == {"go_ahead": None}
+    assert client.put(f"/api/steps/tenders/{tid}/go-ahead", headers=auth, json={"mode": "maybe"}).status_code == 422
+    assert client.put(f"/api/steps/tenders/{tid}/go-ahead", headers=auth, json={"mode": "proceed_anyway", "note": "ok"}).status_code == 422       # a reason is needed
+    r = client.put(f"/api/steps/tenders/{tid}/go-ahead", headers=auth, json={"mode": "client_go", "note": "Dave replied 20-Oct"}).json()["go_ahead"]
+    assert r["mode"] == "client_go" and r["note"] == "Dave replied 20-Oct" and r["at"]
+    assert client.get(f"/api/steps/tenders/{tid}/go-ahead", headers=auth).json()["go_ahead"]["mode"] == "client_go"
+    assert client.delete(f"/api/steps/tenders/{tid}/go-ahead", headers=auth).json() == {"go_ahead": None}
+
+
+def test_api_step01_reads_the_word_files_from_the_job_folder(client, auth, monkeypatch):
+    monkeypatch.setattr(config, "GOOGLE_CLIENT_ID", "cid"); monkeypatch.setattr(config, "GOOGLE_CLIENT_SECRET", "sec")
+    DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    tree = {"J": [{"id": "A", "name": "00 Project Admin", "mimeType": FOLDER}],
+            "A": [{"id": "SC", "name": "329H_Scope_Confirmation_RevA_2026-10-19.docx", "mimeType": DOCX, "size": "9000"}, {"id": "EP", "name": "329H_Estimating_Proposal_RevA_2026-10-19.docx", "mimeType": DOCX},
+                  {"id": "DC", "name": "329H_Internal_Effort_Decision_Card_RevA_2026-10-19.md", "mimeType": "text/markdown"}]}
+    blobs = {"SC": _docx(_scope_doc), "EP": _docx(_proposal_doc), "DC": b"# Decision card\n- Fee 30-40 h"}
+
+    def h(request):
+        u = request.url
+        if u.host == "oauth2.googleapis.com":
+            form = dict(up.parse_qsl(request.content.decode()))
+            return httpx.Response(200, json={"access_token": "AT", "refresh_token": "RT"} if form["grant_type"] == "authorization_code" else {"access_token": "AT2"})
+        if u.host == "openidconnect.googleapis.com":
+            return httpx.Response(200, json={"email": "r@x.example"})
+        if u.path == "/drive/v3/files":
+            return httpx.Response(200, json={"files": tree.get(u.params["q"].split("'")[1], [])})
+        fid = u.path.rsplit("/", 1)[1]
+        if u.params.get("alt") == "media":
+            return httpx.Response(200, content=blobs[fid])
+        if fid == "J":
+            return httpx.Response(200, json={"id": "J", "name": "329 Hobsonville Road", "mimeType": FOLDER})
+        return httpx.Response(404, json={})
+    monkeypatch.setattr(dc, "TRANSPORT", httpx.MockTransport(h))
+    tid = client.post("/api/tenders", headers=auth, files={"file": ("a.xlsx", make_workbook())}).json()["id"]
+    q = dict(up.parse_qsl(up.urlparse(client.get("/api/drive/connect", headers=auth).json()["url"]).query))
+    client.get("/api/drive/callback", params={"code": "c", "state": q["state"]})
+    client.put(f"/api/drive/tenders/{tid}", headers=auth, json={"folder_id": "J"})
+    r = client.get(f"/api/steps/tenders/{tid}/step01", headers=auth)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert len(d["scope"]["rows"]) == 5 and d["scope"]["questions"][0]["ref"] == "Q1" and d["proposal"]["low_fee"] == 3750 and d["card"].startswith("# Decision card")
+    assert set(d["files"]) == {"scope", "proposal", "card"} and d["go_ahead"] is None

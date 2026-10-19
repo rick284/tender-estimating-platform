@@ -379,7 +379,7 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
         {!err && pg === "revisions" && detail && <Revisions detail={detail} current={cur} onAdd={() => setUpload(true)} />}
         {!err && !isExtra && pg !== "revisions" && !shown && <div className="text-sm text-muted-foreground" aria-live="polite">Loading estimate…</div>}
         {!err && page === "jobrecord" && <JobRecord tenderId={id} data={steps ?? null} err={stepsErr} reload={loadSteps} loading={stepsBusy} />}
-        {!err && page.startsWith("step-") && <StepPage tenderId={id} stepKey={page.slice(5)} summary={steps?.steps.find((x) => x.key === page.slice(5))} reload={loadSteps} />}
+        {!err && page.startsWith("step-") && <StepPage tenderId={id} stepKey={page.slice(5)} summary={steps?.steps.find((x) => x.key === page.slice(5))} reload={loadSteps} est={shown ?? undefined} />}
         {!err && shown && pg === "overview" && <Overview est={shown} go={view} />}
         {!err && shown && pg === "consolidated" && <Consolidated est={shown} />}
         {!err && shown && pg === "commercial" && <Commercial est={shown} />}
