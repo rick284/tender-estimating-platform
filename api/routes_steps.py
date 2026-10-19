@@ -2,6 +2,7 @@
 from __future__ import annotations
 import re
 import asyncio
+import httpx
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -99,7 +100,9 @@ async def step_one(tender_id: str, user: dict[str, Any] = Depends(current_user))
     try:
         items, _trunc = await dc.walk(tok, link["id"], max_depth=4, max_files=1500)
         found = step01.pick_files([x for x in items if not x["is_folder"]])
-        out: dict[str, Any] = {"files": {k: {"name": v["name"], "link": v.get("link", "")} for k, v in found.items()}, "scope": None, "proposal": None, "card": ""}
+        out: dict[str, Any] = {"files": {k: {"name": v["name"], "link": v.get("link", "")} for k, v in found.items()}, "scope": None, "proposal": None, "card": "",
+                               "scanned": {"folder": link.get("name", ""), "path": link.get("path", ""), "files": sum(1 for x in items if not x["is_folder"]), "folders": sum(1 for x in items if x["is_folder"]),
+                                           "candidates": [x["name"] for x in items if not x["is_folder"] and re.search(r"scope|proposal|step.?0?1", x["name"], re.I)][:8]}}
         get = lambda f: dc.download(tok, {"id": f["id"], "name": f["name"], "mime": f["mime"], "size": f.get("size")})
         gd = lambda f: f.get("mime") == step01.GDOC
         if "scope" in found:
@@ -112,6 +115,8 @@ async def step_one(tender_id: str, user: dict[str, Any] = Depends(current_user))
             out["card"] = (await get(found["card"]))[2].decode("utf-8", errors="replace")[:60_000]
     except dc.DriveError as e:
         raise HTTPException(409, str(e))
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"The connection to Google Drive dropped part-way ({type(e).__name__}). Press Refresh from Drive to try again.")
     except Exception as e:                                                       # noqa: BLE001  a file that is not a readable Word document
         raise HTTPException(422, f"One of the Step 01 files could not be read ({type(e).__name__}). Save the Scope Confirmation and Proposal as Word (.docx) files in the job folder.")
     out["go_ahead"] = _go(t)

@@ -103,7 +103,7 @@ export interface DriveListing {
 export interface GoAhead { mode: "client_go" | "proceed_anyway"; note: string; at: string; by: string }
 export interface ScopeRowIn { ref: string; title: string; detail: string; proposal: string; source: string; owner: string; treatment: string }
 export interface StepOneData {
-  files: Record<string, { name: string; link: string }>; card: string; go_ahead: GoAhead | null;
+  files: Record<string, { name: string; link: string }>; card: string; go_ahead: GoAhead | null; scanned?: { folder: string; path: string; files: number; folders: number; candidates: string[] };
   scope: { rows: ScopeRowIn[]; questions: { ref: string; title: string; question: string }[] } | null;
   proposal: { cases: { label: string; hours: number; rate: number | null; fee: number }[]; rate: number | null; low_hours?: number; high_hours?: number; low_fee?: number; high_fee?: number; revision: string; text: string } | null;
 }

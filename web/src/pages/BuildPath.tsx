@@ -170,7 +170,13 @@ export function StepOne({ tenderId, est }: { tenderId: string; est?: Estimate })
         </Panel>
       )}
       <GoAheadPanel tenderId={tenderId} initial={d.go_ahead} />
-      {!d.scope && !p && !d.card && <Empty title="No Step 01 files found yet" body="Save the Scope Confirmation and Estimating Proposal (Word files) anywhere in the linked job folder, then refresh." />}
+      {!d.scope && !p && !d.card && (
+        <>
+          <Empty title="No Step 01 files found yet" body="Save the Scope Confirmation and Estimating Proposal (Word files or Google Docs) anywhere in the linked job folder, then refresh." />
+          {d.scanned && <p className="mt-2 text-sm text-muted-foreground">Looked in "{d.scanned.path || d.scanned.folder}": {d.scanned.files} files in {d.scanned.folders} folders.
+            {d.scanned.candidates.length > 0 ? ` Possible matches that were not used: ${d.scanned.candidates.join("; ")}.` : " Nothing with scope, proposal or step 01 in its name. Is the right job folder linked (Drive Documents)?"}</p>}
+        </>
+      )}
       {p && p.cases.length > 0 && (
         <Panel title={`Estimating proposal${p.revision ? ` Rev ${p.revision}` : ""}: the estimating service, not the construction price`} className="mb-4">
           <div className="mb-3 flex flex-wrap items-baseline gap-x-6 gap-y-1">
