@@ -20,6 +20,7 @@ from routes_tenders import router as tenders_router  # noqa: E402
 from routes_weather import router as weather_router  # noqa: E402
 from routes_labour import router as labour_router  # noqa: E402
 from routes_steps import router as steps_router  # noqa: E402
+from routes_emails import router as emails_router  # noqa: E402
 from routes_drive import router as drive_router  # noqa: E402
 from routes_ai import router as ai_router  # noqa: E402
 from routes_takeoff import router as takeoff_router  # noqa: E402
@@ -63,6 +64,7 @@ app.include_router(tenders_router)
 app.include_router(weather_router)
 app.include_router(labour_router)
 app.include_router(steps_router)
+app.include_router(emails_router)
 app.include_router(drive_router)
 app.include_router(ai_router)
 app.include_router(takeoff_router)

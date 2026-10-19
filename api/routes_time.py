@@ -32,7 +32,7 @@ MAX_DELTA = 65                         # a heartbeat can add at most this many a
 SLACK = 120                            # activity is matched to a session from this many seconds before its start to after its end
 PAGE_LABELS = {"overview": "Overview", "qs": "QS Takeoff", "buildup": "Resource Build-Up", "commercial": "Commercial", "tender": "Tender Build-Up", "consolidated": "Consolidated Package",
                "programme": "Programme", "gantt": "Programme Gantt", "weather": "Weather Risk", "risk": "Risk Truth", "reserve": "Management Reserve", "register": "Register",
-               "quotes": "Quotes", "drive": "Drive Documents", "ai": "AI Drafting", "takeoff": "AI Takeoff", "outputs": "Client Outputs", "library": "Rate Library", "revisions": "Revisions"}
+               "quotes": "Quotes", "emails": "Emails", "drive": "Drive Documents", "ai": "AI Drafting", "takeoff": "AI Takeoff", "outputs": "Client Outputs", "library": "Rate Library", "revisions": "Revisions"}
 AUDIT_TEXT = {"revision.create": "Uploaded workbook", "revision.add_register": "Added register data to a revision", "revision.enable_editing": "Enabled editing on a revision",
               "output.download": "Downloaded", "drive.read": "Read Drive documents", "drive.link_folder": "Linked a Drive folder", "ai.draft": "Ran AI drafting", "ai.accept": "Accepted an AI proposal",
               "ai.reject": "Rejected an AI proposal", "takeoff.run": "Ran AI takeoff", "takeoff.accept": "Accepted a takeoff line", "takeoff.reject": "Rejected a takeoff line",

@@ -115,6 +115,9 @@ export interface ProductionPlan {
     stages: { stage: string; tasks: number; done: number; low: number; high: number; actual: number }[];
     reconciliation: { low_hours: number; high_hours: number; position: "within" | "below" | "above"; benchmark: number | null; note: string } | null } | null;
 }
+export interface EmailThread { file_id: string; name: string; link: string; path: string; direction: "in" | "out"; date: string; subject: string; party: string; count: number; refs: string[]; attachments: string[]; links: string[]; gmail_ids: string[]; modified: string; hit?: string }
+export interface EmailMessage { from: string; date: string; subject: string; gmail_id: string; body: string }
+export interface EmailThreadFull extends EmailThread { messages: EmailMessage[]; text: string }
 export interface BuildStepFile { id: string; name: string }
 export interface BuildStep { key: string; number: number; name: string; group: string; status: string; chat_title: string; workbook_revision: string; folder_id: string | null; folder_name: string; brief: BuildStepFile | null; report: BuildStepFile | null; in_record: boolean }
 export interface StepsOverview {
@@ -205,6 +208,9 @@ export const api = {
   stepsOverview: (tenderId: string) => request<StepsOverview>(`/api/steps/tenders/${tenderId}`, {}, LONG),
   stepDetail: (tenderId: string, key: string) => request<StepDetail>(`/api/steps/tenders/${tenderId}/step/${encodeURIComponent(key)}`, {}, LONG),
   stepOne: (tenderId: string) => request<StepOneData>(`/api/steps/tenders/${tenderId}/step01`, {}, LONG),
+  emailsRefresh: (id: string) => request<{ found: number; read: number; removed: number; problems: string[]; truncated: boolean }>(`/api/emails/tenders/${id}/refresh`, { method: "POST" }, LONG),
+  emails: (id: string, q = "", direction = "", ref = "") => request<{ threads: EmailThread[]; total: number; refs: string[] }>(`/api/emails/tenders/${id}?q=${encodeURIComponent(q)}&direction=${direction}&ref=${encodeURIComponent(ref)}`),
+  emailThread: (id: string, fileId: string) => request<EmailThreadFull>(`/api/emails/tenders/${id}/thread/${encodeURIComponent(fileId)}`),
   production: (id: string) => request<ProductionPlan>(`/api/steps/tenders/${id}/production`),
   saveProduction: (id: string, tasks: PlanTask[], window: PlanWindow | null) => request<ProductionPlan>(`/api/steps/tenders/${id}/production`, { method: "PUT", body: JSON.stringify({ tasks, window }) }),
   importProduction: (id: string) => request<ProductionPlan>(`/api/steps/tenders/${id}/production/import`, { method: "POST" }, LONG),

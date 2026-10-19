@@ -32,7 +32,7 @@ async def _scan(user, tender_id: str) -> tuple[str, dict[str, Any], dict[str, An
         if not admin:
             return tok, t, None, [], []
         inside = await dc.list_children(tok, admin["id"])
-        record = next((x for x in inside if x["name"].lower().startswith("job_record") and x["name"].lower().endswith(".md")), None)
+        record = next((x for x in inside if st.norm_name(x["name"]).lower().startswith("job_record") and st.norm_name(x["name"]).lower().endswith(".md")), None)
         steps_dir = next((x for x in inside if x["mimeType"] == dc.FOLDER_MIME and x["name"].strip().lower() == "steps"), None)
         folders: list[dict[str, Any]] = []
         if steps_dir:
@@ -101,10 +101,13 @@ async def step_one(tender_id: str, user: dict[str, Any] = Depends(current_user))
         found = step01.pick_files([x for x in items if not x["is_folder"]])
         out: dict[str, Any] = {"files": {k: {"name": v["name"], "link": v.get("link", "")} for k, v in found.items()}, "scope": None, "proposal": None, "card": ""}
         get = lambda f: dc.download(tok, {"id": f["id"], "name": f["name"], "mime": f["mime"], "size": f.get("size")})
+        gd = lambda f: f.get("mime") == step01.GDOC
         if "scope" in found:
-            out["scope"] = step01.parse_scope_confirmation((await get(found["scope"]))[2])
+            data = (await get(found["scope"]))[2]
+            out["scope"] = step01.parse_scope_text(data.decode("utf-8", errors="replace")) if gd(found["scope"]) else step01.parse_scope_confirmation(data)
         if "proposal" in found:
-            out["proposal"] = step01.parse_proposal((await get(found["proposal"]))[2])
+            data = (await get(found["proposal"]))[2]
+            out["proposal"] = step01.parse_proposal_text(data.decode("utf-8", errors="replace")) if gd(found["proposal"]) else step01.parse_proposal(data)
         if "card" in found:
             out["card"] = (await get(found["card"]))[2].decode("utf-8", errors="replace")[:60_000]
     except dc.DriveError as e:

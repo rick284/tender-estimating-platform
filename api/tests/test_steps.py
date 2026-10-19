@@ -273,3 +273,117 @@ def test_production_plan_pure_and_saved(client, auth):
     bad = client.put(f"/api/steps/tenders/{tid}/production", headers=auth, json={"tasks": [{"name": "x", "low": -1}]})
     assert bad.status_code == 422
     assert client.get(f"/api/steps/tenders/{tid}/production", headers=auth).json()["summary"]["reconciliation"]["position"] == "within"
+
+
+def test_emails_refresh_list_search_and_thread(client, auth, monkeypatch):
+    import emails as em
+    monkeypatch.setattr(config, "GOOGLE_CLIENT_ID", "cid"); monkeypatch.setattr(config, "GOOGLE_CLIENT_SECRET", "sec")
+    GDOC = "application/vnd.google-apps.document"
+    mail = em_text = ("Source: Dave Stewart, 04-Sep-2026, subject: Enquiry\n\nOriginal Gmail message ID: 1a0693e3.\n\nPlease price the channel drains. See RFI-06.\n")
+    tree = {"J": [{"id": "F4", "name": "04 RFIs Correspondence and Clarifications", "mimeType": FOLDER}, {"id": "F2", "name": "02 Tender Source Documents", "mimeType": FOLDER}],
+            "F4": [{"id": "F41", "name": "04.1 Emails In", "mimeType": FOLDER}, {"id": "F42", "name": "04.2 Emails Out - DRAFT ONLY", "mimeType": FOLDER}],
+            "F41": [{"id": "E1", "name": "2026-09-04_In_Dave_Stewart_Enquiry_TEST", "mimeType": GDOC, "modifiedTime": "2026-10-19T21:21:48Z"}],
+            "F42": [{"id": "E2", "name": "2026-10-01_Out_Quote_request.md", "mimeType": "text/markdown", "modifiedTime": "2026-10-20T01:00:00Z"}],
+            "F2": [{"id": "P1", "name": "plan.pdf", "mimeType": "application/pdf"}]}
+    blobs = {"E1": mail.encode(), "E2": b"From: Rick\nSubject: Quote request\n\nDRAFT - please quote Q-03."}
+    calls = {"dl": 0}
+
+    def h(request):
+        u = request.url
+        if u.host == "oauth2.googleapis.com":
+            form = dict(up.parse_qsl(request.content.decode()))
+            return httpx.Response(200, json={"access_token": "AT", "refresh_token": "RT"} if form["grant_type"] == "authorization_code" else {"access_token": "AT2"})
+        if u.host == "openidconnect.googleapis.com":
+            return httpx.Response(200, json={"email": "r@x.example"})
+        if u.path == "/drive/v3/files":
+            return httpx.Response(200, json={"files": tree.get(u.params["q"].split("'")[1], [])})
+        fid = u.path.rsplit("/", 1)[1] if "/export" not in u.path else u.path.split("/")[-2]
+        if fid in blobs and (u.params.get("alt") == "media" or "/export" in u.path):
+            calls["dl"] += 1
+            return httpx.Response(200, content=blobs[fid])
+        if fid == "J":
+            return httpx.Response(200, json={"id": "J", "name": "329 Hobsonville Road", "mimeType": FOLDER})
+        return httpx.Response(404, json={})
+    monkeypatch.setattr(dc, "TRANSPORT", httpx.MockTransport(h))
+    tid = client.post("/api/tenders", headers=auth, files={"file": ("a.xlsx", make_workbook())}).json()["id"]
+    q = dict(up.parse_qsl(up.urlparse(client.get("/api/drive/connect", headers=auth).json()["url"]).query))
+    client.get("/api/drive/callback", params={"code": "c", "state": q["state"]})
+    client.put(f"/api/drive/tenders/{tid}", headers=auth, json={"folder_id": "J"})
+    r = client.post(f"/api/emails/tenders/{tid}/refresh", headers=auth)
+    assert r.status_code == 200 and (r.json()["found"], r.json()["read"]) == (2, 2), r.text
+    assert client.post(f"/api/emails/tenders/{tid}/refresh", headers=auth).json()["read"] == 0 and calls["dl"] == 2        # unchanged files are not read again
+    L = client.get(f"/api/emails/tenders/{tid}", headers=auth).json()
+    assert [(x["direction"], x["subject"]) for x in L["threads"]] == [("out", "Quote request"), ("in", "Enquiry")] and L["refs"] == ["Q-03", "RFI-06"]
+    assert [x["name"] for x in client.get(f"/api/emails/tenders/{tid}", headers=auth, params={"q": "channel drains"}).json()["threads"]] == ["2026-09-04_In_Dave_Stewart_Enquiry_TEST"]
+    assert len(client.get(f"/api/emails/tenders/{tid}", headers=auth, params={"ref": "Q-03"}).json()["threads"]) == 1
+    d = client.get(f"/api/emails/tenders/{tid}/thread/E1", headers=auth).json()
+    assert d["messages"][0]["gmail_id"] == "1a0693e3" and "channel drains" in d["text"]
+    assert client.get(f"/api/emails/tenders/{tid}/thread/NOPE", headers=auth).status_code == 404
+
+
+REAL_SCOPE_TEXT = """SCOPE RESPONSE SCHEDULE
+
+Every line: \\[ \\] CONFIRM  \\[ \\] EXCLUDE  \\[ \\] QUERY; please name any by-others party.
+
+00 | PRELIMINARIES / ACCESS
+
+What we propose: Site establishment, temporary fencing, safety, welfare.
+
+Proposed treatment: Included; Source: Dave 04-Sep; Spec
+
+\\[ \\] Confirm  \\[ \\] Exclude  \\[ \\] Query ______
+
+12 | FOUNDATIONS / SLAB / BLOCKWORK
+
+What we propose: Overlay nominated concrete subcontractor's package.
+
+Proposed treatment: Subcontract quote; Source: Dave; Structural 13880
+
+26 | LANDSCAPE / FENCING INTERFACE
+
+What we propose: Landscaping, play areas, acoustic fencing.
+
+Proposed treatment: By others / confirm; Source: RC A1.5-A1.7; Consent 10-11
+
+28 | BUILDING AND FIT-OUT
+
+What we propose: Superstructure, roofing and fit-out excluded.
+
+Proposed treatment: Excluded; Source: Dave; Spec 1220
+
+INTERFACES NEEDING WRITTEN DECISION
+
+Q1 — Concrete/foundation excavations: Does the foundation quote cover footing excavations, spoil, piles and concrete placement?
+
+Client answer ______
+
+Q10 — Tender return: Provide client pricing headings/forms, contract terms, tender validity and revised due date.
+"""
+REAL_PROPOSAL_TEXT = """ESTIMATING SERVICES PROPOSAL
+DRAFT FOR RICK — NOT SENT | Rev A | 19-Oct-2026 | NZD ex GST
+
+Lower scenario: 30 hours × NZ$125/h = NZ$3,750.
+
+Reference recorded Hobsonville tender effort: 38 hours × NZ$125/h = NZ$4,750.
+
+Upper planning scenario: 40 hours × NZ$125/h = NZ$5,000.
+"""
+
+
+def test_step01_reads_the_google_doc_text_layout_of_the_app_test_folder():
+    import step01
+    s = step01.parse_scope_text(REAL_SCOPE_TEXT)
+    assert [r["ref"] for r in s["rows"]] == ["00", "12", "26", "28"]
+    assert s["rows"][0]["title"] == "PRELIMINARIES / ACCESS" and s["rows"][0]["proposal"] == "Included" and s["rows"][0]["source"] == "Dave 04-Sep; Spec"
+    assert [(r["owner"], r["treatment"]) for r in s["rows"]] == [("OWN WORKS", "UNRESOLVED"), ("SUBCONTRACT", "UNRESOLVED"), ("OTHERS", "BY OTHERS"), ("OTHERS", "EXCLUDED")]
+    assert [q["ref"] for q in s["questions"]] == ["Q1", "Q10"] and s["questions"][0]["title"] == "Concrete/foundation excavations"
+    p = step01.parse_proposal_text(REAL_PROPOSAL_TEXT)
+    assert (p["low_hours"], p["high_hours"], p["low_fee"], p["high_fee"], p["rate"], p["revision"]) == (30.0, 40.0, 3750.0, 5000.0, 125.0, "A")
+    files = [{"name": "329H_Scope_Confirmation_RevA_2026-10-19 - APP TEST", "mime": step01.GDOC, "modified": "1"}, {"name": "329H_Scope_Confirmation_RevA.pdf", "mime": "application/pdf", "modified": "2"},
+             {"name": "329H_Estimating_Proposal_RevA_2026-10-19 - APP TEST", "mime": step01.GDOC, "modified": "1"}]
+    assert {k: v["mime"] for k, v in step01.pick_files(files).items()} == {"scope": step01.GDOC, "proposal": step01.GDOC}      # the PDF copy is never picked
+
+
+def test_test_copy_labels_do_not_hide_step_files():
+    assert st.norm_name("JOB_RECORD.md - APP TEST") == "JOB_RECORD.md" and st.norm_name("STEP_01_REPORT.md - TEST") == "STEP_01_REPORT.md"
+    assert st.parse_step_file("STEP_01_REPORT.md - TEST") == ("01", "report") and st.parse_step_file("STEP_02_BRIEF.md - TEST") == ("02", "brief")

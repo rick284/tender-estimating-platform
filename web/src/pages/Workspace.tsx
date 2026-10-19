@@ -20,6 +20,7 @@ import { Outputs } from "./Outputs";
 import { Register } from "./Register";
 import { Quotes } from "./Quotes";
 import { DriveDocs } from "./DriveDocs";
+import { Emails } from "./Emails";
 import { RiskTruth } from "./RiskTruth";
 import { ManagementReserve } from "./ManagementReserve";
 import { AiDraft } from "./AiDraft";
@@ -398,6 +399,7 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
         {!err && pg === "ai" && <AiDraft tenderId={id} />}
         {!err && shown && pg === "takeoff" && <Takeoff est={shown} tenderId={id} goQs={() => view("qs")} />}
         {!err && pg === "drive" && <DriveDocs tenderId={id} />}
+        {!err && pg === "emails" && <Emails tenderId={id} est={shown ?? undefined} goPage={(p) => view(p as TenderPage)} />}
         {!err && shown && pg === "outputs" && <Outputs est={shown} tenderId={id} rev={cur} />}
         {!err && shown && pg === "library" && <RateLibrary est={shown} />}
         </ErrorBoundary>

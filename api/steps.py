@@ -45,14 +45,20 @@ def parse_step_folder(name: str) -> dict[str, Any] | None:
     if not m:
         return None
     num, suffix, rest = m.group(1), m.group(2).lower(), m.group(3).strip()
-    return {"number": int(num), "suffix": suffix, "key": f"{int(num):02d}{suffix}", "name": rest or f"Step {int(num):02d}"}
+    return {"number": int(num), "suffix": suffix, "key": f"{int(num):02d}{suffix}", "name": rest}
 
 
 LOOSE_FILE = re.compile(r"step[ _\-]?(\d{1,3})([a-z]?)(?=[ _\-.])(.*?)(brief|report)", re.I)
 
 
+def norm_name(name: str) -> str:
+    """A name without the label Mason adds to test copies: 'STEP_01_REPORT.md - TEST' / 'JOB_RECORD.md - APP TEST' -> 'STEP_01_REPORT.md' (native Google Docs carry no real extension)."""
+    return re.sub(r"\s*[-\u2013]\s*(?:APP\s+)?(?:TEST|DRAFT|COPY)\s*$", "", name or "", flags=re.I).strip()
+
+
 def parse_step_file(name: str, loose: bool = False) -> tuple[str, str] | None:
     """('05', 'brief') from STEP_05_BRIEF.md; with loose=True also from names the chat made up, e.g. 329Hobsonville_Step02_Production_Programme_Brief_2026-10-19.md."""
+    name = norm_name(name)
     m = STEP_FILE.match(name or "")
     if m:
         return (f"{int(m.group(1)):02d}{m.group(2).lower()}", m.group(3).lower())

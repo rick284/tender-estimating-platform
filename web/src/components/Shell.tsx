@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { BarChart3, Calculator, CalendarRange, Clock, GanttChart, ClipboardList, CloudRain, FileText, Handshake, FolderOpen, GitCompare, Layers, LayoutDashboard, Library, ListChecks, ListTree, LogOut, Menu, NotebookText, Package, Percent, Ruler, Scale, ShieldAlert, Sparkles, ScrollText, X } from "lucide-react";
+import { BarChart3, Calculator, CalendarRange, Clock, GanttChart, ClipboardList, CloudRain, FileText, Handshake, FolderOpen, GitCompare, Layers, LayoutDashboard, Library, ListChecks, ListTree, LogOut, Menu, NotebookText, Package, Percent, Ruler, Scale, ShieldAlert, Sparkles, ScrollText, X, Mail } from "lucide-react";
 import { go, type Route } from "../lib/route";
 import type { User } from "../lib/types";
 import type { StepsOverview } from "../lib/api";
@@ -20,6 +20,7 @@ export const TENDER_NAV = [
   { id: "reserve", label: "Management Reserve", icon: Scale },
   { id: "register", label: "Register", icon: ClipboardList },
   { id: "quotes", label: "Quotes", icon: Handshake },
+  { id: "emails", label: "Emails", icon: Mail },
   { id: "drive", label: "Drive Documents", icon: FolderOpen },
   { id: "ai", label: "AI Drafting", icon: Sparkles },
   { id: "takeoff", label: "AI Takeoff", icon: Ruler },

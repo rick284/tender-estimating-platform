@@ -97,6 +97,10 @@ def parse_proposal(data: bytes) -> dict[str, Any]:
             rate = _money(r[ir]) if ir is not None else None
             out["cases"].append({"label": r[0], "hours": h, "rate": rate, "fee": fee})
             out["rate"] = out["rate"] or rate
+    return _finish_proposal(out, text)
+
+
+def _finish_proposal(out: dict[str, Any], text: str) -> dict[str, Any]:
     hrs = sorted(c["hours"] for c in out["cases"])
     if hrs:
         out["low_hours"], out["high_hours"] = hrs[0], hrs[-1]
@@ -106,16 +110,63 @@ def parse_proposal(data: bytes) -> dict[str, Any]:
     return out
 
 
-FILE_KINDS = (("scope", re.compile(r"scope[_ ]?confirmation.*\.docx$", re.I)), ("proposal", re.compile(r"estimating[_ ]?proposal.*\.docx$", re.I)),
-              ("card", re.compile(r"(decision[_ ]?card|effort).*\.md$", re.I)))
+CASE_RX = re.compile(r"^\s*([A-Za-z][^:\n]{2,80}?)\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:h|hrs|hours)\s*[x×*]\s*(?:NZ)?\$?\s*([0-9][0-9,]*(?:\.\d+)?)\s*(?:/\s*h|per hour|an hour)?\s*=\s*(?:NZ)?\$?\s*([0-9][0-9,]*(?:\.\d+)?)", re.I | re.M)
+
+
+def parse_proposal_text(text: str) -> dict[str, Any]:
+    """The same proposal read from plain text (a Google Doc): lines like 'Lower scenario: 30 hours x NZ$125/h = NZ$3,750.'"""
+    out: dict[str, Any] = {"cases": [], "rate": None, "text": text[:6000]}
+    for m in CASE_RX.finditer(text):
+        rate = float(m.group(3).replace(",", ""))
+        out["cases"].append({"label": m.group(1).strip(), "hours": float(m.group(2)), "rate": rate, "fee": float(m.group(4).replace(",", ""))})
+        out["rate"] = out["rate"] or rate
+    return _finish_proposal(out, text)
+
+
+def parse_scope_text(text: str) -> dict[str, Any]:
+    """The Scope Confirmation read from plain text (a Google Doc): blocks 'NN | TITLE' / 'What we propose: ...' / 'Proposed treatment: X; Source: Y' and 'Q1 - Title: question'."""
+    rows: list[dict[str, Any]] = []
+    cur: dict[str, Any] | None = None
+    for line in text.splitlines():
+        ln = line.strip()
+        m = re.match(r"^(\d{1,3})\s*\|\s*(.+)$", ln)
+        if m:
+            cur = {"ref": m.group(1).zfill(2), "title": re.sub(r"\s+", " ", m.group(2)).strip(), "detail": "", "proposal": "", "source": ""}
+            rows.append(cur)
+            continue
+        if cur is None:
+            continue
+        w = re.match(r"^what we propose\s*:\s*(.+)$", ln, re.I)
+        if w:
+            cur["detail"] = w.group(1).strip(); continue
+        p = re.match(r"^proposed treatment\s*:\s*(.+)$", ln, re.I)
+        if p:
+            a, _s, b = p.group(1).partition("Source:")
+            cur["proposal"] = a.strip(" ;"); cur["source"] = b.strip(); continue
+        if re.match(r"^INTERFACES|^CONSENT|^EXCLUSIONS|^STATUS", ln):
+            cur = None
+    questions = []
+    for line in text.splitlines():
+        q = re.match(r"^(Q\d+)\s*[—–-]\s*([^:]+?)\s*:\s*(.+)$", line.strip())
+        if q:
+            questions.append({"ref": q.group(1), "title": q.group(2).strip(), "question": q.group(3).strip()})
+    for r in rows:
+        r["owner"], r["treatment"] = owner_treatment(r["proposal"])
+    return {"rows": rows, "questions": questions}
+
+
+GDOC = "application/vnd.google-apps.document"
+FILE_KINDS = (("scope", re.compile(r"scope[_ ]?confirmation", re.I), (".docx",)), ("proposal", re.compile(r"estimating[_ ]?proposal", re.I), (".docx",)),
+              ("card", re.compile(r"(decision[_ ]?card|effort)", re.I), (".md", ".txt")))
 
 
 def pick_files(files: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Newest matching file of each kind (highest Rev letter, then most recently modified)."""
     best: dict[str, dict[str, Any]] = {}
     for f in files:
-        for kind, rx in FILE_KINDS:
-            if rx.search(f["name"]):
+        for kind, rx, exts in FILE_KINDS:
+            # a Word file, or a native Google Doc (Drive gives those no extension), never a PDF copy
+            if rx.search(f["name"]) and (f.get("mime") == GDOC or f["name"].lower().endswith(exts)):
                 rev = re.search(r"Rev\s?_?([A-Z]|\d+)", f["name"], re.I)
                 key = (rev.group(1).upper() if rev else "", f.get("modified", ""))
                 if kind not in best or key > best[kind]["_key"]:
