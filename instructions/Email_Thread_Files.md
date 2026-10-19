@@ -8,7 +8,7 @@ Rev1, 20 Oct 2026. The app has no mailbox connection. It reads the text files yo
 - Attachments stay where they belong (quotes in `03`, tender documents in `02`). The thread file only names them and links to them.
 
 ## One file per thread
-File name: `YYYY-MM-DD_In_<Sender>_<Subject>` (or `_Out_` for a draft). A Google Doc or a .md/.txt file both work. The date is the first message's date.
+File name: `YYYY-MM-DD_In_<Sender>_<Subject>_<Email ID>` (or `_Out_` for a draft; the Email ID is the Email Log ID, e.g. `EM-0012`). A Google Doc or a .md/.txt file both work. The date is the first message's date. The full instruction for Mason is `19_Email_Thread_Filing.md` in the Mason senior estimator repository (`instructions/senior-estimator/`); this file is the app's side of the same layout.
 
 Inside, one block per message, separated by a line `=== NEXT MESSAGE ===`. Each block starts with:
 
