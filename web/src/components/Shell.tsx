@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from "react";
-import { BarChart3, Calculator, CalendarRange, Clock, GanttChart, ClipboardList, CloudRain, FileText, Handshake, FolderOpen, GitCompare, Layers, LayoutDashboard, Library, ListChecks, ListTree, LogOut, Menu, NotebookText, Package, Percent, Ruler, Scale, ShieldAlert, Sparkles, X } from "lucide-react";
+import { BarChart3, Calculator, CalendarRange, Clock, GanttChart, ClipboardList, CloudRain, FileText, Handshake, FolderOpen, GitCompare, Layers, LayoutDashboard, Library, ListChecks, ListTree, LogOut, Menu, NotebookText, Package, Percent, Ruler, Scale, ShieldAlert, Sparkles, ScrollText, X } from "lucide-react";
 import { go, type Route } from "../lib/route";
 import type { User } from "../lib/types";
+import type { StepsOverview } from "../lib/api";
 
 export const TENDER_NAV = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -41,7 +42,10 @@ function Brand() {
 const itemCls = (active: boolean) =>
   `flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm font-medium transition-colors ${active ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted"}`;
 
-export function Shell({ user, route, tenderName, onLogout, children }: { user: User; route: Route; tenderName?: string; onLogout: () => void; children: ReactNode }) {
+const dot = (s: string) => (s === "APPROVED-LOCKED" ? "bg-green-fg" : s === "DRAFT" || s === "REPORTED" ? "bg-amber-fg" : s === "REOPENED" ? "bg-red-fg" : "bg-muted-foreground/40");
+const dotText = (s: string) => ({ "APPROVED-LOCKED": "approved, locked", DRAFT: "draft", REPORTED: "reported", REOPENED: "reopened", READY: "ready to start", "NOT STARTED": "not started" } as Record<string, string>)[s] ?? s.toLowerCase();
+
+export function Shell({ user, route, tenderName, onLogout, children, steps }: { user: User; route: Route; tenderName?: string; onLogout: () => void; children: ReactNode; steps?: StepsOverview | null }) {
   const [open, setOpen] = useState(false);
   const inTender = route.name === "tender";
   const nav = (r: Route) => { go(r); setOpen(false); };
@@ -70,6 +74,34 @@ export function Shell({ user, route, tenderName, onLogout, children }: { user: U
           <nav aria-label="This tender" className="border-t p-3">
             <div className="label mb-1 px-3 pt-1">Open tender</div>
             <div className="mb-2 truncate px-3 text-xs text-muted-foreground" title={tenderName}>{tenderName}</div>
+            {steps !== undefined && (
+              <div className="mb-3 border-b pb-3" data-testid="build-path">
+                <div className="label mb-1 px-3">Build path</div>
+                <button className={itemCls(route.page === "jobrecord")} aria-current={route.page === "jobrecord" ? "page" : undefined}
+                  onClick={() => nav({ name: "tender", id: route.id, page: "jobrecord", rev: route.rev })}>
+                  <ScrollText size={16} strokeWidth={1.75} aria-hidden /> Job Record
+                </button>
+                {steps && steps.steps.length > 0 ? steps.groups.filter((g) => steps.steps.some((x) => x.group === g)).map((g) => {
+                  const inGroup = steps.steps.filter((x) => x.group === g);
+                  return (
+                    <details key={g} className="group" open={inGroup.length <= 6 || inGroup.some((x) => route.page === `step-${x.key}`) || undefined}>
+                      <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground">
+                        <span>{g}</span><span className="font-mono">{inGroup.length}</span>
+                      </summary>
+                      <div className="space-y-0.5">
+                        {inGroup.map((x) => (
+                          <button key={x.key} className={itemCls(route.page === `step-${x.key}`)} aria-current={route.page === `step-${x.key}` ? "page" : undefined}
+                            onClick={() => nav({ name: "tender", id: route.id, page: `step-${x.key}`, rev: route.rev })}>
+                            <span className={`inline-block h-2.5 w-2.5 shrink-0 ${dot(x.status)}`} role="img" aria-label={dotText(x.status)} title={dotText(x.status)} />
+                            <span className="truncate">{x.key} {x.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </details>
+                  );
+                }) : <div className="px-3 py-1.5 text-xs text-muted-foreground">Steps appear here once the senior estimator has saved them in the job folder.</div>}
+              </div>
+            )}
             <div className="space-y-0.5">
               {TENDER_NAV.map(({ id, label, icon: Icon }) => (
                 <button key={id} className={itemCls(route.page === id)} aria-current={route.page === id ? "page" : undefined}

@@ -28,6 +28,8 @@ import { Programme } from "./Programme";
 import { ProgrammeEditor } from "./ProgrammeEditor";
 import { Scope } from "./Scope";
 import { Brief } from "./Brief";
+import { JobRecord, StepPage } from "./BuildPath";
+import type { StepsOverview } from "../lib/api";
 import { clearDraft, loadDraft, saveDraft, useOnline, type SavedDraft } from "../lib/offline";
 import { useTimekeeper } from "../lib/useTimekeeper";
 import { Commercial } from "./Commercial";
@@ -304,12 +306,22 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
   const shown = editing && draft ? draft : est;
 
   const view = (p: TenderPage) => go({ name: "tender", id, page: p, rev });
-  const pg: TenderPage = isTenderPage(page) ? page : "overview";
+  const isExtra = page === "jobrecord" || page.startsWith("step-");
+  const pg = (isExtra ? "__extra" : isTenderPage(page) ? page : "overview") as TenderPage;
+  // The build path: the step files the senior estimator keeps in the job's Drive folder (read only)
+  const [steps, setSteps] = useState<StepsOverview | null | undefined>(undefined);
+  const [stepsErr, setStepsErr] = useState("");
+  const [stepsBusy, setStepsBusy] = useState(false);
+  const loadSteps = useCallback(() => {
+    setStepsBusy(true); setStepsErr("");
+    api.stepsOverview(id).then((r) => setSteps(r)).catch((e) => { setSteps(null); setStepsErr((e as Error).message); }).finally(() => setStepsBusy(false));
+  }, [id]);
+  useEffect(() => { setSteps(undefined); loadSteps(); }, [loadSteps]);
   const label = curInfo?.label ?? "";
   const stale = detail && cur !== detail.latest_rev;
 
   return (
-    <Shell user={user} route={{ name: "tender", id, page: pg, rev }} tenderName={detail?.name} onLogout={onLogout}>
+    <Shell user={user} route={{ name: "tender", id, page: isExtra ? page : pg, rev }} tenderName={detail?.name} onLogout={onLogout} steps={steps === undefined ? undefined : steps}>
       {/* The bar is exactly as tall as the brand block in the side menu (4rem, border included) so the two lines run straight across; every control in it is 2.25rem tall */}
       <div ref={barRef} className="z-30 flex min-h-16 items-center border-b bg-background lg:sticky lg:top-0">
         <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2 sm:px-4">
@@ -365,7 +377,9 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
         {err && <div role="alert" className="border border-red-line bg-red-bg px-4 py-3 text-sm text-red-fg">{err}</div>}
         <ErrorBoundary key={pg}>
         {!err && pg === "revisions" && detail && <Revisions detail={detail} current={cur} onAdd={() => setUpload(true)} />}
-        {!err && pg !== "revisions" && !shown && <div className="text-sm text-muted-foreground" aria-live="polite">Loading estimate…</div>}
+        {!err && !isExtra && pg !== "revisions" && !shown && <div className="text-sm text-muted-foreground" aria-live="polite">Loading estimate…</div>}
+        {!err && page === "jobrecord" && <JobRecord tenderId={id} data={steps ?? null} err={stepsErr} reload={loadSteps} loading={stepsBusy} />}
+        {!err && page.startsWith("step-") && <StepPage tenderId={id} stepKey={page.slice(5)} summary={steps?.steps.find((x) => x.key === page.slice(5))} reload={loadSteps} />}
         {!err && shown && pg === "overview" && <Overview est={shown} go={view} />}
         {!err && shown && pg === "consolidated" && <Consolidated est={shown} />}
         {!err && shown && pg === "commercial" && <Commercial est={shown} />}

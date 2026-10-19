@@ -100,6 +100,13 @@ export interface DriveListing {
   counts: { files: number; latest_revisions: number; superseded: number; ambiguous_groups: number; loose_in_root: number };
 }
 
+export interface BuildStepFile { id: string; name: string }
+export interface BuildStep { key: string; number: number; name: string; group: string; status: string; chat_title: string; workbook_revision: string; folder_id: string | null; folder_name: string; brief: BuildStepFile | null; report: BuildStepFile | null; in_record: boolean }
+export interface StepsOverview {
+  folder_found: boolean; groups: string[]; steps: BuildStep[]; counts: { steps: number; locked: number; draft: number; reopened: number };
+  job_record: { found: boolean; name: string; link: string; text: string; fields: Record<string, string> };
+}
+export interface StepDetail { key: string; number: number; name: string; group: string; status: string; chat_title: string; workbook_revision: string; folder_name: string; brief: { name: string; text: string } | null; report: { name: string; text: string } | null }
 export interface LabourStep { label: string; basis: string; amount: number; running: number }
 export interface LabourCalc { inputs: Record<string, string | boolean>; weekly_cost: number; rate: number; per_paid_hour: number; leave_pct: number; productivity: number; status: "GREEN" | "AMBER" | "RED"; status_note: string; steps: LabourStep[]; history?: { rate: string; status: string; evidence: string; source_date: string }[] }
 export interface AiProviderInfo { id: string; label: string; available: boolean; default_model: string; key_hint: string }
@@ -180,6 +187,8 @@ export const api = {
   aiStatus: () => request<AiStatus>("/api/ai/status"),
   aiSettings: (b: { provider?: string; model?: string; api_key?: string; clear_key?: boolean; enabled?: boolean; acknowledged?: boolean }) => request<AiStatus>("/api/ai/settings", { method: "PUT", body: JSON.stringify(b) }),
   labourCalc: (inputs: Record<string, unknown>) => request<LabourCalc>("/api/labour/calc", { method: "POST", body: JSON.stringify(inputs) }),
+  stepsOverview: (tenderId: string) => request<StepsOverview>(`/api/steps/tenders/${tenderId}`, {}, LONG),
+  stepDetail: (tenderId: string, key: string) => request<StepDetail>(`/api/steps/tenders/${tenderId}/step/${encodeURIComponent(key)}`, {}, LONG),
   aiTest: () => request<{ ok: boolean; model: string }>("/api/ai/test", { method: "POST" }),
   aiDraft: (id: string, fileIds: string[], mode: "register" | "scope" = "register") => request<{ batch: string; coverage_notes: string; proposals: AiProposal[]; files_sent: string[] }>(`/api/ai/tenders/${id}/draft`, { method: "POST", body: JSON.stringify({ file_ids: fileIds, mode }) }, LONG),
   aiProposals: (id: string) => request<{ proposals: AiProposal[] }>(`/api/ai/tenders/${id}/proposals`),
