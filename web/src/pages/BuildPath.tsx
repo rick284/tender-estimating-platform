@@ -131,7 +131,7 @@ const groupFor = (title: string): string => {
 const propTone = (p: string): "green" | "amber" | "red" | "neutral" => (/confirm/i.test(p) ? "amber" : /excluded|others/i.test(p) ? "neutral" : "green");
 
 export function StepOne({ tenderId, est }: { tenderId: string; est?: Estimate }) {
-  const { editing, add, canEdit, editHint, startEdit } = useEdit();
+  const { editing, add, set, canEdit, editHint, startEdit } = useEdit();
   const [d, setD] = useState<StepOneData | null>(null);
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
@@ -147,11 +147,28 @@ export function StepOne({ tenderId, est }: { tenderId: string; est?: Estimate })
     if (!editing) { if (!canEdit) { setNote(editHint || "This revision can't be edited. Open the latest revision first."); return false; } startEdit(); }
     return true;
   };
-  const addRows = () => { if (!ready()) return; for (const r of rows) add("scope", "C-" + newUid().slice(2), { ref: `SC-${r.ref.padStart(3, "0")}`, group: groupFor(r.title), title: r.title.charAt(0) + r.title.slice(1).toLowerCase(), detail: `Proposed: ${r.proposal}. ${r.detail}`.slice(0, 3000), source: r.source, owner: r.owner, treatment: r.treatment, action: "Client response to the Scope Confirmation: pending" }); };
-  const addRfis = () => { if (!ready()) return; for (const q of qs) add("register", newUid(), { kind: "rfi", title: `${q.ref}: ${q.title}`, detail: q.question, rag: "AMBER", status: "OPEN", action: "Written answer requested from the client (Scope Confirmation)" }); };
+  const addRows = (skip = false) => { if (!skip && !ready()) return; for (const r of rows) add("scope", "C-" + newUid().slice(2), { ref: `SC-${r.ref.padStart(3, "0")}`, group: groupFor(r.title), title: r.title.charAt(0) + r.title.slice(1).toLowerCase(), detail: `Proposed: ${r.proposal}. ${r.detail}`.slice(0, 3000), source: r.source, owner: r.owner, treatment: r.treatment, action: "Client response to the Scope Confirmation: pending" }); };
+  const addRfis = (skip = false) => { if (!skip && !ready()) return; for (const q of qs) add("register", "R-" + newUid().slice(2), { kind: "rfi", title: `${q.ref}: ${q.title}`, detail: q.question, rag: "AMBER", status: "OPEN", action: "Written answer requested from the client (Scope Confirmation)" }); };
+  const meta = (est?.meta ?? {}) as Record<string, string>;
+  const briefSet = (field: string, value: string) => { if (!String(meta[field] ?? "").trim() && value) set({ target: "brief", key: field, field, value, original: "" }); };
+  const setUp = () => {
+    if (!ready()) return;
+    addRows(true); addRfis(true);
+    const open = (d.scope?.questions ?? []).map((q) => `${q.ref}: ${q.title}`).join("\n");
+    briefSet("unknown", open ? `Open client questions from the Scope Confirmation:\n${open}` : "");
+    briefSet("known", d.scope ? `Step 01 Scope Confirmation lists ${d.scope.rows.length} scope items. Nothing is measured or priced yet.` : "");
+    briefSet("tender_level", "Tender");
+  };
   const p = d.proposal;
   return (
     <>
+      {(rows.length > 0 || qs.length > 0) && (
+        <Panel className="mb-4" title="Set this tender up from Step 01">
+          <p className="text-sm text-muted-foreground">One click puts the Step 01 scope items into Scope Coverage, the client questions into the Register as RFIs, and notes what is known and unknown in the Project Brief (only where the brief is still empty). It all goes into your edit draft; nothing is saved until you save a revision, and nothing is priced.</p>
+          <button className="btn btn-solid mt-3" onClick={setUp}>Set up from Step 01 ({rows.length} scope items, {qs.length} questions)</button>
+          {note && <div role="alert" className="mt-3 border border-red-line bg-red-bg px-4 py-3 text-sm text-red-fg">{note}</div>}
+        </Panel>
+      )}
       <GoAheadPanel tenderId={tenderId} initial={d.go_ahead} />
       {!d.scope && !p && !d.card && <Empty title="No Step 01 files found yet" body="Save the Scope Confirmation and Estimating Proposal (Word files) anywhere in the linked job folder, then refresh." />}
       {p && p.cases.length > 0 && (
@@ -166,7 +183,7 @@ export function StepOne({ tenderId, est }: { tenderId: string; est?: Estimate })
       )}
       {d.scope && (
         <Panel title={`Scope Confirmation (${d.scope.rows.length} items)`} className="mb-4" flush
-          action={<button className="btn btn-solid !py-1.5" disabled={rows.length === 0} onClick={addRows}>{rows.length === 0 ? "All in Scope Coverage" : `Add ${rows.length} to Scope Coverage`}</button>}>
+          action={<button className="btn btn-solid !py-1.5" disabled={rows.length === 0} onClick={() => addRows()}>{rows.length === 0 ? "All in Scope Coverage" : `Add ${rows.length} to Scope Coverage`}</button>}>
           <div className="grid-scroll"><table className="grid-table min-w-[42rem]"><thead><tr><th className="w-14">Ref</th><th className="min-w-[16rem]">Work item</th><th className="w-44">Our proposal</th><th className="min-w-[10rem]">Source</th></tr></thead>
             <tbody>{d.scope.rows.map((r) => (
               <tr key={r.ref}><td className="font-mono text-xs">{r.ref}</td><td>{r.title}<div className="text-xs text-muted-foreground">{r.detail}</div></td><td><Chip tone={propTone(r.proposal)}>{r.proposal}</Chip></td><td className="text-xs text-muted-foreground">{r.source}</td></tr>))}</tbody></table></div>
@@ -175,7 +192,7 @@ export function StepOne({ tenderId, est }: { tenderId: string; est?: Estimate })
       )}
       {d.scope && d.scope.questions.length > 0 && (
         <Panel title={`Written answers wanted from the client (${d.scope.questions.length})`} className="mb-4" flush
-          action={<button className="btn btn-ghost !py-1.5" disabled={qs.length === 0} onClick={addRfis}>{qs.length === 0 ? "All in the Register" : `Add ${qs.length} to the Register as RFIs`}</button>}>
+          action={<button className="btn btn-ghost !py-1.5" disabled={qs.length === 0} onClick={() => addRfis()}>{qs.length === 0 ? "All in the Register" : `Add ${qs.length} to the Register as RFIs`}</button>}>
           <table className="grid-table"><tbody>{d.scope.questions.map((q) => <tr key={q.ref}><td className="w-14 font-mono text-xs">{q.ref}</td><td className="w-64 font-medium">{q.title}</td><td>{q.question}</td></tr>)}</tbody></table>
         </Panel>
       )}

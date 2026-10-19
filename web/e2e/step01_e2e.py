@@ -55,9 +55,12 @@ with sync_playwright() as p:
     expect(m).to_contain_text("$3,750.00 to $5,000.00", timeout=10000)
     expect(m).to_contain_text("earthworks cut to fill", ignore_case=True)
     pg.screenshot(path=SHOTS + "step01_1.png", full_page=True)
-    pg.get_by_role("button", name="Add 3 to Scope Coverage").click()
+    pg.get_by_role("button", name="Set up from Step 01 (3 scope items, 1 questions)").click(); pg.wait_for_timeout(1500); assert "invalid" not in pg.locator("body").inner_text(), "the edit draft was rejected"
     expect(pg.get_by_role("button", name="All in Scope Coverage")).to_be_visible(timeout=10000)
-    pg.get_by_role("button", name="Add 1 to the Register as RFIs").click()
+    expect(pg.get_by_role("button", name="All in the Register")).to_be_visible()
+    pg.locator("aside").get_by_role("button", name="Project Brief").click()
+    expect(pg.locator("main")).to_contain_text("Q1: Who owns excavation", timeout=10000)
+    pg.get_by_test_id("build-path").get_by_role("button", name="01 Scope of Work and Effort").click()
     pg.locator("aside").get_by_role("button", name="Scope Coverage").click()
     expect(pg.locator("main")).to_contain_text("Retaining walls", timeout=10000)
     # go-ahead

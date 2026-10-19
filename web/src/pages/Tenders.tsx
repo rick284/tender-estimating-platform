@@ -12,7 +12,7 @@ const releaseTone = (r: string) => (/HOLD/i.test(r) ? "red" : r ? "green" : "neu
 
 const field = "mt-1 w-full border bg-background px-3 text-sm focus:border-primary";
 
-function NewTender({ open, onClose, onCreated, tenders }: { open: boolean; onClose: () => void; onCreated: (t: Tender) => void; tenders: Tender[] }) {
+function NewTender({ open, onClose, onCreated, tenders }: { open: boolean; onClose: () => void; onCreated: (t: Tender, mode: "scratch" | "upload") => void; tenders: Tender[] }) {
   const [mode, setMode] = useState<"scratch" | "upload">("scratch");
   const [file, setFile] = useState<File | null>(null);
   const [client, setClient] = useState("");
@@ -26,7 +26,7 @@ function NewTender({ open, onClose, onCreated, tenders }: { open: boolean; onClo
   useEffect(() => { if (open) { setFile(null); setClient(""); setName(""); setLevel("Tender"); setIntake({}); setFrom(""); setErr(""); } }, [open]);
   const run = async (fn: () => Promise<Tender>) => {
     setBusy(true); setErr("");
-    try { onCreated(await fn()); } catch (x) { setErr(x instanceof Error ? x.message : "That didn't work."); } finally { setBusy(false); }
+    try { onCreated(await fn(), mode); } catch (x) { setErr(x instanceof Error ? x.message : "That didn't work."); } finally { setBusy(false); }
   };
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -56,7 +56,7 @@ function NewTender({ open, onClose, onCreated, tenders }: { open: boolean; onClo
           </>
         ) : (
           <>
-            <p className="text-sm text-muted-foreground">Start with an empty estimate. Your rates, overhead and margin carry over from an earlier tender; quantities, rows and allowances start blank so nothing is priced until you add it. Everything here can be filled in later.</p>
+            <p className="text-sm text-muted-foreground">Start a new tender when an enquiry comes in. You land on Drive Documents next: link the job folder, then open Step 01 from the Build path to set the tender up. Your rates, overhead and margin carry over from an earlier tender; quantities, rows and allowances start blank so nothing is priced until you add it. Everything here can be filled in later.</p>
             <label className="block"><span className="label">Tender name</span>
               <input value={name} onChange={(e) => setName(e.target.value)} maxLength={160} className={`${field} h-10`} placeholder="e.g. 12 Smith Road Subdivision, civil works" autoFocus /></label>
             <label className="block"><span className="label">Estimate level</span>
@@ -210,7 +210,7 @@ export function Tenders() {
           )}
         </>
       )}
-      <NewTender tenders={data?.tenders ?? []} open={openNew} onClose={() => setOpenNew(false)} onCreated={(t) => { setOpenNew(false); go({ name: "tender", id: t.id, page: "overview", rev: null }); }} />
+      <NewTender tenders={data?.tenders ?? []} open={openNew} onClose={() => setOpenNew(false)} onCreated={(t, m) => { setOpenNew(false); go({ name: "tender", id: t.id, page: m === "scratch" ? "drive" : "overview", rev: null }); }} />
     </main>
   );
 }

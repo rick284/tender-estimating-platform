@@ -39,6 +39,8 @@ with sync_playwright() as p:
     dlg.get_by_label("Scope summary").fill("Civil works for 12 lots.\nIncludes roading.")
     pg.screenshot(path=SHOTS + "bl_0_dialog.png")
     dlg.get_by_role("button", name="Start tender").click()
+    expect(pg.get_by_text("Drive Documents").first).to_be_visible(timeout=20000)          # a new tender lands on Drive Documents (link the job folder, then Step 01)
+    pg.locator("aside").get_by_role("button", name="Overview").click()
     expect(pg.get_by_text("Getting started")).to_be_visible(timeout=20000)
     expect(pg.get_by_text("Smith Developments").first).to_be_visible()
     pg.wait_for_timeout(500); pg.screenshot(path=SHOTS + "bl_1_overview.png", full_page=True)
