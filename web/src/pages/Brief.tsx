@@ -3,6 +3,8 @@ import { EditField } from "../components/EditCells";
 import { PageHeader, Panel } from "../components/ui";
 import { useEdit } from "../lib/edit";
 import { TENDER_LEVELS } from "../lib/intake";
+import { briefFromScope } from "../lib/briefFromScope";
+import { useState } from "react";
 
 // Keys and limits match engine/tender_engine/brief.py
 type F = { key: string; label: string; hint: string; long?: boolean };
@@ -33,12 +35,23 @@ const GROUPS: { title: string; sub: string; fields: F[] }[] = [
   ] },
 ];
 
-export function Brief({ est }: { est: Estimate }) {
-  const { editing } = useEdit();
+export function Brief({ est, recordFields }: { est: Estimate; recordFields?: Record<string, string> }) {
+  const { editing, set, canEdit, editHint, startEdit } = useEdit();
   const meta = est.meta as Record<string, string>;
+  const [msg, setMsg] = useState("");
+  const fill = () => {
+    if (!editing) { if (!canEdit) { setMsg(editHint || "This revision can't be edited. Open the latest revision first."); return; } startEdit(); }
+    const data = briefFromScope(est, recordFields);
+    const empty = Object.entries(data).filter(([k]) => !String(meta[k] ?? "").trim());
+    if (Object.keys(data).length === 0) { setMsg("There is no scope yet. Add the scope items first (Step 01, or Scope Coverage)."); return; }
+    empty.forEach(([k, v]) => set({ target: "brief", key: k, field: k, value: v, original: "" }));
+    setMsg(empty.length ? `Filled ${empty.length} empty field${empty.length === 1 ? "" : "s"} from the scope (${empty.map(([k]) => GROUPS.flatMap((g) => g.fields).find((f) => f.key === k)?.label ?? k).join(", ")}). Review and edit, then save a revision. Fields you already wrote were left alone.` : "Nothing to fill: the overview fields already have your wording.");
+  };
   return (
     <>
-      <PageHeader title="Project brief" sub="What the job is, who owns it, who is involved and what we know about it. Written notes only: nothing here is priced." />
+      <PageHeader title="Project brief" sub="What the job is, who owns it, who is involved and what we know about it. Written notes only: nothing here is priced."
+        actions={<button className="btn btn-ghost" onClick={fill}>Fill empty fields from the scope</button>} />
+      {msg && <div role="status" className="mb-4 border px-4 py-3 text-sm">{msg}</div>}
       {GROUPS.map((g) => (
         <Panel key={g.title} className="mb-4" title={g.title}>
           <p className="mb-3 text-sm text-muted-foreground">{g.sub}</p>

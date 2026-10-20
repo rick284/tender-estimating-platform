@@ -4,6 +4,7 @@ import { EditField } from "../components/EditCells";
 import { Modal } from "../components/Modal";
 import { Chip, Empty, PageHeader, Panel, Stat } from "../components/ui";
 import { useEdit } from "../lib/edit";
+import { api } from "../lib/api";
 
 const GROUPS = ["Permanent works", "Enabling works", "Access and site establishment", "Temporary works", "Testing and inspection", "Reinstatement and handover", "Preliminaries and management", "Interface with others", "Other"];
 const OWNERS = ["OWN WORKS", "SUBCONTRACT", "CLIENT", "OTHERS", "SHARED", "TBC"];
@@ -47,20 +48,29 @@ function AddDialog({ open, onClose, onAdd }: { open: boolean; onClose: () => voi
   );
 }
 
-export function Scope({ est, goQs }: { est: Estimate; goQs: () => void }) {
+export function Scope({ est, goQs, tenderId }: { est: Estimate; goQs: () => void; tenderId: string }) {
   const { editing, add, remove } = useEdit();
+  const [byGroup, setByGroup] = useState(false);                      // default: the order the scope arrived in (the Scope Confirmation's own order)
+  const [filing, setFiling] = useState(false);
+  const [filed, setFiled] = useState<{ text: string; ok: boolean } | null>(null);
+  const fileNow = async () => { setFiling(true); setFiled(null); try { const r = await api.fileScope(tenderId); setFiled(r.filed.name ? { ok: true, text: `Filed in Drive as ${r.filed.name} (${r.items} items). The chat will read it.` } : { ok: false, text: r.filed.error ?? "Not filed." }); } catch (e) { setFiled({ ok: false, text: (e as Error).message }); } finally { setFiling(false); } };
   const [adding, setAdding] = useState(false);
   const sc = est.scope ?? { items: [], counts: { COMPLETE: 0, CHECK: 0, MISSING: 0, total: 0 }, by_treatment: {}, unhomed_qs: [], gate: "NOT STARTED - no scope items recorded" };
   const hold = /^HOLD/.test(sc.gate), pass = /^PASS/.test(sc.gate);
   const E = (it: ScopeItem, f: keyof ScopeItem, label: string, o: { kind?: "text" | "textarea" | "select"; width?: string; options?: { value: string; label: string }[] } = {}) => (
     <EditField target="scope" id={it.id} field={f} value={String(it[f] ?? "")} label={`${it.ref} ${label}`} kind={o.kind} options={o.options} width={o.width ?? "w-full"} display={String(it[f] ?? "") ? (o.options ? (String(it[f]).charAt(0) + String(it[f]).slice(1).toLowerCase()) : String(it[f])) : "—"} />
   );
-  const groups = GROUPS.filter((g) => sc.items.some((i) => i.group === g)).concat(sc.items.some((i) => !GROUPS.includes(i.group)) ? [""] : []);
+  const groups = !byGroup ? ["__all"] : GROUPS.filter((g) => sc.items.some((i) => i.group === g)).concat(sc.items.some((i) => !GROUPS.includes(i.group)) ? [""] : []);
   const wrap = "whitespace-pre-line text-sm leading-snug";
   return (
     <>
       <PageHeader title="Scope coverage and interfaces" sub="Everything the job needs, who delivers it and how the price treats it. A detailed estimate is not proof of completeness: every requirement needs an owner and a treatment that is backed up."
-        actions={editing ? <button className="btn btn-solid" onClick={() => setAdding(true)}>Add requirement</button> : undefined} />
+        actions={<div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs"><span className="text-muted-foreground">Order</span>
+            <select aria-label="Order" value={byGroup ? "group" : "imported"} onChange={(e) => setByGroup(e.target.value === "group")} className="h-9 border bg-background px-2 text-sm"><option value="imported">As imported</option><option value="group">By group</option></select></label>
+          <button className="btn btn-ghost" onClick={() => void fileNow()} disabled={filing || sc.items.length === 0}>{filing ? "Saving…" : "Save scope to Drive"}</button>
+          {editing && <button className="btn btn-solid" onClick={() => setAdding(true)}>Add requirement</button>}</div>} />
+      {filed && <div role="status" className={`mb-4 border px-4 py-3 text-sm ${filed.ok ? "border-green-line bg-green-bg text-green-fg" : "border-amber-line bg-amber-bg text-amber-fg"}`}>{filed.text}</div>}
       <div role="status" className={`mb-4 border px-4 py-3 text-sm ${hold ? "border-red-line bg-red-bg text-red-fg" : pass ? "border-green-line bg-green-bg text-green-fg" : "border-amber-line bg-amber-bg text-amber-fg"}`} data-testid="scope-gate">
         <span className="font-semibold">Scope gate:</span> {sc.gate}
       </div>
@@ -84,8 +94,8 @@ export function Scope({ est, goQs }: { est: Estimate; goQs: () => void }) {
               <tbody>
                 {groups.map((g) => (
                   <Fragment key={g || "other"}>
-                    <tr><td colSpan={editing ? 10 : 9} className="bg-muted text-xs font-semibold uppercase tracking-wider">{g || "Other"}</td></tr>
-                    {sc.items.filter((i) => (GROUPS.includes(i.group) ? i.group : "") === g).map((it) => (
+                    {byGroup && <tr><td colSpan={editing ? 10 : 9} className="bg-muted text-xs font-semibold uppercase tracking-wider">{g || "Other"}</td></tr>}
+                    {sc.items.filter((i) => !byGroup || (GROUPS.includes(i.group) ? i.group : "") === g).map((it) => (
                       <tr key={it.id} data-testid="scope-row">
                         <td className="font-mono text-xs">{E(it, "ref", "reference", { width: "w-20" })}</td>
                         <td className={wrap}><div className="font-medium">{E(it, "title", "requirement", { kind: "textarea" })}</div>{(it.source || editing) && <div className="mt-1 text-xs text-muted-foreground">{E(it, "source", "source", { kind: "textarea" })}</div>}</td>

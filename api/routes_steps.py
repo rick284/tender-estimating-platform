@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 import drive_client as dc
 import drive_index
 import steps as st
+from drive_filing import file_to_reviews, scope_markdown
 from routes_drive import _tender, _token
 from security import current_user
 
@@ -238,7 +239,6 @@ async def set_approval(tender_id: str, body: dict[str, Any], user: dict[str, Any
     """Rick approves and locks a step, or reopens it with a change note. Recorded in the app (with history) and, when the full Drive permission is given,
     filed as a NEW small text file in 00 Project Admin / Reviews and Decisions so the next chat can see it. Nothing is overwritten or deleted."""
     from db import get_db
-    from routes_drive import _integration
     from services import audit, now
     t = await _tender(user, tender_id)
     key = str(body.get("step") or "").strip().lower()
@@ -260,33 +260,31 @@ async def set_approval(tender_id: str, body: dict[str, Any], user: dict[str, Any
     stamp = now()
     entry = {"status": status, "note": note, "at": stamp.isoformat(), "by": user["_id"], "by_name": user.get("name", ""), "filed": None}
     history = (cur.get("history") or []) + [{k: entry[k] for k in ("status", "note", "at", "by_name")}]
-    filed: dict[str, Any] | None = None
-    doc = await _integration(user)
-    link = t.get("drive_folder")
     name = str(body.get("name") or "").strip()[:120]
     prior = str(body.get("record_status") or "")[:40]
-    if link and doc and dc.can_write_anywhere(doc.get("scopes", "")):
-        try:
-            tok = await _token(user)
-            top = await dc.list_children(tok, link["id"])
-            admin = next((x for x in top if x["mimeType"] == dc.FOLDER_MIME and drive_index._has_number(x["name"], "00")), None)
-            if admin:
-                dest = await dc.find_folder(tok, admin["id"], "Reviews and Decisions") or await dc.create_folder(tok, "Reviews and Decisions", admin["id"])
-                fname = f"STEP_{key.upper()}_{'APPROVED_LOCKED' if action == 'approve' else 'REOPENED'}_{stamp.strftime('%Y-%m-%d_%H%M')}.md"
-                f = await dc.create_text_file(tok, fname, dest["id"], approval_note(t.get("name", ""), key, name, action, note, user.get("name", "") or "Estimator", stamp.strftime("%d-%b-%Y %H:%M UTC"), prior))
-                filed = {"name": f.get("name", fname), "link": f.get("webViewLink", "")}
-            else:
-                filed = {"error": "The job folder has no 00 Project Admin folder, so no file was saved."}
-        except (dc.DriveError, HTTPException) as e:
-            filed = {"error": e.detail if isinstance(e, HTTPException) else str(e)}
-        except httpx.HTTPError:
-            filed = {"error": "The connection to Google Drive dropped, so no file was saved."}
-    else:
-        filed = {"error": "Drive has not been given permission to save files, so the decision is recorded in the app only."}
+    fname = f"STEP_{key.upper()}_{'APPROVED_LOCKED' if action == 'approve' else 'REOPENED'}_{stamp.strftime('%Y-%m-%d_%H%M')}.md"
+    filed = await file_to_reviews(user, t, fname, approval_note(t.get("name", ""), key, name, action, note, user.get("name", "") or "Estimator", stamp.strftime("%d-%b-%Y %H:%M UTC"), prior))
     entry["filed"] = filed
     await get_db().tenders.update_one({"_id": t["_id"]}, {"$set": {f"step_approvals.{key}": {**entry, "history": history}}})
     await audit(get_db(), user, "steps.approve" if action == "approve" else "steps.reopen", t["_id"], f"step {key}")
     return {"step": key, "status": status, "filed": filed, "history": history}
+
+
+@router.post("/tenders/{tender_id}/scope/file")
+async def file_scope(tender_id: str, user: dict[str, Any] = Depends(current_user)):
+    """File the CURRENT scope (latest revision) in Reviews and Decisions so the chat reads what the app holds. Create only; the chat's own scope documents are never edited."""
+    from db import get_db
+    from services import audit, now
+    t = await _tender(user, tender_id)
+    rev = await get_db().revisions.find_one({"tender_id": t["_id"], "org_id": user["org_id"], "n": t["latest_rev"]})
+    items = ((rev or {}).get("estimate") or {}).get("scope", {}).get("items") or []
+    if not rev or not items:
+        raise HTTPException(409, "There is no scope in the latest revision yet. Add the scope items first (Step 01 > Set up, or Scope Coverage > Add).")
+    stamp = now()
+    text = scope_markdown(t.get("name", ""), rev["label"], user.get("name", ""), stamp.strftime("%d-%b-%Y %H:%M UTC"), "Filed on request: no change made.", [], items)
+    filed = await file_to_reviews(user, t, f"SCOPE_CURRENT_{stamp.strftime('%Y-%m-%d_%H%M')}.md", text)
+    await audit(get_db(), user, "steps.scope_filed", t["_id"], filed.get("name") or filed.get("error", "")[:80])
+    return {"filed": filed, "items": len(items)}
 
 
 def _go(t: dict[str, Any]) -> dict[str, Any] | None:

@@ -299,7 +299,13 @@ async def save_edits(tender_id: str, n: int, body: SaveIn, user: dict[str, Any] 
                                 {"$set": {"latest_rev": new_n, "summary": summarise(est, lab), "updated_at": now()}})
     await audit(db, user, "revision.edit", t["_id"], f"{lab} from #{n}: {len(changes)} changes")
     log.info("save done tender=%s new=#%s changes=%s", tender_id, new_n, len(changes))
-    return _rev_out(rev)
+    out = _rev_out(rev)
+    if any(c.get("target") == "scope" for c in changes):                       # the chat reads Drive, so a scope change is filed there as a new file (best effort, reported)
+        from drive_filing import file_to_reviews, scope_markdown
+        stamp = now()
+        text = scope_markdown(t.get("name", ""), lab, user.get("name", ""), stamp.strftime("%d-%b-%Y %H:%M UTC"), note, changes, (est.get("scope") or {}).get("items") or [])
+        out["scope_filed"] = await file_to_reviews(user, t, f"SCOPE_CURRENT_{stamp.strftime('%Y-%m-%d_%H%M')}.md", text)
+    return out
 
 
 # ------------------------------------------------------------------ client outputs

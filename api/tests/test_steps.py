@@ -431,3 +431,44 @@ def test_approval_without_drive_is_recorded_in_the_app_only(client, auth):
     tid = client.post("/api/tenders", headers=auth, files={"file": ("a.xlsx", make_workbook())}).json()["id"]
     r = client.put(f"/api/steps/tenders/{tid}/approval", headers=auth, json={"step": "02", "action": "approve"})
     assert r.status_code == 200 and r.json()["status"] == "APPROVED-LOCKED" and "recorded in the app only" in r.json()["filed"]["error"]
+
+
+def test_scope_changes_are_filed_to_drive_when_a_revision_is_saved_and_on_request(client, auth, monkeypatch):
+    import drive_filing
+    monkeypatch.setattr(config, "GOOGLE_CLIENT_ID", "cid"); monkeypatch.setattr(config, "GOOGLE_CLIENT_SECRET", "sec")
+    tree = {"J": [{"id": "A", "name": "00 Project Admin", "mimeType": FOLDER}], "A": []}
+    made: list[str] = []
+
+    def h(request):
+        u = request.url
+        if u.host == "oauth2.googleapis.com":
+            form = dict(up.parse_qsl(request.content.decode()))
+            return httpx.Response(200, json={"access_token": "AT", "refresh_token": "RT", "scope": f"{dc.SCOPE_DRIVE} openid email"} if form["grant_type"] == "authorization_code" else {"access_token": "AT2"})
+        if u.host == "openidconnect.googleapis.com":
+            return httpx.Response(200, json={"email": "r@x.example"})
+        if request.method == "POST" and u.path == "/upload/drive/v3/files":
+            made.append(request.content.decode()); return httpx.Response(200, json={"id": "N1", "name": "SCOPE_CURRENT.md", "webViewLink": "https://drive.google.com/n1"})
+        if request.method == "POST" and u.path == "/drive/v3/files":
+            return httpx.Response(200, json={"id": "R", "name": "Reviews and Decisions"})            # the folder is created when missing
+        if u.path == "/drive/v3/files":
+            return httpx.Response(200, json={"files": tree.get(u.params["q"].split("'")[1], [])})
+        if u.path.rsplit("/", 1)[1] == "J":
+            return httpx.Response(200, json={"id": "J", "name": "Job", "mimeType": FOLDER})
+        return httpx.Response(404, json={})
+    monkeypatch.setattr(dc, "TRANSPORT", httpx.MockTransport(h))
+    tid = client.post("/api/tenders", headers=auth, files={"file": ("a.xlsx", make_workbook())}).json()["id"]
+    q = dict(up.parse_qsl(up.urlparse(client.get("/api/drive/connect", params={"write": 1}, headers=auth).json()["url"]).query))
+    client.get("/api/drive/callback", params={"code": "c", "state": q["state"]})
+    client.put(f"/api/drive/tenders/{tid}", headers=auth, json={"folder_id": "J"})
+    assert client.post(f"/api/steps/tenders/{tid}/scope/file", headers=auth).status_code == 409                    # no scope yet: nothing to file
+    edit = {"target": "scope", "key": "C-newone1", "op": "add", "value": {"title": "Site establishment", "group": "Access and site establishment", "owner": "OWN WORKS", "treatment": "UNRESOLVED", "source": "Dave 04-Sep"}}
+    r = client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": [edit], "note": "Added site establishment"})
+    assert r.status_code == 200, r.text
+    assert r.json()["scope_filed"]["name"] == "SCOPE_CURRENT.md" and len(made) == 1
+    assert "This is the current scope" in made[0] and "ADDED: Scope" in made[0] and "Site establishment" in made[0] and "Added site establishment" in made[0]
+    plain = client.post(f"/api/tenders/{tid}/revisions/2/save", headers=auth, json={"edits": [{"target": "commercial", "key": "CA17", "field": "pct", "value": "0.1"}], "note": "no scope change"})
+    assert "scope_filed" not in plain.json() or plain.status_code != 200 or len(made) == 1                           # a non-scope save files nothing
+    r2 = client.post(f"/api/steps/tenders/{tid}/scope/file", headers=auth)
+    assert r2.status_code == 200 and r2.json()["items"] == 1 and len(made) == 2
+    md = drive_filing.scope_markdown("Job", "Rev1", "Rick", "now", "", [], [{"ref": "SC-001", "group": "G", "title": "A | B", "owner": "OWN WORKS", "treatment": "PRICED", "detail": "x", "source": "y"}])
+    assert "A / B" in md and "(1 items)" in md                                                                       # a pipe in a title cannot break the table

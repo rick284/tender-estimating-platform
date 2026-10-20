@@ -45,6 +45,7 @@ with sync_playwright() as p:
     pg = b.new_context(viewport={"width": 1440, "height": 1000}).new_page()
     errs = []; pg.on("pageerror", lambda e: errs.append(str(e)))
     pg.route("**/api/steps/**", route2)
+    pg.route("**/scope/file", lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps({"filed": {"name": "SCOPE_CURRENT_2026-10-20_0900.md", "link": ""}, "items": 3})))
     pg.goto("http://localhost:5173/")
     pg.get_by_label("Email").fill("rick@3bearsprojects.co.nz"); pg.get_by_label("Password").fill("a long test password")
     pg.get_by_role("button", name="Sign in").click()
@@ -60,9 +61,19 @@ with sync_playwright() as p:
     expect(pg.get_by_role("button", name="All in the Register")).to_be_visible()
     pg.locator("aside").get_by_role("button", name="Project Brief").click()
     expect(pg.locator("main")).to_contain_text("Q1: Who owns excavation", timeout=10000)
+    pg.get_by_role("button", name="Fill empty fields from the scope").click()
+    expect(pg.locator("main")).to_contain_text("Filled", timeout=10000)
+    assert "Scope: 3 items." in pg.locator("main").inner_text() or any("Scope: 3 items." in v for v in pg.evaluate("[...document.querySelectorAll('main textarea')].map(t => t.value)"))     # the overview is built from the scope rows
     pg.get_by_test_id("build-path").get_by_role("button", name="01 Scope of Work and Effort").click()
     pg.locator("aside").get_by_role("button", name="Scope Coverage").click()
     expect(pg.locator("main")).to_contain_text("Retaining walls", timeout=10000)
+    titles = pg.evaluate("[...document.querySelectorAll('[data-testid=scope-row]')].map(r => (r.querySelector('textarea')?.value || r.innerText).toLowerCase())")
+    assert [("earthworks" in t, "retaining" in t, "drainage" in t) for t in titles] == [(True, False, False), (False, True, False), (False, False, True)], titles     # as imported
+    pg.get_by_label("Order").select_option("group")
+    expect(pg.locator("main")).to_contain_text("Permanent works")                                                                  # group headings only in the grouped view
+    pg.get_by_label("Order").select_option("imported")
+    pg.get_by_role("button", name="Save scope to Drive").click()
+    expect(pg.locator("main")).to_contain_text("Filed in Drive as SCOPE_CURRENT_2026-10-20_0900.md", timeout=10000)
     # go-ahead
     pg.get_by_test_id("build-path").get_by_role("button", name="Job Record").click()
     pg.get_by_role("button", name="Record", exact=True).click()   # no note needed for a client go

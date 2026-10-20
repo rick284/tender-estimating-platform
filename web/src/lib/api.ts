@@ -272,6 +272,7 @@ export const api = {
     return r;
   }),
   preview: (id: string, n: number, edits: Edit[]) => request<{ estimate: Estimate; changes: Change[]; base: { all_in: number; siteworks_tender: number } }>(`/api/tenders/${id}/revisions/${n}/preview`, { method: "POST", body: JSON.stringify({ edits }) }),
-  saveEdits: (id: string, n: number, edits: Edit[], label: string, note: string) => request<RevisionInfo>(`/api/tenders/${id}/revisions/${n}/save`, { method: "POST", body: JSON.stringify({ edits, label, note }) }),
+  fileScope: (id: string) => request<{ filed: { name?: string; link?: string; error?: string }; items: number }>(`/api/steps/tenders/${id}/scope/file`, { method: "POST" }),
+  saveEdits: (id: string, n: number, edits: Edit[], label: string, note: string) => request<RevisionInfo & { scope_filed?: { name?: string; link?: string; error?: string } }>(`/api/tenders/${id}/revisions/${n}/save`, { method: "POST", body: JSON.stringify({ edits, label, note }) }),
   compare: (id: string, a: number, b: number) => request<{ a: RevisionInfo; b: RevisionInfo; diff: Diff }>(`/api/tenders/${id}/compare?a=${a}&b=${b}`),
 };

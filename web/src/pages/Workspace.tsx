@@ -21,6 +21,7 @@ import { Register } from "./Register";
 import { Quotes } from "./Quotes";
 import { DriveDocs } from "./DriveDocs";
 import { Emails } from "./Emails";
+import { toast } from "../lib/toast";
 import { RiskTruth } from "./RiskTruth";
 import { ManagementReserve } from "./ManagementReserve";
 import { AiDraft } from "./AiDraft";
@@ -394,8 +395,8 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
         {!err && shown && pg === "programme" && <Programme est={shown} />}
         {!err && shown && pg === "gantt" && <ProgrammeEditor tenderId={id} est={shown} rev={cur} sub={sub} />}
         {!err && shown && pg === "quotes" && <Quotes est={shown} />}
-        {!err && shown && pg === "brief" && <Brief est={shown} />}
-        {!err && shown && pg === "scope" && <Scope est={shown} goQs={() => view("qs")} />}
+        {!err && shown && pg === "brief" && <Brief est={shown} recordFields={steps?.job_record.fields} />}
+        {!err && shown && pg === "scope" && <Scope est={shown} tenderId={id} goQs={() => view("qs")} />}
         {!err && pg === "ai" && <AiDraft tenderId={id} />}
         {!err && shown && pg === "takeoff" && <Takeoff est={shown} tenderId={id} goQs={() => view("qs")} />}
         {!err && pg === "drive" && <DriveDocs tenderId={id} />}
@@ -429,7 +430,7 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
       )}
       <ChangesDialog open={changesOpen} onClose={() => setChangesOpen(false)} changes={changes} edits={edits} undoKey={ctx.undoKey} />
       <SaveEdits open={saveOpen} onClose={() => setSaveOpen(false)} changes={changes} defaultLabel={`${label}-ed${(detail?.latest_rev ?? 0) + 1}`}
-        onSave={async (lab, note) => { await api.saveEdits(id, cur, editList, lab, note); clearDraft(id, cur); exitEdit(); go({ name: "tender", id, page: "revisions", rev: null }); await loadDetail(); }} />
+        onSave={async (lab, note) => { const saved = await api.saveEdits(id, cur, editList, lab, note); if (saved.scope_filed) { if (saved.scope_filed.name) toast.success(`Scope filed in Drive as ${saved.scope_filed.name}. The chat will read it.`); else toast.info(`Scope changes saved here. ${saved.scope_filed.error ?? ""}`); } clearDraft(id, cur); exitEdit(); go({ name: "tender", id, page: "revisions", rev: null }); await loadDetail(); }} />
       <UploadRevision open={upload} onClose={() => setUpload(false)} tenderId={id}
         onDone={() => { setUpload(false); go({ name: "tender", id, page: "revisions", rev: null }); loadDetail(); }} />
     </Shell>
