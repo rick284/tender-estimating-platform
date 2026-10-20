@@ -69,3 +69,19 @@ def scope_markdown(job: str, rev_label: str, who: str, at: str, note: str, chang
     out += ["", "Treatment words: PRICED / ALLOWANCE / PC SUM / EXCLUDED / BY OTHERS / UNRESOLVED. UNRESOLVED means the scope item is not yet decided or priced.",
             "This file was created by the app. Nothing was sent to anyone.", ""]
     return "\n".join(out)
+
+
+def revision_markdown(job: str, rev_label: str, rev_n: int, parent_n: int | None, who: str, at: str, note: str, all_in: Any, changes: list[dict[str, Any]]) -> str:
+    """What one saved revision changed, for the chat. Every change (not only scope) with before and after. The app's revision is a newer working copy than any workbook the chat holds."""
+    out = [f"# REVISION NOTE: {job}", "", f"Revision saved in Blackline QSi Pro: {rev_label} (revision {rev_n}" + (f", built on revision {parent_n}" if parent_n else "") + ")",
+           f"Saved by: {who or 'Estimator'}", f"When: {at}", f"All-in price excl. GST after this revision: {all_in if all_in is not None else 'not available'}", "",
+           "**The app's saved revisions hold the estimator's latest working copy. A workbook the chat built earlier does not include these changes. Do not overwrite them: build from the app's current figures, or ask Rick which to follow.**", ""]
+    if note:
+        out += ["## Reason", note, ""]
+    out += [f"## Changes ({len(changes)})", "", "| Area | Item | Field | Before | After |", "|---|---|---|---|---|"]
+    for c in changes[:300]:
+        out.append(f"| {_cell(c.get('target'))} | {_cell(c.get('label'))[:90]} | {_cell(c.get('field'))} | {_cell(c.get('before'))[:60]} | {_cell(c.get('after'))[:60]} |")
+    if len(changes) > 300:
+        out.append(f"\n(+{len(changes) - 300} more changes not listed.)")
+    out += ["", "This file was created by the app. Nothing was sent to anyone.", ""]
+    return "\n".join(out)

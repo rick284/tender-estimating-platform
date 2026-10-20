@@ -281,6 +281,7 @@ async def preview_edits(tender_id: str, n: int, body: EditsIn, user: dict[str, A
 @router.post("/{tender_id}/revisions/{n}/save")
 async def save_edits(tender_id: str, n: int, body: SaveIn, user: dict[str, Any] = Depends(current_user)):
     """Save the edits as a NEW revision. The revision they were based on is left untouched."""
+    from drive_filing import file_to_reviews, revision_markdown, scope_markdown
     db = get_db()
     t, r = await _editable(user, tender_id, n)
     note = body.note.strip()
@@ -301,10 +302,12 @@ async def save_edits(tender_id: str, n: int, body: SaveIn, user: dict[str, Any] 
     log.info("save done tender=%s new=#%s changes=%s", tender_id, new_n, len(changes))
     out = _rev_out(rev)
     if any(c.get("target") == "scope" for c in changes):                       # the chat reads Drive, so a scope change is filed there as a new file (best effort, reported)
-        from drive_filing import file_to_reviews, scope_markdown
         stamp = now()
         text = scope_markdown(t.get("name", ""), lab, user.get("name", ""), stamp.strftime("%d-%b-%Y %H:%M UTC"), note, changes, (est.get("scope") or {}).get("items") or [])
         out["scope_filed"] = await file_to_reviews(user, t, f"SCOPE_CURRENT_{stamp.strftime('%Y-%m-%d_%H%M')}.md", text)
+    stamp = now()                                                              # every saved revision also leaves a plain note of what changed (create-only, best effort, reported)
+    rtext = revision_markdown(t.get("name", ""), lab, new_n, n, user.get("name", ""), stamp.strftime("%d-%b-%Y %H:%M UTC"), note, rev.get("all_in"), changes)
+    out["revision_filed"] = await file_to_reviews(user, t, f"REVISION_NOTE_Rev{new_n:02d}_{stamp.strftime('%Y-%m-%d_%H%M')}.md", rtext)
     return out
 
 

@@ -464,11 +464,11 @@ def test_scope_changes_are_filed_to_drive_when_a_revision_is_saved_and_on_reques
     edit = {"target": "scope", "key": "C-newone1", "op": "add", "value": {"title": "Site establishment", "group": "Access and site establishment", "owner": "OWN WORKS", "treatment": "UNRESOLVED", "source": "Dave 04-Sep"}}
     r = client.post(f"/api/tenders/{tid}/revisions/1/save", headers=auth, json={"edits": [edit], "note": "Added site establishment"})
     assert r.status_code == 200, r.text
-    assert r.json()["scope_filed"]["name"] == "SCOPE_CURRENT.md" and len(made) == 1
+    assert r.json()["scope_filed"]["name"] == "SCOPE_CURRENT.md" and len(made) == 2                                   # the scope file and the revision note
     assert "This is the current scope" in made[0] and "ADDED: Scope" in made[0] and "Site establishment" in made[0] and "Added site establishment" in made[0]
-    plain = client.post(f"/api/tenders/{tid}/revisions/2/save", headers=auth, json={"edits": [{"target": "commercial", "key": "CA17", "field": "pct", "value": "0.1"}], "note": "no scope change"})
-    assert "scope_filed" not in plain.json() or plain.status_code != 200 or len(made) == 1                           # a non-scope save files nothing
+    assert r.json()["revision_filed"]["name"] == "SCOPE_CURRENT.md"                                                    # the stub names every file the same
+    assert "REVISION NOTE" in made[1] and "Added site establishment" in made[1] and "Do not overwrite" in made[1]
     r2 = client.post(f"/api/steps/tenders/{tid}/scope/file", headers=auth)
-    assert r2.status_code == 200 and r2.json()["items"] == 1 and len(made) == 2
+    assert r2.status_code == 200 and r2.json()["items"] == 1 and len(made) == 3
     md = drive_filing.scope_markdown("Job", "Rev1", "Rick", "now", "", [], [{"ref": "SC-001", "group": "G", "title": "A | B", "owner": "OWN WORKS", "treatment": "PRICED", "detail": "x", "source": "y"}])
     assert "A / B" in md and "(1 items)" in md                                                                       # a pipe in a title cannot break the table
