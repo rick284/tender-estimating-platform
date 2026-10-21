@@ -366,6 +366,11 @@ export function Workspace({ id, page, rev, sub, user, onLogout }: { id: string; 
           </div>
         </div>
       )}
+      {editing && (steps?.steps ?? []).some((s) => s.status === "DRAFT" || s.status === "REPORTED") && (
+        <div role="status" className="border-b border-amber-line bg-amber-bg" data-testid="between-steps">
+          <div className="px-3 py-2 text-sm text-amber-fg sm:px-4"><strong>Edit between steps.</strong> Step {(steps?.steps ?? []).filter((s) => s.status === "DRAFT" || s.status === "REPORTED").map((s) => s.key).join(", ")} is not approved yet. If its chat is still working, wait for it to finish (or approve it) before you save changes here, so the chat and the app do not build on different figures.</div>
+        </div>
+      )}
       {stale && detail && (
         <div className="border-b border-amber-line bg-amber-bg">
           <div className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm text-amber-fg sm:px-4">
